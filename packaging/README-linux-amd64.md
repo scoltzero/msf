@@ -1,12 +1,12 @@
-# msm-free linux-amd64 安装包
+# msm-free Linux 安装包
 
-这个压缩包包含 `msm-free` x86_64 Linux 二进制、systemd 安装脚本和卸载脚本。
+这个压缩包包含 `msm-free` Linux 二进制、systemd 安装脚本和卸载脚本。请下载与机器架构匹配的压缩包，例如 `linux-amd64` 或 `linux-arm64`。
 
 ## 安装
 
 ```sh
-tar -xzf msm-free-linux-amd64.tar.gz
-cd msm-free-*-linux-amd64
+tar -xzf msm-free-linux-<arch>.tar.gz
+cd msm-free-*-linux-<arch>
 sudo ./install.sh
 ```
 

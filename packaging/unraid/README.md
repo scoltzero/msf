@@ -23,6 +23,9 @@ gh release create v0.2.1 \
   dist/unraid/msm-free-0.2.1-x86_64-1.txz \
   dist/unraid/msm-free.plg \
   dist/msm-free-linux-amd64.tar.gz \
+  dist/msm-free-linux-amd64.tar.gz.sha256 \
+  dist/msm-free-linux-arm64.tar.gz \
+  dist/msm-free-linux-arm64.tar.gz.sha256 \
   --title "v0.2.1" \
   --notes-file /tmp/msm-free-v0.2.1-release-notes.md
 ```

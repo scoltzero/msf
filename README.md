@@ -35,15 +35,21 @@ Linux x86_64 安装包：
 https://github.com/scoltzero/msm-free/releases/download/v0.2.1/msm-free-linux-amd64.tar.gz
 ```
 
+Linux ARM64 安装包：
+
+```text
+https://github.com/scoltzero/msm-free/releases/download/v0.2.1/msm-free-linux-arm64.tar.gz
+```
+
 Unraid 插件文件：
 
 ```text
 https://github.com/scoltzero/msm-free/releases/download/v0.2.1/msm-free.plg
 ```
 
-## Linux x86_64 安装
+## Linux 安装
 
-下载并解压：
+根据机器架构下载并解压。x86_64 / amd64 使用：
 
 ```bash
 curl -L -o msm-free-linux-amd64.tar.gz \
@@ -51,6 +57,16 @@ curl -L -o msm-free-linux-amd64.tar.gz \
 
 tar -xzf msm-free-linux-amd64.tar.gz -C /tmp
 sudo /tmp/msm-free-0.2.1-linux-amd64/install.sh
+```
+
+ARM64 / aarch64 使用：
+
+```bash
+curl -L -o msm-free-linux-arm64.tar.gz \
+  https://github.com/scoltzero/msm-free/releases/download/v0.2.1/msm-free-linux-arm64.tar.gz
+
+tar -xzf msm-free-linux-arm64.tar.gz -C /tmp
+sudo /tmp/msm-free-0.2.1-linux-arm64/install.sh
 ```
 
 安装脚本会完成这些操作：
@@ -199,6 +215,12 @@ go run ./cmd/msm-free serve -c ./data -p 7777
 make package VERSION=0.2.1 GOOS=linux GOARCH=amd64
 ```
 
+构建 Linux ARM64 压缩包：
+
+```bash
+make package VERSION=0.2.1 GOOS=linux GOARCH=arm64
+```
+
 构建 Unraid 插件产物：
 
 ```bash
@@ -208,6 +230,7 @@ make unraid VERSION=0.2.1 UNRAID_VERSION=0.2.1 GITHUB_REPO=scoltzero/msm-free RE
 构建产物：
 
 - `dist/msm-free-linux-amd64.tar.gz`
+- `dist/msm-free-linux-arm64.tar.gz`
 - `dist/unraid/msm-free-0.2.1-x86_64-1.txz`
 - `dist/unraid/msm-free.plg`
 - `msm-free.plg`
