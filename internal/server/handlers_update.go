@@ -8,8 +8,19 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
+)
+
+const (
+	updateConfigAutoCheckKey         = "update.auto_check"
+	updateConfigAutoUpdateKey        = "update.auto_update"
+	updateConfigCheckIntervalKey     = "update.check_interval"
+	updateConfigNotifyKey            = "update.notify"
+	updateConfigMosDNSUpgradeModeKey = "update.mosdns_upgrade_mode"
+	updateConfigMihomoUpgradeModeKey = "update.mihomo_upgrade_mode"
+	defaultUpdateCheckInterval       = 12 * 60 * 60
 )
 
 func (a *App) registerUpdateRoutes(mux *http.ServeMux) {
@@ -94,15 +105,66 @@ func (a *App) handleUpdateCheck(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"success": true, "data": map[string]any{
-		"auto_check":     true,
-		"auto_update":    false,
-		"check_interval": 86400,
-	}})
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "data": a.updateConfig()})
 }
 
 func (a *App) handleUpdateConfigPut(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"success": true})
+	var raw map[string]any
+	if err := decodeJSON(r, &raw); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	cfg := a.updateConfig()
+	if value, ok := raw["auto_check"]; ok {
+		parsed, err := structuredBoolValue(value)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "bad_request", "invalid auto_check")
+			return
+		}
+		cfg["auto_check"] = parsed
+	}
+	if value, ok := raw["auto_update"]; ok {
+		parsed, err := structuredBoolValue(value)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "bad_request", "invalid auto_update")
+			return
+		}
+		cfg["auto_update"] = parsed
+	}
+	if value, ok := raw["notify"]; ok {
+		parsed, err := structuredBoolValue(value)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "bad_request", "invalid notify")
+			return
+		}
+		cfg["notify"] = parsed
+	}
+	if value, ok := raw["check_interval"]; ok {
+		parsed, err := structuredPositiveInt(value)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "bad_request", "invalid check_interval")
+			return
+		}
+		cfg["check_interval"] = parsed
+	}
+	if value, ok := raw["mosdns_upgrade_mode"]; ok {
+		mode := strings.ToLower(strings.TrimSpace(fmtAny(value)))
+		if !oneOf(mode, "full", "incremental", "reset") {
+			writeError(w, http.StatusBadRequest, "bad_request", "invalid mosdns_upgrade_mode")
+			return
+		}
+		cfg["mosdns_upgrade_mode"] = mode
+	}
+	if value, ok := raw["mihomo_upgrade_mode"]; ok {
+		mode := strings.ToLower(strings.TrimSpace(fmtAny(value)))
+		if !oneOf(mode, "skip", "full") {
+			writeError(w, http.StatusBadRequest, "bad_request", "invalid mihomo_upgrade_mode")
+			return
+		}
+		cfg["mihomo_upgrade_mode"] = mode
+	}
+	a.saveUpdateConfig(cfg)
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "data": a.updateConfig()})
 }
 
 func (a *App) handleUpdateReleases(w http.ResponseWriter, r *http.Request) {
@@ -226,7 +288,7 @@ func (a *App) handleComponentUpdateConfigPut(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if req.CheckInterval <= 0 {
-		req.CheckInterval = 86400
+		req.CheckInterval = defaultUpdateCheckInterval
 	}
 	_, err := a.DB.Exec(`insert into component_update_config(component,auto_check,check_interval,auto_update,created_at,updated_at)
 		values(?,?,?,?,?,?)
@@ -291,7 +353,7 @@ func (a *App) componentRemoteInfo(component string) (githubRelease, error) {
 }
 
 func (a *App) componentUpdateConfig(component string) map[string]any {
-	out := map[string]any{"component": component, "auto_check": true, "check_interval": 86400, "auto_update": false}
+	out := map[string]any{"component": component, "auto_check": true, "check_interval": defaultUpdateCheckInterval, "auto_update": false}
 	var autoCheck, autoUpdate bool
 	var interval int
 	err := a.DB.QueryRow(`select auto_check,check_interval,auto_update from component_update_config where component=?`, component).Scan(&autoCheck, &interval, &autoUpdate)
@@ -301,6 +363,103 @@ func (a *App) componentUpdateConfig(component string) map[string]any {
 		out["auto_update"] = autoUpdate
 	}
 	return out
+}
+
+func (a *App) updateConfig() map[string]any {
+	return map[string]any{
+		"auto_check":           a.boolSetting(updateConfigAutoCheckKey, true),
+		"auto_update":          a.boolSetting(updateConfigAutoUpdateKey, false),
+		"check_interval":       a.intSetting(updateConfigCheckIntervalKey, defaultUpdateCheckInterval),
+		"notify":               a.boolSetting(updateConfigNotifyKey, true),
+		"mosdns_upgrade_mode":  a.modeSetting(updateConfigMosDNSUpgradeModeKey, "full", "full", "incremental", "reset"),
+		"mihomo_upgrade_mode":  a.modeSetting(updateConfigMihomoUpgradeModeKey, "skip", "skip", "full"),
+		"check_interval_label": updateIntervalLabel(a.intSetting(updateConfigCheckIntervalKey, defaultUpdateCheckInterval)),
+	}
+}
+
+func (a *App) saveUpdateConfig(cfg map[string]any) {
+	a.setSetting(updateConfigAutoCheckKey, strconv.FormatBool(updateBoolMapValue(cfg, "auto_check", true)))
+	a.setSetting(updateConfigAutoUpdateKey, strconv.FormatBool(updateBoolMapValue(cfg, "auto_update", false)))
+	a.setSetting(updateConfigNotifyKey, strconv.FormatBool(updateBoolMapValue(cfg, "notify", true)))
+	a.setSetting(updateConfigCheckIntervalKey, strconv.Itoa(updateIntMapValue(cfg, "check_interval", defaultUpdateCheckInterval)))
+	a.setSetting(updateConfigMosDNSUpgradeModeKey, updateStringMapValue(cfg, "mosdns_upgrade_mode", "full"))
+	a.setSetting(updateConfigMihomoUpgradeModeKey, updateStringMapValue(cfg, "mihomo_upgrade_mode", "skip"))
+}
+
+func (a *App) boolSetting(key string, fallback bool) bool {
+	value := strings.TrimSpace(a.setting(key, strconv.FormatBool(fallback)))
+	if value == "" {
+		return fallback
+	}
+	return isTruthy(value)
+}
+
+func (a *App) intSetting(key string, fallback int) int {
+	value := strings.TrimSpace(a.setting(key, strconv.Itoa(fallback)))
+	out, err := strconv.Atoi(value)
+	if err != nil || out <= 0 {
+		return fallback
+	}
+	return out
+}
+
+func (a *App) modeSetting(key, fallback string, allowed ...string) string {
+	value := strings.ToLower(strings.TrimSpace(a.setting(key, fallback)))
+	if oneOf(value, allowed...) {
+		return value
+	}
+	return fallback
+}
+
+func updateBoolMapValue(values map[string]any, key string, fallback bool) bool {
+	value, ok := values[key]
+	if !ok {
+		return fallback
+	}
+	parsed, err := structuredBoolValue(value)
+	if err != nil {
+		return fallback
+	}
+	return parsed
+}
+
+func updateIntMapValue(values map[string]any, key string, fallback int) int {
+	value, ok := values[key]
+	if !ok {
+		return fallback
+	}
+	parsed, err := structuredPositiveInt(value)
+	if err != nil {
+		return fallback
+	}
+	return parsed
+}
+
+func updateStringMapValue(values map[string]any, key, fallback string) string {
+	value, ok := values[key]
+	if !ok {
+		return fallback
+	}
+	out := strings.TrimSpace(fmtAny(value))
+	if out == "" {
+		return fallback
+	}
+	return out
+}
+
+func updateIntervalLabel(seconds int) string {
+	switch seconds {
+	case 12 * 60 * 60:
+		return "12 小时"
+	case 24 * 60 * 60:
+		return "24 小时"
+	case 3 * 24 * 60 * 60:
+		return "3 天"
+	case 7 * 24 * 60 * 60:
+		return "7 天"
+	default:
+		return fmt.Sprintf("%d 秒", seconds)
+	}
 }
 
 func (a *App) componentCurrentVersion(component string) string {

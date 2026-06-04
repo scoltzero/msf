@@ -77,10 +77,10 @@ func (a *App) handleSetupPrivilege(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleSetupGetConfig(w http.ResponseWriter, r *http.Request) {
-	row := a.DB.QueryRow(`select username,email,web_port,amd64v3_enabled,selected_interface,mihomo_core_type,auto_set_dns,dns_on,dns_off,enable_ipv6,fake_ip_range_v4,fake_ip_range_v6,linux_proxy_mode,nft_proxy_policy,proxy_core,mos_dns_enabled,subscription_urls,mihomo_proxies,is_initialized from system_setups order by id desc limit 1`)
+	row := a.DB.QueryRow(`select username,email,web_port,amd64v3_enabled,selected_interface,mihomo_core_type,auto_set_dns,dns_on,dns_off,enable_ipv6,fake_ip_range_v4,fake_ip_range_v6,linux_proxy_mode,nft_proxy_policy,proxy_core,mos_dns_enabled,subscription_urls,mihomo_proxies,github_proxy_enabled,github_https_proxy,github_http_proxy,github_socks5_proxy,github_accelerator_enabled,github_accelerator_url,is_initialized from system_setups order by id desc limit 1`)
 	var cfg SetupConfig
 	var initialized bool
-	err := row.Scan(&cfg.Username, &cfg.Email, &cfg.WebPort, &cfg.AMD64v3Enabled, &cfg.SelectedInterface, &cfg.MihomoCoreType, &cfg.AutoSetDNS, &cfg.DNSOn, &cfg.DNSOff, &cfg.EnableIPv6, &cfg.FakeIPRangeV4, &cfg.FakeIPRangeV6, &cfg.LinuxProxyMode, &cfg.NFTProxyPolicy, &cfg.ProxyCore, &cfg.MosDNSEnabled, &cfg.SubscriptionURLs, &cfg.MihomoProxies, &initialized)
+	err := row.Scan(&cfg.Username, &cfg.Email, &cfg.WebPort, &cfg.AMD64v3Enabled, &cfg.SelectedInterface, &cfg.MihomoCoreType, &cfg.AutoSetDNS, &cfg.DNSOn, &cfg.DNSOff, &cfg.EnableIPv6, &cfg.FakeIPRangeV4, &cfg.FakeIPRangeV6, &cfg.LinuxProxyMode, &cfg.NFTProxyPolicy, &cfg.ProxyCore, &cfg.MosDNSEnabled, &cfg.SubscriptionURLs, &cfg.MihomoProxies, &cfg.GitHubProxyEnabled, &cfg.GitHubHTTPSProxy, &cfg.GitHubHTTPProxy, &cfg.GitHubSocks5Proxy, &cfg.GitHubAcceleratorEnabled, &cfg.GitHubAcceleratorURL, &initialized)
 	if err != nil {
 		cfg.defaults()
 	}
@@ -216,7 +216,13 @@ func decodeSetupConfigRequest(r *http.Request, cfg *SetupConfig) error {
 	cfg.NFTProxyPolicy = setupString(raw, "nft_proxy_policy", "nftProxyPolicy")
 	cfg.ProxyCore = setupString(raw, "proxy_core", "proxyCore")
 	cfg.MosDNSEnabled = setupBool(raw, true, "mos_dns_enabled", "mosdnsEnabled", "mosDNSEnabled")
-	cfg.SubscriptionURLs = setupString(raw, "subscription_urls", "subscriptionURLs")
+	if value, ok := setupValue(raw, "subscription_urls", "subscriptionURLs"); ok {
+		subscriptions, err := normalizeSubscriptionURLsValue(value)
+		if err != nil {
+			return err
+		}
+		cfg.SubscriptionURLs = subscriptions
+	}
 	cfg.MihomoProxies = setupString(raw, "mihomo_proxies", "mihomoProxies")
 	cfg.GitHubProxyEnabled = setupBool(raw, false, "github_proxy_enabled", "githubProxyEnabled")
 	cfg.GitHubHTTPSProxy = setupString(raw, "github_https_proxy", "githubHTTPSProxy")
@@ -225,6 +231,16 @@ func decodeSetupConfigRequest(r *http.Request, cfg *SetupConfig) error {
 	cfg.GitHubAcceleratorEnabled = setupBool(raw, false, "github_accelerator_enabled", "githubAcceleratorEnabled")
 	cfg.GitHubAcceleratorURL = setupString(raw, "github_accelerator_url", "githubAcceleratorURL")
 	return nil
+}
+
+func setupValue(raw map[string]any, keys ...string) (any, bool) {
+	for _, key := range keys {
+		value, ok := raw[key]
+		if ok {
+			return value, true
+		}
+	}
+	return nil, false
 }
 
 func setupConfigPayload(cfg SetupConfig, initialized bool) map[string]any {

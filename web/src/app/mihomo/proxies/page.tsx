@@ -729,7 +729,7 @@ function ProxyNodeTile({
   return (
     <div
       className={cn(
-        "min-w-0 rounded-lg border px-2 py-1.5 text-left transition-colors",
+        "min-h-[4.25rem] min-w-0 rounded-lg border px-2.5 py-2 text-left transition-colors",
         "bg-muted/40 hover:bg-muted border-transparent",
         active && "bg-primary text-primary-foreground hover:bg-primary/90"
       )}
@@ -1316,9 +1316,9 @@ export default function MihomoProxiesPage() {
                 管理代理供应商
               </button>
             </div>
-            <div className={cn("grid grid-cols-1 gap-3", settings.doubleColumn && "lg:grid-cols-2")}>
+            <div className={cn("grid grid-cols-1 gap-3", settings.doubleColumn && "2xl:grid-cols-2")}>
               {visibleProviders.length === 0 ? (
-                <div className="rounded-lg border border-dashed border-border bg-card p-8 text-center text-sm text-muted-foreground lg:col-span-2">
+                <div className="rounded-lg border border-dashed border-border bg-card p-8 text-center text-sm text-muted-foreground 2xl:col-span-2">
                   {loading ? "正在加载供应商..." : "暂无代理供应商"}
                 </div>
               ) : visibleProviders.map((p) => {
@@ -1357,7 +1357,7 @@ export default function MihomoProxiesPage() {
                     </div>
                     <div className="mt-2 text-[11px] text-muted-foreground">{p.updated}</div>
                     {!collapsed && p.nodes.length > 0 && (
-                      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-8">
+                      <div className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(7.25rem,1fr))] gap-2">
                         {p.nodes.map((node) => (
                           <ProxyNodeTile
                             key={node.name}
@@ -1376,9 +1376,9 @@ export default function MihomoProxiesPage() {
             </div>
           </div>
         ) : (
-          <div className={cn("grid grid-cols-1 gap-3", settings.doubleColumn && "lg:grid-cols-2")}>
+          <div className={cn("grid grid-cols-1 gap-3", settings.doubleColumn && "2xl:grid-cols-2")}>
             {visibleGroups.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-border bg-card p-8 text-center text-sm text-muted-foreground lg:col-span-2">
+              <div className="rounded-lg border border-dashed border-border bg-card p-8 text-center text-sm text-muted-foreground 2xl:col-span-2">
                 {loading ? "正在加载代理组..." : "暂无代理组"}
               </div>
             ) : visibleGroups.map((g) => {
@@ -1465,7 +1465,7 @@ export default function MihomoProxiesPage() {
                             </div>
                           </div>
                           {!collapsed && displayNodes.length > 0 && (
-                            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6">
+                            <div className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(7.25rem,1fr))] gap-2">
                               {displayNodes.map((node) => (
                                 <ProxyNodeTile
                                   key={node.name}

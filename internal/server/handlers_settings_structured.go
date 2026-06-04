@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/netip"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -363,8 +362,8 @@ func (a *App) applyStructuredSetupSection(cfg *SetupConfig, section string, raw 
 			changed = true
 			regenerateRequired = true
 		case "subscription_urls", "subscriptionURLs":
-			v := strings.TrimSpace(fmtAny(value))
-			if err := validateSubscriptionURLs(v); err != nil {
+			v, err := normalizeSubscriptionURLsValue(value)
+			if err != nil {
 				return false, false, false, err
 			}
 			cfg.SubscriptionURLs = v
@@ -547,20 +546,8 @@ func validateCIDR(value string) error {
 }
 
 func validateSubscriptionURLs(value string) error {
-	for _, item := range strings.Fields(value) {
-		if strings.Contains(item, "|") {
-			parts := strings.SplitN(item, "|", 2)
-			item = strings.TrimSpace(parts[1])
-		}
-		if item == "" {
-			continue
-		}
-		u, err := url.Parse(item)
-		if err != nil || u.Host == "" || !oneOf(strings.ToLower(u.Scheme), "http", "https") {
-			return fmt.Errorf("invalid subscription url")
-		}
-	}
-	return nil
+	_, err := normalizeSubscriptionURLsValue(value)
+	return err
 }
 
 func oneOf(value string, allowed ...string) bool {

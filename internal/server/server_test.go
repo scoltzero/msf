@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -117,6 +118,45 @@ func TestSetupInitializeLoginAndGeneratedConfigs(t *testing.T) {
 	}
 }
 
+func TestSetupConfigNormalizesSubscriptionInputs(t *testing.T) {
+	app := newTestApp(t)
+	token := tokenForRole(t, app, "admin")
+
+	res := requestJSON(t, app, http.MethodPut, "/api/v1/setup/config", token, map[string]any{
+		"username":           "root",
+		"selected_interface": "eth0",
+		"subscription_urls": []any{
+			map[string]any{"name": "机场A", "url": "https://example.com/a.yaml"},
+			"https://example.com/b.yaml",
+		},
+		"proxy_core":      "mihomo",
+		"mos_dns_enabled": true,
+	})
+	if res.Code != http.StatusOK {
+		t.Fatalf("setup config with array subscriptions failed: status=%d body=%s", res.Code, res.Body.String())
+	}
+	if !strings.Contains(res.Body.String(), "机场A|https://example.com/a.yaml") || !strings.Contains(res.Body.String(), "https://example.com/b.yaml") {
+		t.Fatalf("setup config should normalize subscription rows, got: %s", res.Body.String())
+	}
+	cfg, err := os.ReadFile(filepath.Join(app.DataDir, "configs/mihomo/config.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(cfg)
+	if strings.Contains(text, `url: "[]"`) || !strings.Contains(text, `url: "https://example.com/a.yaml"`) || !strings.Contains(text, `url: "https://example.com/b.yaml"`) {
+		t.Fatalf("mihomo providers should contain valid subscription URLs:\n%s", text)
+	}
+
+	bad := requestJSON(t, app, http.MethodPut, "/api/v1/setup/config", token, map[string]any{
+		"username":           "root",
+		"selected_interface": "eth0",
+		"subscription_urls":  []any{"ftp://example.com/a.yaml"},
+	})
+	if bad.Code != http.StatusBadRequest {
+		t.Fatalf("invalid subscription url should fail, status=%d body=%s", bad.Code, bad.Body.String())
+	}
+}
+
 func TestSupportsAMD64v3AcceptsABMAsLZCNTCompat(t *testing.T) {
 	cpuInfo := `processor : 0
 vendor_id : GenuineIntel
@@ -189,6 +229,33 @@ func TestEnsureSetupProviderArtifactsBackfillsManualProvider(t *testing.T) {
 	for _, want := range []string{"proxy-providers:", "msm_manual:", "imm", "https://example.com/imm.yaml", "./proxy_providers/imm.yaml"} {
 		if !strings.Contains(configText, want) {
 			t.Fatalf("mihomo provider section missing %q:\n%s", want, configText)
+		}
+	}
+}
+
+func TestRenderMihomoManualProviderParsesCommonShareLinks(t *testing.T) {
+	encode := func(s string) string {
+		return base64.RawURLEncoding.EncodeToString([]byte(s))
+	}
+	vmessPayload := encode(`{"v":"2","ps":"vmess-node","add":"vmess.example.com","port":"443","id":"00000000-0000-4000-8000-000000000001","aid":"0","scy":"auto","net":"ws","type":"none","host":"cdn.example.com","path":"/ws","tls":"tls","sni":"vmess.example.com"}`)
+	ssrPayload := encode("ssr.example.com:8388:origin:aes-128-gcm:plain:" + encode("ssr-pass") + "/?remarks=" + encode("ssr-node"))
+	input := strings.Join([]string{
+		"ss://" + encode("aes-128-gcm:ss-pass@ss.example.com:8388") + "#ss-node",
+		"ssr://" + ssrPayload,
+		"vmess://" + vmessPayload,
+		"hysteria2://hy-pass@hy.example.com:443?sni=hy.example.com#hy2-node",
+		"tuic://00000000-0000-4000-8000-000000000002:tuic-pass@tuic.example.com:443?sni=tuic.example.com#tuic-node",
+	}, "\n")
+	text := renderMihomoManualProviderYAML(input)
+	for _, want := range []string{
+		"type: ss", "name: ss-node", "cipher: aes-128-gcm", "password: ss-pass",
+		"type: ssr", "name: ssr-node", "protocol: origin", "obfs: plain",
+		"type: vmess", "name: vmess-node", "ws-opts:", "Host: cdn.example.com",
+		"type: hysteria2", "name: hy2-node", "sni: hy.example.com",
+		"type: tuic", "name: tuic-node", "congestion-controller: bbr",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("manual provider missing %q:\n%s", want, text)
 		}
 	}
 }
@@ -319,6 +386,48 @@ func TestCompatibilityLayoutMatchesMSMTreeShape(t *testing.T) {
 	} {
 		if _, err := os.Stat(filepath.Join(app.DataDir, rel)); err != nil {
 			t.Fatalf("expected MSM-compatible layout path %s: %v", rel, err)
+		}
+	}
+}
+
+func TestUpdateConfigPersistsGlobalAndComponentSettings(t *testing.T) {
+	app := newTestApp(t)
+	token := tokenForRole(t, app, "admin")
+
+	put := requestJSON(t, app, http.MethodPut, "/api/v1/update/config", token, map[string]any{
+		"auto_check":          false,
+		"auto_update":         true,
+		"check_interval":      604800,
+		"notify":              false,
+		"mosdns_upgrade_mode": "incremental",
+		"mihomo_upgrade_mode": "full",
+	})
+	if put.Code != http.StatusOK {
+		t.Fatalf("update config put failed: status=%d body=%s", put.Code, put.Body.String())
+	}
+	get := requestJSON(t, app, http.MethodGet, "/api/v1/update/config", token, nil)
+	for _, want := range []string{`"auto_check":false`, `"auto_update":true`, `"check_interval":604800`, `"notify":false`, `"mosdns_upgrade_mode":"incremental"`, `"mihomo_upgrade_mode":"full"`} {
+		if !strings.Contains(get.Body.String(), want) {
+			t.Fatalf("update config get missing %q: status=%d body=%s", want, get.Code, get.Body.String())
+		}
+	}
+	bad := requestJSON(t, app, http.MethodPut, "/api/v1/update/config", token, map[string]any{"mosdns_upgrade_mode": "custom"})
+	if bad.Code != http.StatusBadRequest {
+		t.Fatalf("invalid upgrade mode should fail, status=%d body=%s", bad.Code, bad.Body.String())
+	}
+
+	component := requestJSON(t, app, http.MethodPut, "/api/v1/component-updates/mihomo/config", token, map[string]any{
+		"auto_check":     false,
+		"auto_update":    true,
+		"check_interval": 43200,
+	})
+	if component.Code != http.StatusOK {
+		t.Fatalf("component update config put failed: status=%d body=%s", component.Code, component.Body.String())
+	}
+	componentGet := requestJSON(t, app, http.MethodGet, "/api/v1/component-updates/mihomo/config", token, nil)
+	for _, want := range []string{`"component":"mihomo"`, `"auto_check":false`, `"auto_update":true`, `"check_interval":43200`} {
+		if !strings.Contains(componentGet.Body.String(), want) {
+			t.Fatalf("component update config get missing %q: status=%d body=%s", want, componentGet.Code, componentGet.Body.String())
 		}
 	}
 }
@@ -728,6 +837,17 @@ func TestMosDNSClientProxyModeKeepsSingleClientIPList(t *testing.T) {
 	}
 	if !strings.Contains(string(listFile), "192.168.10.90") {
 		t.Fatalf("client_ip.txt should remain available while mode is off: %s", string(listFile))
+	}
+	switch2, err = os.ReadFile(filepath.Join(app.DataDir, "configs/mosdns/rule/switch2.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	switch12, err = os.ReadFile(filepath.Join(app.DataDir, "configs/mosdns/rule/switch12.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(switch2)) != "B" || strings.TrimSpace(string(switch12)) != "B" {
+		t.Fatalf("off mode should set switch2=B switch12=B, got switch2=%q switch12=%q", string(switch2), string(switch12))
 	}
 	white := requestJSON(t, app, http.MethodPost, "/api/v1/mosdns/client-proxy-mode", token, map[string]string{"mode": "white"})
 	if white.Code != http.StatusOK {
@@ -1254,14 +1374,19 @@ func TestBasicManagementUsersTokensSettingsAndDiagnostics(t *testing.T) {
 		t.Fatalf("diagnostics download mismatch: status=%d headers=%v", diagDownload.Code, diagDownload.Header())
 	}
 	setup := requestJSON(t, app, http.MethodPut, "/api/v1/setup/config", token, map[string]any{
-		"username":           "root",
-		"selected_interface": "eth0",
-		"subscription_urls":  "imm|https://example.com/sub.yaml",
-		"proxy_core":         "mihomo",
-		"mos_dns_enabled":    true,
-		"auto_set_dns":       false,
-		"enable_ipv6":        false,
-		"mihomo_proxies":     "trojan://pass@example.org:443?sni=example.org#manual-node",
+		"username":                   "root",
+		"selected_interface":         "eth0",
+		"subscription_urls":          "imm|https://example.com/sub.yaml",
+		"proxy_core":                 "mihomo",
+		"mos_dns_enabled":            true,
+		"auto_set_dns":               false,
+		"enable_ipv6":                false,
+		"mihomo_proxies":             "trojan://pass@example.org:443?sni=example.org#manual-node",
+		"github_proxy_enabled":       true,
+		"github_https_proxy":         "http://127.0.0.1:7890",
+		"github_socks5_proxy":        "socks5://127.0.0.1:7891",
+		"github_accelerator_enabled": true,
+		"github_accelerator_url":     "https://gh-proxy.com",
 	})
 	if setup.Code != http.StatusOK || !strings.Contains(setup.Body.String(), "network_reapply_required") || !strings.Contains(setup.Body.String(), "download_component") {
 		t.Fatalf("setup config compatibility response mismatch: status=%d body=%s", setup.Code, setup.Body.String())
@@ -1286,6 +1411,9 @@ func TestBasicManagementUsersTokensSettingsAndDiagnostics(t *testing.T) {
 	}
 	if !strings.Contains(fmtAny(data["subscription_urls"]), "imm|https://example.com/sub.yaml") || !strings.Contains(fmtAny(data["mihomo_proxies"]), "manual-node") {
 		t.Fatalf("setup config should preserve subscription and manual node text: %#v", data)
+	}
+	if data["github_proxy_enabled"] != true || data["github_https_proxy"] != "http://127.0.0.1:7890" || data["github_socks5_proxy"] != "socks5://127.0.0.1:7891" || data["github_accelerator_enabled"] != true || data["github_accelerator_url"] != "https://gh-proxy.com" {
+		t.Fatalf("setup config should preserve github download options: %#v", data)
 	}
 	manualProvider, err := os.ReadFile(filepath.Join(app.DataDir, "configs/mihomo/proxy_providers/msm_manual.yaml"))
 	if err != nil {

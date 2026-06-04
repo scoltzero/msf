@@ -1,7 +1,10 @@
 package server
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"net"
 	"net/netip"
 	"net/url"
 	"os"
@@ -622,7 +625,11 @@ func defaultMosDNSSwitchStates() map[string]bool {
 func parseSubscriptionProviders(input string) map[string]string {
 	out := map[string]string{}
 	idx := 0
-	for _, item := range strings.Fields(input) {
+	normalized, err := normalizeSubscriptionURLsValue(input)
+	if err != nil {
+		return out
+	}
+	for _, item := range strings.Fields(normalized) {
 		item = strings.TrimSpace(item)
 		if item == "" {
 			continue
@@ -641,6 +648,127 @@ func parseSubscriptionProviders(input string) map[string]string {
 		}
 	}
 	return out
+}
+
+func normalizeSubscriptionURLsValue(value any) (string, error) {
+	switch v := value.(type) {
+	case nil:
+		return "", nil
+	case []any:
+		return normalizeSubscriptionURLItems(v)
+	case []string:
+		items := make([]any, 0, len(v))
+		for _, item := range v {
+			items = append(items, item)
+		}
+		return normalizeSubscriptionURLItems(items)
+	case map[string]any:
+		return normalizeSubscriptionURLItems([]any{v})
+	case string:
+		return normalizeSubscriptionURLString(v)
+	default:
+		return normalizeSubscriptionURLString(fmtAny(v))
+	}
+}
+
+func normalizeSubscriptionURLString(input string) (string, error) {
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return "", nil
+	}
+	if strings.HasPrefix(input, "[") {
+		var items []any
+		if err := json.Unmarshal([]byte(input), &items); err == nil {
+			return normalizeSubscriptionURLItems(items)
+		}
+	}
+	if strings.HasPrefix(input, "{") {
+		var item map[string]any
+		if err := json.Unmarshal([]byte(input), &item); err == nil {
+			return normalizeSubscriptionURLItems([]any{item})
+		}
+	}
+	items := make([]any, 0)
+	for _, item := range strings.Fields(input) {
+		items = append(items, item)
+	}
+	return normalizeSubscriptionURLItems(items)
+}
+
+func normalizeSubscriptionURLItems(items []any) (string, error) {
+	rows := make([]string, 0, len(items))
+	for _, raw := range items {
+		row, err := normalizeSubscriptionURLItem(raw)
+		if err != nil {
+			return "", err
+		}
+		if row != "" {
+			rows = append(rows, row)
+		}
+	}
+	return strings.Join(rows, "\n"), nil
+}
+
+func normalizeSubscriptionURLItem(raw any) (string, error) {
+	switch v := raw.(type) {
+	case nil:
+		return "", nil
+	case string:
+		return normalizeSubscriptionURLToken(v)
+	case map[string]any:
+		tag := firstSubscriptionString(v, "tag", "name", "label", "title")
+		rawURL := firstSubscriptionString(v, "url", "subscription_url", "subscriptionURL", "href")
+		return formatSubscriptionURLRow(tag, rawURL)
+	default:
+		return normalizeSubscriptionURLToken(fmtAny(v))
+	}
+}
+
+func normalizeSubscriptionURLToken(token string) (string, error) {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return "", nil
+	}
+	tag, rawURL := "", token
+	if strings.Contains(token, "|") {
+		parts := strings.SplitN(token, "|", 2)
+		tag = strings.TrimSpace(parts[0])
+		rawURL = strings.TrimSpace(parts[1])
+	}
+	return formatSubscriptionURLRow(tag, rawURL)
+}
+
+func formatSubscriptionURLRow(tag, rawURL string) (string, error) {
+	tag = cleanSubscriptionTag(tag)
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		return "", nil
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Host == "" || !oneOf(strings.ToLower(u.Scheme), "http", "https") {
+		return "", fmt.Errorf("invalid subscription url")
+	}
+	if tag == "" {
+		return rawURL, nil
+	}
+	return tag + "|" + rawURL, nil
+}
+
+func firstSubscriptionString(values map[string]any, keys ...string) string {
+	for _, key := range keys {
+		if value, ok := values[key]; ok {
+			return strings.TrimSpace(fmtAny(value))
+		}
+	}
+	return ""
+}
+
+func cleanSubscriptionTag(tag string) string {
+	tag = strings.TrimSpace(tag)
+	tag = strings.ReplaceAll(tag, "|", "-")
+	tag = strings.ReplaceAll(tag, "\r", " ")
+	tag = strings.ReplaceAll(tag, "\n", " ")
+	return strings.Join(strings.Fields(tag), " ")
 }
 
 func hasMihomoManualProxies(input string) bool {
@@ -685,18 +813,173 @@ func parseMihomoManualProxyLinks(input string) []map[string]any {
 }
 
 func parseMihomoManualProxyLink(raw string) (map[string]any, bool) {
-	u, err := url.Parse(strings.TrimSpace(raw))
+	raw = strings.TrimSpace(raw)
+	u, err := url.Parse(raw)
 	if err != nil {
 		return nil, false
 	}
 	switch strings.ToLower(u.Scheme) {
+	case "ss", "shadowsocks":
+		return parseSSProxyLink(raw, u)
+	case "ssr":
+		return parseSSRProxyLink(raw, u)
+	case "vmess":
+		return parseVMessProxyLink(raw, u)
 	case "vless":
 		return parseVLESSProxyLink(u)
 	case "trojan":
 		return parseTrojanProxyLink(u)
+	case "hysteria", "hy":
+		return parseHysteriaProxyLink(u, "hysteria")
+	case "hysteria2", "hy2":
+		return parseHysteriaProxyLink(u, "hysteria2")
+	case "tuic":
+		return parseTUICProxyLink(u)
 	default:
 		return nil, false
 	}
+}
+
+func parseSSProxyLink(raw string, u *url.URL) (map[string]any, bool) {
+	server := u.Hostname()
+	port := parseProxyPort(u.Port(), 0)
+	auth := u.User.Username()
+	if password, ok := u.User.Password(); ok {
+		auth = auth + ":" + password
+	}
+	if decoded, ok := decodeProxyBase64(auth); ok {
+		auth = decoded
+	}
+	if server == "" || port <= 0 || !strings.Contains(auth, ":") {
+		payload := strings.TrimPrefix(raw, "ss://")
+		if hash := strings.Index(payload, "#"); hash >= 0 {
+			payload = payload[:hash]
+		}
+		if query := strings.Index(payload, "?"); query >= 0 {
+			payload = payload[:query]
+		}
+		if at := strings.LastIndex(payload, "@"); at >= 0 {
+			auth = payload[:at]
+			hostPort := payload[at+1:]
+			if decoded, ok := decodeProxyBase64(auth); ok {
+				auth = decoded
+			}
+			server, port = splitProxyHostPort(hostPort, 8388)
+		} else if decoded, ok := decodeProxyBase64(payload); ok {
+			if at := strings.LastIndex(decoded, "@"); at >= 0 {
+				auth = decoded[:at]
+				server, port = splitProxyHostPort(decoded[at+1:], 8388)
+			}
+		}
+	}
+	method, password, ok := strings.Cut(auth, ":")
+	if !ok || server == "" || port <= 0 || method == "" || password == "" {
+		return nil, false
+	}
+	return map[string]any{
+		"name":     manualProxyName(u.Fragment, server),
+		"type":     "ss",
+		"server":   server,
+		"port":     port,
+		"cipher":   method,
+		"password": password,
+		"udp":      true,
+	}, true
+}
+
+func parseSSRProxyLink(raw string, u *url.URL) (map[string]any, bool) {
+	payload := strings.TrimPrefix(raw, "ssr://")
+	if decoded, ok := decodeProxyBase64(payload); ok {
+		payload = decoded
+	}
+	mainPart, queryPart, _ := strings.Cut(payload, "/?")
+	parts := strings.Split(mainPart, ":")
+	if len(parts) < 6 {
+		return nil, false
+	}
+	port := parseProxyPort(parts[1], 0)
+	password, _ := decodeProxyBase64(parts[5])
+	if password == "" {
+		password = parts[5]
+	}
+	q, _ := url.ParseQuery(queryPart)
+	remarks, _ := decodeProxyBase64(q.Get("remarks"))
+	name := manualProxyName(u.Fragment, firstNonEmpty(remarks, parts[0]))
+	proxy := map[string]any{
+		"name":     name,
+		"type":     "ssr",
+		"server":   parts[0],
+		"port":     port,
+		"protocol": parts[2],
+		"cipher":   parts[3],
+		"obfs":     parts[4],
+		"password": password,
+		"udp":      true,
+	}
+	if protocolParam, ok := decodeProxyBase64(q.Get("protoparam")); ok && protocolParam != "" {
+		proxy["protocol-param"] = protocolParam
+	}
+	if obfsParam, ok := decodeProxyBase64(q.Get("obfsparam")); ok && obfsParam != "" {
+		proxy["obfs-param"] = obfsParam
+	}
+	return proxy, parts[0] != "" && port > 0 && password != ""
+}
+
+func parseVMessProxyLink(raw string, u *url.URL) (map[string]any, bool) {
+	payload := strings.TrimPrefix(raw, "vmess://")
+	decoded, ok := decodeProxyBase64(payload)
+	if !ok {
+		return nil, false
+	}
+	var data map[string]any
+	if err := json.Unmarshal([]byte(decoded), &data); err != nil {
+		return nil, false
+	}
+	server := stringAny(data["add"])
+	port := parseProxyPort(stringAny(data["port"]), 443)
+	uuid := stringAny(data["id"])
+	if server == "" || port <= 0 || uuid == "" {
+		return nil, false
+	}
+	network := firstNonEmpty(stringAny(data["net"]), "tcp")
+	proxy := map[string]any{
+		"name":    manualProxyName(u.Fragment, firstNonEmpty(stringAny(data["ps"]), server)),
+		"type":    "vmess",
+		"server":  server,
+		"port":    port,
+		"uuid":    uuid,
+		"alterId": intStringAny(data["aid"], 0),
+		"cipher":  firstNonEmpty(stringAny(data["scy"]), "auto"),
+		"network": network,
+		"udp":     true,
+	}
+	if tls := strings.ToLower(stringAny(data["tls"])); tls == "tls" || tls == "true" {
+		proxy["tls"] = true
+	}
+	if sni := firstNonEmpty(stringAny(data["sni"]), stringAny(data["host"])); sni != "" {
+		proxy["servername"] = sni
+	}
+	if fp := stringAny(data["fp"]); fp != "" {
+		proxy["client-fingerprint"] = fp
+	}
+	switch strings.ToLower(network) {
+	case "ws":
+		opts := map[string]any{}
+		if path := stringAny(data["path"]); path != "" {
+			opts["path"] = path
+		}
+		if host := stringAny(data["host"]); host != "" {
+			opts["headers"] = map[string]any{"Host": host}
+		}
+		if len(opts) > 0 {
+			proxy["ws-opts"] = opts
+		}
+	case "grpc":
+		if serviceName := stringAny(data["path"]); serviceName != "" {
+			proxy["grpc-opts"] = map[string]any{"grpc-service-name": serviceName}
+		}
+	}
+	return proxy, true
 }
 
 func parseVLESSProxyLink(u *url.URL) (map[string]any, bool) {
@@ -780,6 +1063,76 @@ func parseTrojanProxyLink(u *url.URL) (map[string]any, bool) {
 	return proxy, true
 }
 
+func parseHysteriaProxyLink(u *url.URL, proxyType string) (map[string]any, bool) {
+	server := u.Hostname()
+	port := parseProxyPort(u.Port(), 443)
+	password := u.User.Username()
+	if server == "" || port <= 0 || password == "" {
+		return nil, false
+	}
+	q := u.Query()
+	proxy := map[string]any{
+		"name":     manualProxyName(u.Fragment, server),
+		"type":     proxyType,
+		"server":   server,
+		"port":     port,
+		"password": password,
+		"udp":      true,
+	}
+	if proxyType == "hysteria" {
+		proxy["auth-str"] = password
+		delete(proxy, "password")
+	}
+	if sni := firstNonEmpty(q.Get("sni"), q.Get("peer")); sni != "" {
+		proxy["sni"] = sni
+	}
+	if insecure := firstNonEmpty(q.Get("insecure"), q.Get("allowInsecure"), q.Get("skip-cert-verify")); insecure != "" {
+		proxy["skip-cert-verify"] = insecure == "1" || strings.EqualFold(insecure, "true")
+	}
+	if obfs := q.Get("obfs"); obfs != "" {
+		proxy["obfs"] = obfs
+	}
+	if obfsPassword := firstNonEmpty(q.Get("obfs-password"), q.Get("obfs_password"), q.Get("obfsParam")); obfsPassword != "" {
+		proxy["obfs-password"] = obfsPassword
+	}
+	if alpn := q.Get("alpn"); alpn != "" {
+		proxy["alpn"] = strings.Split(alpn, ",")
+	}
+	return proxy, true
+}
+
+func parseTUICProxyLink(u *url.URL) (map[string]any, bool) {
+	server := u.Hostname()
+	port := parseProxyPort(u.Port(), 443)
+	uuid := u.User.Username()
+	password, _ := u.User.Password()
+	if server == "" || port <= 0 || uuid == "" || password == "" {
+		return nil, false
+	}
+	q := u.Query()
+	proxy := map[string]any{
+		"name":                  manualProxyName(u.Fragment, server),
+		"type":                  "tuic",
+		"server":                server,
+		"port":                  port,
+		"uuid":                  uuid,
+		"password":              password,
+		"congestion-controller": firstNonEmpty(q.Get("congestion_control"), q.Get("congestion-controller"), "bbr"),
+		"udp-relay-mode":        firstNonEmpty(q.Get("udp_relay_mode"), q.Get("udp-relay-mode"), "native"),
+		"udp":                   true,
+	}
+	if sni := q.Get("sni"); sni != "" {
+		proxy["sni"] = sni
+	}
+	if insecure := firstNonEmpty(q.Get("allowInsecure"), q.Get("skip-cert-verify")); insecure != "" {
+		proxy["skip-cert-verify"] = insecure == "1" || strings.EqualFold(insecure, "true")
+	}
+	if alpn := q.Get("alpn"); alpn != "" {
+		proxy["alpn"] = strings.Split(alpn, ",")
+	}
+	return proxy, true
+}
+
 func applyTransportOptions(proxy map[string]any, network string, q url.Values) {
 	switch strings.ToLower(network) {
 	case "ws":
@@ -800,6 +1153,52 @@ func applyTransportOptions(proxy map[string]any, network string, q url.Values) {
 	}
 }
 
+func decodeProxyBase64(raw string) (string, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", false
+	}
+	if decoded, err := url.QueryUnescape(raw); err == nil {
+		raw = decoded
+	}
+	raw = strings.TrimRight(raw, "\n\r")
+	encodings := []*base64.Encoding{
+		base64.RawURLEncoding,
+		base64.URLEncoding,
+		base64.RawStdEncoding,
+		base64.StdEncoding,
+	}
+	for _, encoding := range encodings {
+		if b, err := encoding.DecodeString(raw); err == nil {
+			return string(b), true
+		}
+	}
+	padded := raw
+	if remainder := len(padded) % 4; remainder != 0 {
+		padded += strings.Repeat("=", 4-remainder)
+	}
+	for _, encoding := range []*base64.Encoding{base64.URLEncoding, base64.StdEncoding} {
+		if b, err := encoding.DecodeString(padded); err == nil {
+			return string(b), true
+		}
+	}
+	return "", false
+}
+
+func splitProxyHostPort(raw string, fallbackPort int) (string, int) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", 0
+	}
+	if host, port, err := net.SplitHostPort(raw); err == nil {
+		return strings.Trim(host, "[]"), parseProxyPort(port, fallbackPort)
+	}
+	if colon := strings.LastIndex(raw, ":"); colon > 0 {
+		return strings.Trim(raw[:colon], "[]"), parseProxyPort(raw[colon+1:], fallbackPort)
+	}
+	return strings.Trim(raw, "[]"), fallbackPort
+}
+
 func parseProxyPort(raw string, fallback int) int {
 	if raw == "" {
 		return fallback
@@ -809,6 +1208,40 @@ func parseProxyPort(raw string, fallback int) int {
 		return fallback
 	}
 	return port
+}
+
+func stringAny(value any) string {
+	if value == nil {
+		return ""
+	}
+	switch v := value.(type) {
+	case string:
+		return strings.TrimSpace(v)
+	case json.Number:
+		return v.String()
+	case float64:
+		return strconv.Itoa(int(v))
+	case int:
+		return strconv.Itoa(v)
+	default:
+		return strings.TrimSpace(fmt.Sprint(v))
+	}
+}
+
+func intStringAny(value any, fallback int) int {
+	switch v := value.(type) {
+	case string:
+		return parseProxyPort(v, fallback)
+	case json.Number:
+		if i, err := strconv.Atoi(v.String()); err == nil {
+			return i
+		}
+	case float64:
+		return int(v)
+	case int:
+		return v
+	}
+	return fallback
 }
 
 func manualProxyName(fragment, fallback string) string {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode, type SelectHTMLAttributes } from "react";
 import {
   Check,
   Code2,
@@ -98,6 +98,22 @@ interface ComponentUpdateState {
   progress?: number;
   error_message?: string;
   last_check_time?: string;
+}
+
+interface UpdateConfigState {
+  auto_check: boolean;
+  check_interval: number;
+  auto_update: boolean;
+  notify: boolean;
+  mosdns_upgrade_mode: "full" | "incremental" | "reset";
+  mihomo_upgrade_mode: "skip" | "full";
+}
+
+interface ComponentUpdateConfigState {
+  component: string;
+  auto_check: boolean;
+  check_interval: number;
+  auto_update: boolean;
 }
 
 interface ProfileInfo {
@@ -241,27 +257,71 @@ const defaultInitConfig: InitConfigState = {
     "proxies:\n  - name: placeholder-node-1\n    type: vless\n    server: 198.51.100.10\n    port: 28578\n    uuid: 00000000-0000-4000-8000-000000000000\n    network: tcp\n    tls: true\n    reality-opts:\n      public-key: xxx\n  - name: placeholder-node-2\n    type: vless\n    server: 203.0.113.10\n    port: 11451",
 };
 
-function parseListValue(value: unknown): string[] {
-  if (Array.isArray(value)) return value.map(String).filter(Boolean);
+const defaultUpdateConfig: UpdateConfigState = {
+  auto_check: true,
+  check_interval: 43200,
+  auto_update: false,
+  notify: true,
+  mosdns_upgrade_mode: "full",
+  mihomo_upgrade_mode: "skip",
+};
+
+function parseSubscriptionValue(value: unknown): SubscriptionRow[] {
+  if (Array.isArray(value)) {
+    return value.flatMap((item, index) => subscriptionRowFromUnknown(item, index));
+  }
   if (typeof value !== "string") return [];
   const trimmed = value.trim();
   if (!trimmed) return [];
   try {
     const parsed = JSON.parse(trimmed);
-    if (Array.isArray(parsed)) return parsed.map(String).filter(Boolean);
+    if (Array.isArray(parsed)) return parsed.flatMap((item, index) => subscriptionRowFromUnknown(item, index));
   } catch {
     // Fall back to line-based input below.
   }
-  return trimmed.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  return trimmed.split(/\s+/).flatMap((line, index) => subscriptionRowFromUnknown(line, index));
+}
+
+function subscriptionRowFromUnknown(value: unknown, index: number): SubscriptionRow[] {
+  if (!value) return [];
+  if (typeof value === "object" && !Array.isArray(value)) {
+    const data = value as Record<string, unknown>;
+    const url = String(data.url || data.subscription_url || data.subscriptionURL || "").trim();
+    if (!url) return [];
+    return [{
+      id: `sub-${index + 1}`,
+      name: String(data.name || data.tag || data.label || `订阅${index + 1}`).trim() || `订阅${index + 1}`,
+      url,
+    }];
+  }
+  const token = String(value).trim();
+  if (!token) return [];
+  const [rawName, ...rest] = token.split("|");
+  const hasName = rest.length > 0;
+  const url = hasName ? rest.join("|").trim() : token;
+  if (!url) return [];
+  return [{
+    id: `sub-${index + 1}`,
+    name: hasName && rawName.trim() ? rawName.trim() : `订阅${index + 1}`,
+    url,
+  }];
+}
+
+function serializeSubscriptions(rows: SubscriptionRow[]) {
+  return rows
+    .map((item) => {
+      const url = item.url.trim();
+      if (!url) return "";
+      const name = item.name.trim().replace(/\|/g, "-");
+      return name ? `${name}|${url}` : url;
+    })
+    .filter(Boolean)
+    .join("\n");
 }
 
 function setupToInitConfig(raw: any): InitConfigState {
   const data = raw && typeof raw === "object" ? raw : {};
-  const subscriptions = parseListValue(data.subscription_urls || data.subscriptionURLs).map((url, index) => ({
-    id: `sub-${index + 1}`,
-    name: `订阅${index + 1}`,
-    url,
-  }));
+  const subscriptions = parseSubscriptionValue(data.subscription_urls || data.subscriptionURLs);
   const mihomoProxies = String(data.mihomo_proxies || data.mihomoProxies || "");
   const shareNodes = mihomoProxies && !mihomoProxies.trim().startsWith("proxies:")
     ? mihomoProxies.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
@@ -290,7 +350,7 @@ function initConfigToSetupPayload(config: InitConfigState) {
     dns_on: config.dnsEnable,
     dns_off: config.dnsDisable,
     enable_ipv6: config.ipv6,
-    subscription_urls: JSON.stringify(config.subscriptions.map((item) => item.url).filter(Boolean)),
+    subscription_urls: serializeSubscriptions(config.subscriptions),
     mihomo_proxies: config.nodeMode === "yaml" ? config.yamlNodes : config.shareNodes.filter(Boolean).join("\n"),
   };
 }
@@ -1126,32 +1186,50 @@ function UpdateConfigRow({
   );
 }
 
-function SmallSelect({ children, className, disabled = false }: { children: ReactNode; className?: string; disabled?: boolean }) {
-  return <select disabled={disabled} className={cn(inputClass, "h-[27px] w-24 py-1 text-xs disabled:opacity-50", className)}>{children}</select>;
+function SmallSelect({ children, className, disabled = false, ...props }: SelectHTMLAttributes<HTMLSelectElement> & { children: ReactNode }) {
+  return (
+    <select
+      {...props}
+      disabled={disabled}
+      className={cn(inputClass, "h-[27px] w-24 py-1 text-xs disabled:opacity-50", className)}
+    >
+      {children}
+    </select>
+  );
 }
+
+const updateIntervals = [
+  { value: 43200, label: "12 小时" },
+  { value: 86400, label: "24 小时" },
+  { value: 259200, label: "3 天" },
+  { value: 604800, label: "7 天" },
+];
 
 function ComponentUpdateCard({
   name,
   component,
   item,
+  config,
   busy,
   onCheck,
   onUpdate,
+  onConfigChange,
 }: {
   name: string;
   component: string;
   item?: ComponentUpdateState;
+  config?: ComponentUpdateConfigState;
   busy?: string;
   onCheck: (component: string) => void;
   onUpdate: (component: string) => void;
+  onConfigChange: (component: string, patch: Partial<ComponentUpdateConfigState>) => void;
 }) {
-  const [autoCheck, setAutoCheck] = useState(true);
-  const [autoUpdate, setAutoUpdate] = useState(false);
   const current = item?.current_version || "-";
   const latest = item?.latest_version || "-";
-  const canUpdate = Boolean(item?.has_update || (current !== "-" && latest !== "-" && current !== latest));
+  const canUpdate = Boolean(item?.has_update);
   const isBusy = busy === component;
   const progress = typeof item?.progress === "number" ? item.progress : 0;
+  const effectiveConfig = config || { component, auto_check: true, check_interval: 43200, auto_update: false };
 
   return (
     <div className="rounded-xl border border-border/50 p-4">
@@ -1171,7 +1249,7 @@ function ComponentUpdateCard({
             <RefreshCw className={cn("h-3.5 w-3.5", isBusy && "animate-spin")} />
             检查更新
           </OutlineButton>
-          <PrimaryButton disabled={isBusy || latest === "-"} onClick={() => onUpdate(component)} className="h-8 min-w-[52px] px-3 text-xs">
+          <PrimaryButton disabled={isBusy || !canUpdate || latest === "-"} onClick={() => onUpdate(component)} className="h-8 min-w-[52px] px-3 text-xs">
             更新
           </PrimaryButton>
         </div>
@@ -1201,19 +1279,20 @@ function ComponentUpdateCard({
       </div>
       <div className="mt-4 space-y-3">
         <UpdateConfigRow title="自动检查" description="定期检查是否有新版本可用">
-          <Toggle checked={autoCheck} onChange={setAutoCheck} disabled />
+          <Toggle checked={effectiveConfig.auto_check} onChange={(checked) => onConfigChange(component, { auto_check: checked })} />
         </UpdateConfigRow>
         <UpdateConfigRow title="检查间隔" description="设置检查更新的时间间隔">
-          <SmallSelect disabled>
-            <option>12 小时</option>
-            <option>1 天</option>
-            <option>3 天</option>
-            <option>7 天</option>
-            <option>自定义</option>
+          <SmallSelect
+            value={String(effectiveConfig.check_interval)}
+            onChange={(event) => onConfigChange(component, { check_interval: Number(event.target.value) })}
+          >
+            {updateIntervals.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
           </SmallSelect>
         </UpdateConfigRow>
         <UpdateConfigRow title="自动更新" description="检测到新版本后自动下载">
-          <Toggle checked={autoUpdate} onChange={setAutoUpdate} disabled />
+          <Toggle checked={effectiveConfig.auto_update} onChange={(checked) => onConfigChange(component, { auto_update: checked })} />
         </UpdateConfigRow>
       </div>
     </div>
@@ -1223,21 +1302,20 @@ function ComponentUpdateCard({
 function UpdateTab({ showToast }: { showToast: (message: string) => void }) {
   const [checking, setChecking] = useState(false);
   const [loadingReleases, setLoadingReleases] = useState(false);
-  const [autoCheck, setAutoCheck] = useState(true);
-  const [autoDownload, setAutoDownload] = useState(false);
-  const [notify, setNotify] = useState(true);
+  const [updateConfig, setUpdateConfig] = useState<UpdateConfigState>(defaultUpdateConfig);
   const [releaseModal, setReleaseModal] = useState<string | null>(null);
   const [versionInfo, setVersionInfo] = useState<VersionInfo>({});
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({});
   const [releases, setReleases] = useState<ReleaseItem[]>([]);
   const [componentUpdates, setComponentUpdates] = useState<ComponentUpdateState[]>([]);
+  const [componentConfigs, setComponentConfigs] = useState<Record<string, ComponentUpdateConfigState>>({});
   const [componentBusy, setComponentBusy] = useState("");
   const [repoError, setRepoError] = useState("");
 
   const latestRelease = releases[0];
   const currentVersion = updateStatus.current_version || versionInfo.version || "-";
   const latestVersion = latestRelease ? releaseTitle(latestRelease) : updateStatus.latest_version || "-";
-  const hasUpdate = Boolean(updateStatus.has_update || (currentVersion !== "-" && latestVersion !== "-" && currentVersion !== latestVersion));
+  const hasUpdate = Boolean(updateStatus.has_update);
   const selectedRelease = useMemo(
     () =>
       releases.find((release, index) => {
@@ -1252,22 +1330,31 @@ function UpdateTab({ showToast }: { showToast: (message: string) => void }) {
     setLoadingReleases(true);
     setRepoError("");
     const failures: string[] = [];
+    let checkedStatus: UpdateStatus | null = null;
+    let autoDownloadStarted = false;
 
     if (checkRemote) {
       try {
         const payload = await api<any>("/api/v1/update/check", { method: "POST" });
         const data = apiData<UpdateStatus>(payload, {});
+        checkedStatus = data;
         setUpdateStatus(data);
+        if (data.has_update && updateConfig.auto_update) {
+          await api("/api/v1/update/download", { method: "POST" });
+          autoDownloadStarted = true;
+        }
       } catch (err) {
         failures.push(errorMessage(err));
       }
     }
 
-    const [versionResult, statusResult, releasesResult, componentResult] = await Promise.allSettled([
+    const [versionResult, statusResult, releasesResult, componentResult, configResult, componentConfigResult] = await Promise.allSettled([
       api<any>("/api/v1/version"),
       api<any>("/api/v1/update/status"),
       api<any>("/api/v1/update/releases"),
       api<any>("/api/v1/component-updates"),
+      api<any>("/api/v1/update/config"),
+      Promise.all(["mosdns", "mihomo", "zashboard"].map((component) => api<any>(`/api/v1/component-updates/${component}/config`))),
     ]);
 
     if (versionResult.status === "fulfilled") {
@@ -1294,9 +1381,30 @@ function UpdateTab({ showToast }: { showToast: (message: string) => void }) {
       failures.push(errorMessage(componentResult.reason));
     }
 
+    if (configResult.status === "fulfilled") {
+      setUpdateConfig({ ...defaultUpdateConfig, ...apiData<UpdateConfigState>(configResult.value, defaultUpdateConfig) });
+    } else {
+      failures.push(errorMessage(configResult.reason));
+    }
+
+    if (componentConfigResult.status === "fulfilled") {
+      const nextConfigs: Record<string, ComponentUpdateConfigState> = {};
+      for (const payload of componentConfigResult.value) {
+        const data = apiData<ComponentUpdateConfigState>(payload, {} as ComponentUpdateConfigState);
+        if (data.component) nextConfigs[data.component] = data;
+      }
+      setComponentConfigs(nextConfigs);
+    } else {
+      failures.push(errorMessage(componentConfigResult.reason));
+    }
+
     if (failures.length > 0) {
       setRepoError(failures[0]);
       if (checkRemote) showToast(`检查更新失败: ${failures[0]}`);
+    } else if (checkRemote && autoDownloadStarted) {
+      showToast("检测到新版本，已开始自动下载");
+    } else if (checkRemote && checkedStatus?.has_update && updateConfig.notify) {
+      showToast("检测到新版本可用");
     } else if (checkRemote) {
       showToast("已检查更新");
     }
@@ -1309,8 +1417,50 @@ function UpdateTab({ showToast }: { showToast: (message: string) => void }) {
     void loadUpdateData();
   }, []);
 
+  useEffect(() => {
+    if (!updateConfig.auto_check) return;
+    const intervalSeconds = Math.max(60, updateConfig.check_interval || defaultUpdateConfig.check_interval);
+    const timer = window.setInterval(() => {
+      void loadUpdateData(true);
+    }, intervalSeconds * 1000);
+    return () => window.clearInterval(timer);
+  }, [updateConfig.auto_check, updateConfig.auto_update, updateConfig.check_interval, updateConfig.notify]);
+
   const checkUpdates = () => {
     void loadUpdateData(true);
+  };
+
+  const saveUpdateConfig = async (patch: Partial<UpdateConfigState>) => {
+    const next = { ...updateConfig, ...patch };
+    setUpdateConfig(next);
+    try {
+      const payload = await api<any>("/api/v1/update/config", {
+        method: "PUT",
+        body: JSON.stringify(next),
+      });
+      setUpdateConfig({ ...defaultUpdateConfig, ...apiData<UpdateConfigState>(payload, next) });
+      showToast("更新配置已保存");
+    } catch (err) {
+      setUpdateConfig(updateConfig);
+      showToast(`保存更新配置失败: ${errorMessage(err)}`);
+    }
+  };
+
+  const saveComponentConfig = async (component: string, patch: Partial<ComponentUpdateConfigState>) => {
+    const current = componentConfigs[component] || { component, auto_check: true, check_interval: 43200, auto_update: false };
+    const next = { ...current, ...patch, component };
+    setComponentConfigs((items) => ({ ...items, [component]: next }));
+    try {
+      const payload = await api<any>(`/api/v1/component-updates/${component}/config`, {
+        method: "PUT",
+        body: JSON.stringify(next),
+      });
+      setComponentConfigs((items) => ({ ...items, [component]: apiData<ComponentUpdateConfigState>(payload, next) }));
+      showToast(`${component} 更新配置已保存`);
+    } catch (err) {
+      setComponentConfigs((items) => ({ ...items, [component]: current }));
+      showToast(`${component} 更新配置保存失败: ${errorMessage(err)}`);
+    }
   };
 
   const downloadUpdate = async () => {
@@ -1334,8 +1484,15 @@ function UpdateTab({ showToast }: { showToast: (message: string) => void }) {
   const checkComponent = async (component: string) => {
     setComponentBusy(component);
     try {
-      await api(`/api/v1/component-updates/${component}/check`, { method: "POST" });
-      showToast(`${component} 已检查更新`);
+      const payload = await api<any>(`/api/v1/component-updates/${component}/check`, { method: "POST" });
+      const data = apiData<ComponentUpdateState>(payload, {});
+      const config = componentConfigs[component];
+      if (data.has_update && config?.auto_update) {
+        await api(`/api/v1/component-updates/${component}/update`, { method: "POST" });
+        showToast(`${component} 检测到更新，已自动执行更新任务`);
+      } else {
+        showToast(`${component} 已检查更新`);
+      }
       await reloadComponents();
     } catch (err) {
       showToast(`${component} 检查更新失败: ${errorMessage(err)}`);
@@ -1401,7 +1558,7 @@ function UpdateTab({ showToast }: { showToast: (message: string) => void }) {
                 <RefreshCw className={cn("h-3.5 w-3.5", checking && "animate-spin")} />
                 检查更新
               </OutlineButton>
-              <PrimaryButton onClick={downloadUpdate} disabled={checking || latestVersion === "-"} className="h-8 px-3 text-xs">
+              <PrimaryButton onClick={downloadUpdate} disabled={checking || !hasUpdate || latestVersion === "-"} className="h-8 px-3 text-xs">
                 <Download className="h-3.5 w-3.5" />
                 下载更新
               </PrimaryButton>
@@ -1436,37 +1593,43 @@ function UpdateTab({ showToast }: { showToast: (message: string) => void }) {
       <Card title="更新配置" Icon={Settings}>
         <div className="space-y-3">
           <UpdateConfigRow title="自动检查更新" description="定期检查是否有新版本可用">
-            <Toggle checked={autoCheck} onChange={setAutoCheck} disabled />
+            <Toggle checked={updateConfig.auto_check} onChange={(checked) => void saveUpdateConfig({ auto_check: checked })} />
           </UpdateConfigRow>
           <UpdateConfigRow title="检查间隔" description="设置检查更新的时间间隔">
-            <SmallSelect disabled>
-              <option>12 小时</option>
-              <option>24 小时</option>
-              <option>3 天</option>
-              <option>7 天</option>
-              <option>自定义</option>
+            <SmallSelect value={String(updateConfig.check_interval)} onChange={(event) => void saveUpdateConfig({ check_interval: Number(event.target.value) })}>
+              {updateIntervals.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
             </SmallSelect>
           </UpdateConfigRow>
           <UpdateConfigRow title="自动下载更新" description="检测到新版本后自动下载">
-            <Toggle checked={autoDownload} onChange={setAutoDownload} disabled />
+            <Toggle checked={updateConfig.auto_update} onChange={(checked) => void saveUpdateConfig({ auto_update: checked })} />
           </UpdateConfigRow>
           <UpdateConfigRow title="更新通知" description="有新版本时通知用户">
-            <Toggle checked={notify} onChange={setNotify} disabled />
+            <Toggle checked={updateConfig.notify} onChange={(checked) => void saveUpdateConfig({ notify: checked })} />
           </UpdateConfigRow>
           <UpdateConfigRow title="MosDNS 升级方式" description="默认推荐全量升级。">
-            <SmallSelect className="w-36" disabled>
-              <option>全量升级（推荐）</option>
-              <option>增量升级</option>
-              <option>重置升级（谨慎）</option>
+            <SmallSelect
+              className="w-36"
+              value={updateConfig.mosdns_upgrade_mode}
+              onChange={(event) => void saveUpdateConfig({ mosdns_upgrade_mode: event.target.value as UpdateConfigState["mosdns_upgrade_mode"] })}
+            >
+              <option value="full">全量升级（推荐）</option>
+              <option value="incremental">增量升级</option>
+              <option value="reset">重置升级（谨慎）</option>
             </SmallSelect>
           </UpdateConfigRow>
           <div className="rounded-lg border border-border/50 bg-muted/20 p-3 text-xs leading-relaxed text-muted-foreground">
             全量升级：保留系统里已保存的关键设置，其余按新模板覆盖；升级完成后会在 MosDNS 启动时自动回写这些设置。增量升级：尽量保留当前配置与规则，按升级规则补齐新文件。重置升级：完全放弃现有改动，全部使用新模板；仅在需要彻底重置时使用。
           </div>
           <UpdateConfigRow title="Mihomo 升级方式" description="不升级将完全保留当前配置；全量升级仅保留机场与 VPS 节点相关改动。">
-            <SmallSelect className="w-36" disabled>
-              <option>不升级（保留自定义）</option>
-              <option>全量升级（仅保留节点）</option>
+            <SmallSelect
+              className="w-36"
+              value={updateConfig.mihomo_upgrade_mode}
+              onChange={(event) => void saveUpdateConfig({ mihomo_upgrade_mode: event.target.value as UpdateConfigState["mihomo_upgrade_mode"] })}
+            >
+              <option value="skip">不升级（保留自定义）</option>
+              <option value="full">全量升级（仅保留节点）</option>
             </SmallSelect>
           </UpdateConfigRow>
           <div className="rounded-lg border border-border/50 bg-muted/20 p-3 text-xs leading-relaxed text-muted-foreground">
@@ -1478,9 +1641,9 @@ function UpdateTab({ showToast }: { showToast: (message: string) => void }) {
       <Card title="组件更新" Icon={Download}>
         <p className="mb-4 text-sm text-muted-foreground">组件更新管理</p>
         <div className="grid gap-4 lg:grid-cols-2">
-          <ComponentUpdateCard name="MosDNS" component="mosdns" item={componentItem("mosdns")} busy={componentBusy} onCheck={checkComponent} onUpdate={updateComponent} />
-          <ComponentUpdateCard name="Mihomo" component="mihomo" item={componentItem("mihomo")} busy={componentBusy} onCheck={checkComponent} onUpdate={updateComponent} />
-          <ComponentUpdateCard name="Zashboard" component="zashboard" item={componentItem("zashboard")} busy={componentBusy} onCheck={checkComponent} onUpdate={updateComponent} />
+          <ComponentUpdateCard name="MosDNS" component="mosdns" item={componentItem("mosdns")} config={componentConfigs.mosdns} busy={componentBusy} onCheck={checkComponent} onUpdate={updateComponent} onConfigChange={(item, patch) => void saveComponentConfig(item, patch)} />
+          <ComponentUpdateCard name="Mihomo" component="mihomo" item={componentItem("mihomo")} config={componentConfigs.mihomo} busy={componentBusy} onCheck={checkComponent} onUpdate={updateComponent} onConfigChange={(item, patch) => void saveComponentConfig(item, patch)} />
+          <ComponentUpdateCard name="Zashboard" component="zashboard" item={componentItem("zashboard")} config={componentConfigs.zashboard} busy={componentBusy} onCheck={checkComponent} onUpdate={updateComponent} onConfigChange={(item, patch) => void saveComponentConfig(item, patch)} />
         </div>
       </Card>
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ChevronUp, ChevronDown } from "lucide-react";
@@ -87,6 +87,17 @@ function NavGroup({ item, pathname }: { item: NavItem; pathname: string }) {
 
 export function Sidebar({ collapsed = false }: { collapsed?: boolean }) {
   const pathname = usePathname();
+  const navRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    const nav = navRef.current;
+    if (!nav) return;
+    const saved = Number(window.sessionStorage.getItem("msm-sidebar-scroll") || 0);
+    window.requestAnimationFrame(() => {
+      nav.scrollTop = saved;
+    });
+  }, [pathname]);
+
   return (
     <aside
       className={cn(
@@ -95,7 +106,13 @@ export function Sidebar({ collapsed = false }: { collapsed?: boolean }) {
       )}
     >
       <div className="flex flex-col h-full">
-        <nav className="flex-1 overflow-y-auto scrollbar-thin px-3 py-4 space-y-1">
+        <nav
+          ref={navRef}
+          onScroll={(event) => {
+            window.sessionStorage.setItem("msm-sidebar-scroll", String(event.currentTarget.scrollTop));
+          }}
+          className="flex-1 overflow-y-auto scrollbar-thin px-3 py-4 space-y-1"
+        >
           {navItems.map((item) =>
             item.children ? (
               <NavGroup key={item.href} item={item} pathname={pathname} />

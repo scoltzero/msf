@@ -156,14 +156,17 @@ func (a *App) downloadHTTPClient() *http.Client {
 
 func (a *App) downloadProxyURL() *url.URL {
 	var enabled bool
-	var httpsProxy, httpProxy sql.NullString
-	err := a.DB.QueryRow(`select github_proxy_enabled,github_https_proxy,github_http_proxy from system_setups order by id desc limit 1`).Scan(&enabled, &httpsProxy, &httpProxy)
+	var httpsProxy, httpProxy, socks5Proxy sql.NullString
+	err := a.DB.QueryRow(`select github_proxy_enabled,github_https_proxy,github_http_proxy,github_socks5_proxy from system_setups order by id desc limit 1`).Scan(&enabled, &httpsProxy, &httpProxy, &socks5Proxy)
 	if err != nil || !enabled {
 		return nil
 	}
 	raw := strings.TrimSpace(httpsProxy.String)
 	if raw == "" {
 		raw = strings.TrimSpace(httpProxy.String)
+	}
+	if raw == "" {
+		raw = strings.TrimSpace(socks5Proxy.String)
 	}
 	if raw == "" {
 		return nil
