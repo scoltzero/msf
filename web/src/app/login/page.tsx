@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Eye, EyeOff, Lock, LogIn, Network, Server, Shield, User } from "lucide-react";
+import { LoginLogoShowcase } from "@/components/login/LoginLogoShowcase";
 import { useAuth } from "@/lib/auth";
 
 const features = [
@@ -9,14 +10,7 @@ const features = [
   { icon: Network, label: "网络优化" },
 ];
 
-function LogoMark() {
-  return (
-    <div className="relative">
-      <div className="absolute inset-0 -m-5 rounded-full border-2 border-primary/20 animate-rotate-slow" />
-      <img src="/logo/logo-square.svg" alt="MSM" className="relative z-10 h-20 w-20 drop-shadow-2xl" />
-    </div>
-  );
-}
+const releaseVersion = "v 0.2.2";
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -50,19 +44,19 @@ export default function LoginPage() {
           <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary/40 rounded-full blur-3xl animate-pulse-subtle" />
           <div className="absolute bottom-1/4 right-1/4 w-80 h-80 bg-blue-400/30 rounded-full blur-3xl animate-pulse-subtle" />
         </div>
-        <div className="relative z-10 text-center space-y-8 max-w-lg">
-          <div className="flex justify-center">
-            <LogoMark />
+        <div className="relative z-10 text-center space-y-4 max-w-lg">
+          <div className="flex flex-col items-center gap-6">
+            <LoginLogoShowcase />
           </div>
           <div className="space-y-4 animate-fade-in">
             <h1 className="text-4xl xl:text-5xl font-bold text-slate-800 dark:text-slate-100">
-              MSM 管理平台
+              MSF 管理平台
             </h1>
             <p className="text-sm text-slate-500 dark:text-slate-500 max-w-md mx-auto">
               统一管理您的网络服务，提供 DNS 分流、代理管理等功能
             </p>
           </div>
-          <div className="flex justify-center gap-8 pt-8 opacity-70">
+          <div className="flex justify-center gap-8 pt-3 opacity-70">
             {features.map((feature) => {
               const Icon = feature.icon;
               return (
@@ -76,12 +70,21 @@ export default function LoginPage() {
             })}
           </div>
         </div>
+        <div
+          data-login-version
+          className="absolute bottom-8 left-1/2 -translate-x-1/2 text-xs text-slate-500 dark:text-slate-600"
+        >
+          {releaseVersion}
+        </div>
       </div>
 
       <div className="flex-1 flex items-center justify-center p-6 lg:p-12">
-        <div className="text-card-foreground w-full max-w-md animate-scale-in shadow-2xl border-0 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl rounded-3xl">
+        <div className="text-card-foreground w-full max-w-md animate-scale-in border-0 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl rounded-3xl shadow-none">
           <div className="p-8 pb-4">
-            <p className="text-base font-medium text-slate-600 dark:text-slate-400">欢迎使用 MSM</p>
+            <div className="mb-6 flex justify-center lg:hidden">
+              <LoginLogoShowcase compact />
+            </div>
+            <p className="text-base font-medium text-slate-600 dark:text-slate-400">欢迎使用 MSF</p>
           </div>
           <div className="px-8 pb-8">
             <form className="space-y-5" onSubmit={submit}>

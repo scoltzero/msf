@@ -1052,7 +1052,7 @@ func (a *App) handleMosDNSConfigUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer file.Close()
-	tmp, err := os.CreateTemp("", "msm-free-mosdns-*.zip")
+	tmp, err := os.CreateTemp("", "msf-mosdns-*.zip")
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "temp_failed", err.Error())
 		return

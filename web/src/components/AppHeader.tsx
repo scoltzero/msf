@@ -11,6 +11,7 @@ import {
   Monitor,
   Moon,
   PanelLeftClose,
+  PanelLeftOpen,
   Settings,
   Sun,
   User,
@@ -31,7 +32,7 @@ const languageOptions = ["简体中文", "English"];
 
 function getInitialTheme(): ThemeMode {
   if (typeof window === "undefined") return "system";
-  const stored = window.localStorage.getItem("msm-theme");
+  const stored = window.localStorage.getItem("msf-theme");
   if (stored === "light" || stored === "dark" || stored === "system") return stored;
   return "system";
 }
@@ -45,10 +46,10 @@ function applyTheme(mode: ThemeMode) {
   const shouldUseDark = mode === "dark" || (mode === "system" && prefersDarkMode());
   document.documentElement.classList.toggle("dark", shouldUseDark);
   document.documentElement.classList.toggle("light", !shouldUseDark);
-  window.localStorage.setItem("msm-theme", mode);
+  window.localStorage.setItem("msf-theme", mode);
 }
 
-export function AppHeader({ onToggleSidebar }: { onToggleSidebar?: () => void }) {
+export function AppHeader({ onToggleSidebar, sidebarCollapsed = false }: { onToggleSidebar?: () => void; sidebarCollapsed?: boolean }) {
   const router = useRouter();
   const { user, logout } = useAuth();
   const [theme, setTheme] = useState<ThemeMode>(() => getInitialTheme());
@@ -98,18 +99,18 @@ export function AppHeader({ onToggleSidebar }: { onToggleSidebar?: () => void })
         <button
           onClick={onToggleSidebar}
           className="mr-2 hidden rounded-[10px] p-2 transition-all hover:bg-accent/50 active:scale-95 md:mr-4 md:block"
-          title="折叠侧边栏"
-          aria-label="折叠侧边栏"
+          title={sidebarCollapsed ? "展开侧边栏" : "折叠侧边栏"}
+          aria-label={sidebarCollapsed ? "展开侧边栏" : "折叠侧边栏"}
         >
-          <PanelLeftClose className="h-5 w-5" />
+          {sidebarCollapsed ? <PanelLeftOpen className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
         </button>
 
         <div className="flex items-center gap-2 md:gap-3">
-          <div className="rounded-[10px] bg-gradient-to-br from-primary/10 to-secondary/10 p-1 md:p-1.5">
-            <Image alt="MSM" src="/logo/logo-square.svg" width={24} height={24} className="h-5 w-5 md:h-6 md:w-6" />
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-gradient-to-br from-primary/10 to-secondary/10 md:h-10 md:w-10">
+            <Image alt="MSF" src="/logo/logo-square.png" width={32} height={32} className="h-7 w-7 object-contain md:h-8 md:w-8" />
           </div>
           <span className="bg-gradient-to-r from-primary to-secondary bg-clip-text text-lg font-bold text-transparent md:text-xl">
-            MSM
+            MSF
           </span>
         </div>
 

@@ -13,12 +13,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-background">
-      <AppHeader onToggleSidebar={() => setCollapsed((v) => !v)} />
+      <AppHeader sidebarCollapsed={collapsed} onToggleSidebar={() => setCollapsed((v) => !v)} />
       <Sidebar collapsed={collapsed} />
       <main
         className={cn(
           "pt-14 md:pt-16 pb-20 md:pb-0 transition-all duration-300 min-h-screen",
-          collapsed ? "md:ml-0" : "md:ml-56"
+          collapsed ? "md:pl-20" : "md:pl-56"
         )}
       >
         <div className="w-full px-4 md:px-6 lg:px-8 xl:px-10 2xl:px-12 py-4 md:py-6">

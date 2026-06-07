@@ -99,8 +99,8 @@ func (a *App) ensureSetupProviderArtifacts(cfg SetupConfig) error {
 		return nil
 	}
 	if manual := renderMihomoManualProviderYAML(cfg.MihomoProxies); strings.TrimSpace(manual) != "" {
-		if old, err := a.readTextFile("configs/mihomo/proxy_providers/msm_manual.yaml"); err != nil || old != manual {
-			if err := a.writeTextFile("configs/mihomo/proxy_providers/msm_manual.yaml", manual); err != nil {
+		if old, err := a.readTextFile("configs/mihomo/proxy_providers/msf_manual.yaml"); err != nil || old != manual {
+			if err := a.writeTextFile("configs/mihomo/proxy_providers/msf_manual.yaml", manual); err != nil {
 				return err
 			}
 		}

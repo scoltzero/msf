@@ -61,7 +61,7 @@ func serveFrontendIndex(w http.ResponseWriter, fsys fs.FS) {
 		return
 	}
 	html := string(body)
-	if !strings.Contains(html, "msm-free-spa-recovery") {
+	if !strings.Contains(html, "msf-spa-recovery") {
 		if strings.Contains(html, "</head>") {
 			html = strings.Replace(html, "</head>", frontendSPARecoveryScript+"</head>", 1)
 		} else {
@@ -117,7 +117,7 @@ func (a *App) serveZashboardIndex(w http.ResponseWriter, r *http.Request, path s
 		return
 	}
 	html := string(body)
-	if !strings.Contains(html, "msm-free-zashboard-auto-backend") {
+	if !strings.Contains(html, "msf-zashboard-auto-backend") {
 		script := a.zashboardAutoBackendScript(r)
 		if strings.Contains(html, "</head>") {
 			html = strings.Replace(html, "</head>", script+"</head>", 1)
@@ -174,21 +174,21 @@ func (a *App) zashboardAutoBackendScript(r *http.Request) string {
 	if secret != "" {
 		secret = urlQueryEscape(secret)
 	}
-	return strings.ReplaceAll(strings.ReplaceAll(zashboardAutoBackendScriptTemplate, "__MSM_FREE_HOST__", urlQueryEscape(requestHostName(r))), "__MSM_FREE_SECRET__", secret)
+	return strings.ReplaceAll(strings.ReplaceAll(zashboardAutoBackendScriptTemplate, "__MSF_HOST__", urlQueryEscape(requestHostName(r))), "__MSF_SECRET__", secret)
 }
 
 func urlQueryEscape(value string) string {
 	return url.QueryEscape(value)
 }
 
-const zashboardAutoBackendScriptTemplate = `<script id="msm-free-zashboard-auto-backend">
+const zashboardAutoBackendScriptTemplate = `<script id="msf-zashboard-auto-backend">
 ;(function () {
   try {
     if (!window.localStorage) return
     var listKey = "setup/api-list"
     var activeKey = "setup/active-uuid"
-    var presetHost = decodeURIComponent("__MSM_FREE_HOST__")
-    var presetSecret = decodeURIComponent("__MSM_FREE_SECRET__")
+    var presetHost = decodeURIComponent("__MSF_HOST__")
+    var presetSecret = decodeURIComponent("__MSF_SECRET__")
     var host = presetHost || window.location.hostname || "127.0.0.1"
     var loopback = function (value) {
       return value === "127.0.0.1" || value === "localhost" || value === "::1" || value === "0.0.0.0"
@@ -215,14 +215,14 @@ const zashboardAutoBackendScriptTemplate = `<script id="msm-free-zashboard-auto-
       return
     }
 
-    var id = activeItem && activeItem.uuid ? activeItem.uuid : "msm-free-" + host.replace(/[^a-zA-Z0-9]/g, "-") + "-9090"
+    var id = activeItem && activeItem.uuid ? activeItem.uuid : "msf-" + host.replace(/[^a-zA-Z0-9]/g, "-") + "-9090"
     var entry = {
       protocol: "http",
       secondaryPath: "",
       host: host,
       port: "9090",
       password: presetSecret,
-      label: "msm-free",
+      label: "msf",
       disableUpgradeCore: true,
       disableTunMode: false,
       uuid: id
@@ -235,15 +235,15 @@ const zashboardAutoBackendScriptTemplate = `<script id="msm-free-zashboard-auto-
     localStorage.setItem(listKey, JSON.stringify(list))
     localStorage.setItem(activeKey, id)
   } catch (err) {
-    console.warn("msm-free zashboard backend preset failed", err)
+    console.warn("msf zashboard backend preset failed", err)
   }
 })()
 </script>
 `
 
-const frontendSPARecoveryScript = `<script id="msm-free-spa-recovery">
+const frontendSPARecoveryScript = `<script id="msf-spa-recovery">
 ;(function () {
-  var reloadKey = "msm-free-spa-reload-at"
+  var reloadKey = "msf-spa-reload-at"
   function reloadOnce() {
     try {
       var last = Number(sessionStorage.getItem(reloadKey) || "0")

@@ -134,7 +134,15 @@ func (a *App) installUploadedZashboard(src, originalName string) error {
 	if !strings.HasSuffix(lower, ".zip") {
 		return fmt.Errorf("zashboard upload must be a .zip package")
 	}
-	tmpDir, err := os.MkdirTemp(filepath.Join(a.DataDir, "data", "uploads"), "zashboard-*")
+	return installZashboardArchive(src, filepath.Join(a.DataDir, "configs", "mihomo", "ui"))
+}
+
+func installZashboardArchive(src, uiDir string) error {
+	tmpRoot := filepath.Dir(src)
+	if tmpRoot == "" || tmpRoot == "." {
+		tmpRoot = os.TempDir()
+	}
+	tmpDir, err := os.MkdirTemp(tmpRoot, "zashboard-*")
 	if err != nil {
 		return err
 	}
@@ -147,7 +155,6 @@ func (a *App) installUploadedZashboard(src, originalName string) error {
 		return fmt.Errorf("zashboard package does not contain index.html")
 	}
 	root := filepath.Dir(index)
-	uiDir := filepath.Join(a.DataDir, "configs", "mihomo", "ui")
 	if err := os.RemoveAll(uiDir); err != nil {
 		return err
 	}

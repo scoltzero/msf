@@ -16,7 +16,7 @@ import (
 const (
 	mihomoConfigModeKey           = "mihomo.config_mode"
 	mihomoGeneratedBackupPathKey  = "mihomo.generated_backup_path"
-	mihomoGeneratedBackupRelPath  = "configs/mihomo/msm_generated.backup.yaml"
+	mihomoGeneratedBackupRelPath  = "configs/mihomo/msf_generated.backup.yaml"
 	mihomoActiveConfigRelPath     = "configs/mihomo/config.yaml"
 	mihomoUserConfigsRelDir       = "configs/mihomo/user_configs"
 	mihomoAppliedUserConfigKey    = "mihomo.applied_user_config"
@@ -445,7 +445,7 @@ func normalizeMihomoUserConfigName(name string) (string, error) {
 		return "", fmt.Errorf("config name must end with .yaml or .yml")
 	}
 	switch strings.ToLower(name) {
-	case "config.yaml", "phone_config.yaml", "msm_generated.backup.yaml", "config.yaml.backup":
+	case "config.yaml", "phone_config.yaml", "msf_generated.backup.yaml", "config.yaml.backup":
 		return "", fmt.Errorf("%s is a reserved config name", name)
 	}
 	return name, nil
@@ -546,9 +546,9 @@ func (a *App) mihomoCustomTemplateContent() string {
 	}
 	cfg.defaults()
 	body := a.renderMihomoYAML(cfg)
-	return strings.TrimRight(`# MSM 自定义 Mihomo config.yaml 模板
+	return strings.TrimRight(`# MSF 自定义 Mihomo config.yaml 模板
 # 使用说明：
-# 1. 下面这些字段和 MSM WebUI / MosDNS / 透明代理直接挂钩，除非您明确知道影响，否则不要删除或改端口：
+# 1. 下面这些字段和 MSF WebUI / MosDNS / 透明代理直接挂钩，除非您明确知道影响，否则不要删除或改端口：
 #    external-controller: :9090
 #    external-ui: ui
 #    port: 7890
@@ -558,8 +558,8 @@ func (a *App) mihomoCustomTemplateContent() string {
 #    dns.listen: 0.0.0.0:6666
 #    profile.store-selected: true
 # 2. 您可以自由修改 proxy-groups、proxy-providers、rule-providers、rules。
-# 3. 如果设置 secret，MSM 会从配置中读取它并用于连接 Mihomo 控制器。
-# 4. 保存后 MSM 会备份旧配置并重启 Mihomo。
+# 3. 如果设置 secret，MSF 会从配置中读取它并用于连接 Mihomo 控制器。
+# 4. 保存后 MSF 会备份旧配置并重启 Mihomo。
 
 `, "\n") + "\n" + body
 }
@@ -615,7 +615,7 @@ func mihomoProtectedFields() []string {
 		"tproxy-port: 7896",
 		"dns.listen: 0.0.0.0:6666",
 		"profile.store-selected: true",
-		"secret 如用户设置，MSM 会读取并用于控制器认证",
+		"secret 如用户设置，MSF 会读取并用于控制器认证",
 	}
 }
 

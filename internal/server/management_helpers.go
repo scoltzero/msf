@@ -49,7 +49,7 @@ func (a *App) enhancedServiceStatus(name string) map[string]any {
 			"enabled":           false,
 			"desired_enabled":   false,
 			"auto_start":        false,
-			"error":             "sing-box is not supported in this msm-free build",
+			"error":             "sing-box is not supported in this msf build",
 			"health_ports":      []map[string]any{},
 		}
 	}
@@ -111,8 +111,8 @@ func displayServiceName(name string) string {
 		return "Mihomo"
 	case "singbox", "sing-box":
 		return "Sing-box"
-	case "msm":
-		return "msm-free"
+	case "msf":
+		return "msf"
 	default:
 		return name
 	}
@@ -285,8 +285,8 @@ func (a *App) logPaths(service string) []string {
 	if service == "proxy" {
 		service = "mihomo"
 	}
-	if service == "msm" || service == "msm-free" || service == "app" {
-		names := []string{"msm.log", "msm-free.log", "app.log"}
+	if service == "msf" || service == "app" {
+		names := []string{"msf.log", "app.log"}
 		var paths []string
 		for _, name := range names {
 			path := filepath.Join(a.DataDir, "logs", name)
@@ -375,8 +375,8 @@ func journalLogRows(service string, n int) []map[string]string {
 
 func journalUnitForService(service string) string {
 	switch normalizeServiceName(service) {
-	case "msm", "msm-free", "app", "":
-		return "msm-free.service"
+	case "msf", "app", "":
+		return "msf.service"
 	default:
 		return ""
 	}

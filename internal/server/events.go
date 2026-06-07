@@ -51,7 +51,7 @@ func (a *App) handleMihomoEvents(w http.ResponseWriter, r *http.Request) {
 func (a *App) handleLogEvents(w http.ResponseWriter, r *http.Request) {
 	service := normalizeServiceName(r.PathValue("service"))
 	if service == "" {
-		service = "msm"
+		service = "msf"
 	}
 	limit := queryInt(r, "lines", 40)
 	if limit <= 0 {

@@ -1,5 +1,0 @@
-#!/bin/sh
-
-if [ -x /etc/rc.d/rc.msm-free ]; then
-  /etc/rc.d/rc.msm-free stop >/dev/null 2>&1
-fi

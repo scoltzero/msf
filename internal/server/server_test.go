@@ -67,12 +67,12 @@ func TestSetupInitializeLoginAndGeneratedConfigs(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(cfg)
-	for _, want := range []string{"proxy-providers:", "msm_manual:", "https://example.com/a.yaml", "机场A", "机场1", "tproxy-port: 7896", "listen: 0.0.0.0:6666", "fake-ip-range: 28.0.0.1/8", "UrlTest: &UrlTest", "DOMAIN-SUFFIX,sssaicode.com,DIRECT", "DOMAIN-SUFFIX,huggingface.co,美国节点", "proxies: [DIRECT], include-all: true, include-all-proxies: true, include-all-providers: true", "name: 机场节点, type: select, proxies: [DIRECT], include-all: true, include-all-proxies: true, include-all-providers: true"} {
+	for _, want := range []string{"proxy-providers:", "msf_manual:", "https://example.com/a.yaml", "机场A", "机场1", "tproxy-port: 7896", "listen: 0.0.0.0:6666", "fake-ip-range: 28.0.0.1/8", "UrlTest: &UrlTest", "DOMAIN-SUFFIX,sssaicode.com,DIRECT", "DOMAIN-SUFFIX,huggingface.co,美国节点", "proxies: [DIRECT], include-all: true, include-all-proxies: true, include-all-providers: true", "name: 机场节点, type: select, proxies: [DIRECT], include-all: true, include-all-proxies: true, include-all-providers: true"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("mihomo config missing %q:\n%s", want, text)
 		}
 	}
-	manualProvider, err := os.ReadFile(filepath.Join(app.DataDir, "configs/mihomo/proxy_providers/msm_manual.yaml"))
+	manualProvider, err := os.ReadFile(filepath.Join(app.DataDir, "configs/mihomo/proxy_providers/msf_manual.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,13 +290,13 @@ func TestEnsureSetupProviderArtifactsBackfillsManualProvider(t *testing.T) {
 	if err := app.writeTextFile("configs/mihomo/config.yaml", "mode: rule\nproxy-providers: {}\n"); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Remove(filepath.Join(app.DataDir, "configs/mihomo/proxy_providers/msm_manual.yaml")); err != nil && !os.IsNotExist(err) {
+	if err := os.Remove(filepath.Join(app.DataDir, "configs/mihomo/proxy_providers/msf_manual.yaml")); err != nil && !os.IsNotExist(err) {
 		t.Fatal(err)
 	}
 	if err := app.ensureSetupProviderArtifacts(cfg); err != nil {
 		t.Fatal(err)
 	}
-	manualProvider, err := os.ReadFile(filepath.Join(app.DataDir, "configs/mihomo/proxy_providers/msm_manual.yaml"))
+	manualProvider, err := os.ReadFile(filepath.Join(app.DataDir, "configs/mihomo/proxy_providers/msf_manual.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -308,7 +308,7 @@ func TestEnsureSetupProviderArtifactsBackfillsManualProvider(t *testing.T) {
 		t.Fatal(err)
 	}
 	configText := string(config)
-	for _, want := range []string{"proxy-providers:", "msm_manual:", "imm", "https://example.com/imm.yaml", "./proxy_providers/imm.yaml"} {
+	for _, want := range []string{"proxy-providers:", "msf_manual:", "imm", "https://example.com/imm.yaml", "./proxy_providers/imm.yaml"} {
 		if !strings.Contains(configText, want) {
 			t.Fatalf("mihomo provider section missing %q:\n%s", want, configText)
 		}
@@ -381,12 +381,12 @@ func TestStaticSetupRouteServesFreshSPAEntry(t *testing.T) {
 	if got := res.Header().Get("Cache-Control"); got != "no-store" {
 		t.Fatalf("setup route should disable HTML cache, got %q", got)
 	}
-	if body := res.Body.String(); !strings.Contains(body, "msm-free-spa-recovery") || !strings.Contains(body, "id=\"root\"") {
+	if body := res.Body.String(); !strings.Contains(body, "msf-spa-recovery") || !strings.Contains(body, "id=\"root\"") {
 		t.Fatalf("setup route did not serve recovered SPA index:\n%s", body)
 	}
 }
 
-func TestOriginalMSMAPICompatibilityShims(t *testing.T) {
+func TestOriginalMSFAPICompatibilityShims(t *testing.T) {
 	app := newTestApp(t)
 	token := tokenForRole(t, app, "admin")
 
@@ -451,11 +451,11 @@ func TestSetupNetworkInterfacesResponseMatchesExportedWebUI(t *testing.T) {
 	}
 }
 
-func TestCompatibilityLayoutMatchesMSMTreeShape(t *testing.T) {
+func TestCompatibilityLayoutMatchesMSFTreeShape(t *testing.T) {
 	app := newTestApp(t)
 	for _, rel := range []string{
-		"database/msm.db",
-		"logs/msm.log",
+		"database/msf.db",
+		"logs/msf.log",
 		"logs/supervisor/supervisord.log",
 		"configs/logs/mosdns.log",
 		"configs/supervisor/supervisord.conf",
@@ -467,7 +467,7 @@ func TestCompatibilityLayoutMatchesMSMTreeShape(t *testing.T) {
 		"configs/mihomo/config.yaml.backup",
 	} {
 		if _, err := os.Stat(filepath.Join(app.DataDir, rel)); err != nil {
-			t.Fatalf("expected MSM-compatible layout path %s: %v", rel, err)
+			t.Fatalf("expected MSF-compatible layout path %s: %v", rel, err)
 		}
 	}
 }
@@ -522,7 +522,7 @@ func TestSelfUpdateStateExposesInstallAndAcceleratedDownloadURL(t *testing.T) {
 		values(?,?,?,?,?,?,?)`, now, now, "root", "7777", true, "https://gh-proxy.example", true); err != nil {
 		t.Fatal(err)
 	}
-	rawURL := "https://github.com/scoltzero/msm-free/releases/download/v9.9.9/msm-free-linux-amd64.tar.gz"
+	rawURL := "https://github.com/scoltzero/msf/releases/download/v9.9.9/msf-linux-amd64.tar.gz"
 	updateDir := filepath.Join(app.DataDir, "data", "updates")
 	if err := os.MkdirAll(updateDir, 0755); err != nil {
 		t.Fatal(err)
@@ -531,18 +531,186 @@ func TestSelfUpdateStateExposesInstallAndAcceleratedDownloadURL(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := app.DB.Exec(`insert into update_info(component,current_version,latest_version,has_update,status,progress,error_message,download_url,release_notes,last_check_time,created_at,updated_at)
-		values('msm-free',?,?,?,?,?,?,?,?,?,?,?)`, app.Version, "v9.9.9", true, "downloaded", 100, "", rawURL, "", now, now, now); err != nil {
+		values('msf',?,?,?,?,?,?,?,?,?,?,?)`, app.Version, "v9.9.9", true, "downloaded", 100, "", rawURL, "", now, now, now); err != nil {
 		t.Fatal(err)
 	}
 	status := requestJSON(t, app, http.MethodGet, "/api/v1/update/status", token, nil)
 	for _, want := range []string{
 		`"status":"downloaded"`,
 		`"can_install":true`,
-		`"effective_download_url":"https://gh-proxy.example/https://github.com/scoltzero/msm-free/releases/download/v9.9.9/msm-free-linux-amd64.tar.gz"`,
+		`"effective_download_url":"https://gh-proxy.example/https://github.com/scoltzero/msf/releases/download/v9.9.9/msf-linux-amd64.tar.gz"`,
 	} {
 		if !strings.Contains(status.Body.String(), want) {
 			t.Fatalf("self update status missing %q: status=%d body=%s", want, status.Code, status.Body.String())
 		}
+	}
+}
+
+func TestComponentRemoteVersionParsesReleaseMetadata(t *testing.T) {
+	app := newTestApp(t)
+
+	mosdns := githubRelease{
+		TagName: "mosdns",
+		Body:    "源码时间: 2026-05-15 16:16:33\n版本号: ph-yyds-20260515-7a2a3f3\nCommit: 7a2a3f397561f750874b0fcbd1ba131e2844af46\n",
+	}
+	if got := app.componentRemoteVersion("mosdns", mosdns); got != "ph-yyds-20260515-7a2a3f3" {
+		t.Fatalf("mosdns remote version = %q", got)
+	}
+
+	mihomoBody := "更新 [mihomo Meta 版](https://github.com/MetaCubeX/mihomo/tree/Meta)至 v1.19.27，发布于 2026-06-06\n更新 [mihomo Alpha 版](https://github.com/MetaCubeX/mihomo/tree/Alpha)至 checksums.txt，发布于 2026-06-06"
+	if got := mihomoReleaseBodyVersion(mihomoBody, "meta"); got != "v1.19.27" {
+		t.Fatalf("mihomo meta remote version = %q", got)
+	}
+	if got := mihomoReleaseBodyVersion(mihomoBody, "alpha"); got != "v1.19.27" {
+		t.Fatalf("mihomo alpha fallback version = %q", got)
+	}
+
+	if got := app.componentRemoteVersion("zashboard", githubRelease{TagName: "v3.7.1"}); got != "v3.7.1" {
+		t.Fatalf("zashboard remote version = %q", got)
+	}
+	if componentHasUpdate("dev-20260604-7a2a3f3", "ph-yyds-20260515-7a2a3f3") {
+		t.Fatal("mosdns builds with the same commit should not report an update")
+	}
+	if !componentHasUpdate("dev-20260604-1111111", "ph-yyds-20260515-7a2a3f3") {
+		t.Fatal("different component commits should report an update")
+	}
+}
+
+func TestComponentUpdateStateUsesLiveVersionAndDropsPlaceholders(t *testing.T) {
+	app := newTestApp(t)
+	bin := filepath.Join(app.DataDir, "data/binaries/mosdns/mosdns")
+	if err := os.MkdirAll(filepath.Dir(bin), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\necho 'mosdns version ph-yyds-20260515-7a2a3f3'\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	if _, err := app.DB.Exec(`insert into component_update_info(component,current_version,latest_version,has_update,download_url,status,progress,last_check_time,created_at,updated_at)
+		values(?,?,?,?,?,?,?,?,?,?)`, "mosdns", "installed-202606071234", "latest", true, "https://example.com/mosdns.zip", "checked", 0, now, now, now); err != nil {
+		t.Fatal(err)
+	}
+
+	state := app.componentUpdateState("mosdns")
+	if got := state["current_version"].(string); !strings.Contains(got, "ph-yyds-20260515-7a2a3f3") {
+		t.Fatalf("current version should come from binary, got %q", got)
+	}
+	if got := state["latest_version"]; got != "-" {
+		t.Fatalf("placeholder latest version should be hidden, got %#v", got)
+	}
+	if got := state["has_update"]; got != false {
+		t.Fatalf("placeholder latest version should not report update, got %#v", got)
+	}
+}
+
+func TestComponentUpdateStateDisplaysEquivalentMosDNSPackageVersion(t *testing.T) {
+	app := newTestApp(t)
+	bin := filepath.Join(app.DataDir, "data/binaries/mosdns/mosdns")
+	if err := os.MkdirAll(filepath.Dir(bin), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\necho 'dev-20260604-7a2a3f3'\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	if _, err := app.DB.Exec(`insert into component_update_info(component,current_version,latest_version,has_update,download_url,status,progress,last_check_time,created_at,updated_at)
+		values(?,?,?,?,?,?,?,?,?,?)`, "mosdns", "dev-20260604-7a2a3f3", "ph-yyds-20260515-7a2a3f3", false, "https://example.com/mosdns.zip", "checked", 0, now, now, now); err != nil {
+		t.Fatal(err)
+	}
+
+	state := app.componentUpdateState("mosdns")
+	if got := state["current_version"]; got != "ph-yyds-20260515-7a2a3f3" {
+		t.Fatalf("equivalent mosdns build should display package version, got %#v", got)
+	}
+	if got := state["current_version_detail"]; got != "dev-20260604-7a2a3f3" {
+		t.Fatalf("mosdns raw binary version should be kept as detail, got %#v", got)
+	}
+	if got := state["has_update"]; got != false {
+		t.Fatalf("same commit should not report update, got %#v", got)
+	}
+	if got := state["can_update"]; got != false {
+		t.Fatalf("known same version should not enable update, got %#v", got)
+	}
+}
+
+func TestComponentUpdateStateExtractsMihomoVersionAndAllowsUncertainOverwrite(t *testing.T) {
+	app := newTestApp(t)
+	bin := filepath.Join(app.DataDir, "data/binaries/mihomo/mihomo")
+	if err := os.MkdirAll(filepath.Dir(bin), 0755); err != nil {
+		t.Fatal(err)
+	}
+	rawVersion := "Mihomo Meta v1.19.26 linux amd64 with go1.26.4 Fri Jun  5 06:04:11 CST 2026 Use tags: with_gvisor"
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\necho '"+rawVersion+"'\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	if _, err := app.DB.Exec(`insert into component_update_info(component,current_version,latest_version,has_update,download_url,status,progress,last_check_time,created_at,updated_at)
+		values(?,?,?,?,?,?,?,?,?,?)`, "mihomo", rawVersion, "latest", false, "https://example.com/mihomo.tar.gz", "checked", 0, now, now, now); err != nil {
+		t.Fatal(err)
+	}
+
+	state := app.componentUpdateState("mihomo")
+	if got := state["current_version"]; got != "v1.19.26" {
+		t.Fatalf("mihomo current version should be compact, got %#v", got)
+	}
+	if got := state["current_version_detail"]; got != rawVersion {
+		t.Fatalf("mihomo raw version should be kept as detail, got %#v", got)
+	}
+	if got := state["has_update"]; got != false {
+		t.Fatalf("unknown latest should not claim update, got %#v", got)
+	}
+	if got := state["can_update"]; got != true {
+		t.Fatalf("unknown latest should allow overwrite update, got %#v", got)
+	}
+}
+
+func TestComponentStateStringDoesNotRenderMissingValueAsNil(t *testing.T) {
+	if got := componentStateString(map[string]any{}, "missing"); got != "" {
+		t.Fatalf("missing state value = %q", got)
+	}
+	if got := componentStateString(map[string]any{"value": nil}, "value"); got != "" {
+		t.Fatalf("nil state value = %q", got)
+	}
+}
+
+func TestComponentUpdateStateAllowsZashboardOverwriteWhenCurrentUnknown(t *testing.T) {
+	app := newTestApp(t)
+	index := filepath.Join(app.DataDir, "configs/mihomo/ui/index.html")
+	if err := os.MkdirAll(filepath.Dir(index), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(index, []byte("<!doctype html><html></html>"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	if _, err := app.DB.Exec(`insert into component_update_info(component,current_version,latest_version,has_update,download_url,status,progress,last_check_time,created_at,updated_at)
+		values(?,?,?,?,?,?,?,?,?,?)`, "zashboard", "installed", "v3.7.1", false, "https://example.com/dist.zip", "checked", 0, now, now, now); err != nil {
+		t.Fatal(err)
+	}
+
+	state := app.componentUpdateState("zashboard")
+	if got := state["current_version"]; got != "installed" {
+		t.Fatalf("zashboard unknown current version = %#v", got)
+	}
+	if got := state["has_update"]; got != false {
+		t.Fatalf("unknown zashboard version should not claim update, got %#v", got)
+	}
+	if got := state["can_update"]; got != true {
+		t.Fatalf("unknown zashboard version should allow overwrite, got %#v", got)
+	}
+
+	if _, err := app.DB.Exec(`update component_update_info set current_version=? where component=?`, "<nil>", "zashboard"); err != nil {
+		t.Fatal(err)
+	}
+	state = app.componentUpdateState("zashboard")
+	if got := state["current_version"]; got != "installed" {
+		t.Fatalf("dirty nil zashboard version should fall back to installed, got %#v", got)
+	}
+	if got := state["has_update"]; got != false {
+		t.Fatalf("dirty nil zashboard version should not claim update, got %#v", got)
+	}
+	if got := state["can_update"]; got != true {
+		t.Fatalf("dirty nil zashboard version should allow overwrite, got %#v", got)
 	}
 }
 
@@ -586,20 +754,20 @@ func TestComponentUpdateUploadInstallsZashboardZip(t *testing.T) {
 	}
 }
 
-func TestStructuredMSMJSONLogsFormatLikeOriginal(t *testing.T) {
+func TestStructuredMSFJSONLogsFormatLikeOriginal(t *testing.T) {
 	app := newTestApp(t)
-	app.LogInfo("app/app.go:114", "MSM 后端服务启动中...", nil)
-	app.LogInfo("app/app.go:945", "gin", map[string]any{"message": `[GIN] 2026/05/31 - 12:58:40 | 200 | 1ms | 192.168.10.223 | GET      "/api/v1/logs/msm/stats"`})
-	logs := requestJSON(t, app, http.MethodGet, "/api/v1/logs/msm?lines=10", tokenForRole(t, app, "admin"), nil)
+	app.LogInfo("app/app.go:114", "MSF 后端服务启动中...", nil)
+	app.LogInfo("app/app.go:945", "gin", map[string]any{"message": `[GIN] 2026/05/31 - 12:58:40 | 200 | 1ms | 192.168.10.223 | GET      "/api/v1/logs/msf/stats"`})
+	logs := requestJSON(t, app, http.MethodGet, "/api/v1/logs/msf?lines=10", tokenForRole(t, app, "admin"), nil)
 	if logs.Code != http.StatusOK {
 		t.Fatalf("logs status=%d body=%s", logs.Code, logs.Body.String())
 	}
 	body := logs.Body.String()
-	if !strings.Contains(body, "[app/app.go:114] MSM 后端服务启动中...") || !strings.Contains(body, "[app/app.go:945] gin: [GIN]") {
-		t.Fatalf("structured MSM JSON logs were not formatted for WebUI:\n%s", body)
+	if !strings.Contains(body, "[app/app.go:114] MSF 后端服务启动中...") || !strings.Contains(body, "[app/app.go:945] gin: [GIN]") {
+		t.Fatalf("structured MSF JSON logs were not formatted for WebUI:\n%s", body)
 	}
 	if !strings.Contains(body, `"level":"info"`) || !strings.Contains(body, `"raw":"{`) {
-		t.Fatalf("structured MSM JSON logs should preserve level and raw JSON:\n%s", body)
+		t.Fatalf("structured MSF JSON logs should preserve level and raw JSON:\n%s", body)
 	}
 }
 
@@ -758,7 +926,7 @@ func TestMosDNSObservabilityAndRuleCategories(t *testing.T) {
 	}
 	wantIDs := []string{"whitelist", "blocklist", "greylist", "ddnslist", "direct_ip", "redirect"}
 	if !reflect.DeepEqual(gotIDs, wantIDs) {
-		t.Fatalf("personal-list categories should match MSM order, got %#v want %#v", gotIDs, wantIDs)
+		t.Fatalf("personal-list categories should match MSF order, got %#v want %#v", gotIDs, wantIDs)
 	}
 	special := categories["special_categories"].([]any)
 	if len(special) != 2 {
@@ -828,7 +996,7 @@ func TestMosDNSRuleSourceManagementAndUpdate(t *testing.T) {
 	}
 }
 
-func TestMosDNSMSMCompatRuleAndSystemEndpoints(t *testing.T) {
+func TestMosDNSMSFCompatRuleAndSystemEndpoints(t *testing.T) {
 	app := newTestApp(t)
 	token := tokenForRole(t, app, "admin")
 
@@ -864,7 +1032,7 @@ func TestMosDNSMSMCompatRuleAndSystemEndpoints(t *testing.T) {
 	}
 }
 
-func TestMosDNSClientScanMSMCompatShape(t *testing.T) {
+func TestMosDNSClientScanMSFCompatShape(t *testing.T) {
 	app := newTestApp(t)
 	token := tokenForRole(t, app, "admin")
 	now := time.Now()
@@ -893,7 +1061,7 @@ func TestMosDNSClientScanMSMCompatShape(t *testing.T) {
 	}
 	clients := requestJSON(t, app, http.MethodGet, "/api/v1/mosdns/clients?page=1&page_size=10", token, nil)
 	if clients.Code != http.StatusOK || !strings.Contains(clients.Body.String(), `"data":{"clients":[`) || !strings.Contains(clients.Body.String(), `"requires_scan":false`) {
-		t.Fatalf("clients response should keep MSM-compatible data object: status=%d body=%s", clients.Code, clients.Body.String())
+		t.Fatalf("clients response should keep MSF-compatible data object: status=%d body=%s", clients.Code, clients.Body.String())
 	}
 	clientIPs := requestJSON(t, app, http.MethodGet, "/api/v1/mosdns/system/client-ip-list", token, nil)
 	if clientIPs.Code != http.StatusOK || !strings.Contains(clientIPs.Body.String(), `"data":{"ips":[`) || strings.Contains(clientIPs.Body.String(), `"ips":null`) {
@@ -1216,14 +1384,14 @@ func TestMihomoOverviewAndStatsDoNotBlockOnTrafficStream(t *testing.T) {
 	}
 }
 
-func TestMihomoRuntimeRoutesServeMSMPage(t *testing.T) {
+func TestMihomoRuntimeRoutesServeMSFPage(t *testing.T) {
 	app := newTestApp(t)
 	for _, path := range []string{"/mihomo", "/mihomo/overview", "/mihomo/proxies", "/mihomo/rules", "/mihomo/connections"} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		res := httptest.NewRecorder()
 		app.Router().ServeHTTP(res, req)
-		if res.Code != http.StatusOK || strings.Contains(res.Body.String(), "msm-free-mihomo-zashboard-bridge") {
-			t.Fatalf("%s should serve MSM page without zashboard route takeover, status=%d location=%q body=%s", path, res.Code, res.Header().Get("Location"), res.Body.String())
+		if res.Code != http.StatusOK || strings.Contains(res.Body.String(), "msf-mihomo-zashboard-bridge") {
+			t.Fatalf("%s should serve MSF page without zashboard route takeover, status=%d location=%q body=%s", path, res.Code, res.Header().Get("Location"), res.Body.String())
 		}
 	}
 }
@@ -1463,7 +1631,7 @@ func TestMihomoConfigAndLogPanelCompatibility(t *testing.T) {
 	}
 }
 
-func TestRolePermissionsMatchMSMModel(t *testing.T) {
+func TestRolePermissionsMatchMSFModel(t *testing.T) {
 	app := newTestApp(t)
 	operator := tokenForRole(t, app, "operator")
 	viewer := tokenForRole(t, app, "viewer")
@@ -1548,7 +1716,7 @@ func TestConfigCompareBackupAndDiagnostics(t *testing.T) {
 	}
 	wantKeys := []string{"config_dir", "config_files", "dependencies", "ports", "disk", "permissions"}
 	if !reflect.DeepEqual(gotKeys, wantKeys) {
-		t.Fatalf("diagnostics checks should match MSM system page, got %#v want %#v", gotKeys, wantKeys)
+		t.Fatalf("diagnostics checks should match MSF system page, got %#v want %#v", gotKeys, wantKeys)
 	}
 	first, ok := checks[0].(map[string]any)
 	if !ok {
@@ -1596,16 +1764,16 @@ func TestBasicManagementServiceLogsAndConfigAPIs(t *testing.T) {
 	if b, _ := os.ReadFile(filepath.Join(app.DataDir, "logs/mihomo.err.log")); len(b) != 0 {
 		t.Fatalf("stderr log should be cleared, got %q", string(b))
 	}
-	if err := os.WriteFile(filepath.Join(app.DataDir, "logs/msm.log"), []byte("[info] msm web request\n"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(app.DataDir, "logs/msf.log"), []byte("[info] msf web request\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	defaultLogs := requestJSON(t, app, http.MethodGet, "/api/v1/logs?lines=20", token, nil)
-	if defaultLogs.Code != http.StatusOK || !strings.Contains(defaultLogs.Body.String(), `"service":"msm"`) || !strings.Contains(defaultLogs.Body.String(), "msm web request") {
-		t.Fatalf("default logs route should return msm logs: status=%d body=%s", defaultLogs.Code, defaultLogs.Body.String())
+	if defaultLogs.Code != http.StatusOK || !strings.Contains(defaultLogs.Body.String(), `"service":"msf"`) || !strings.Contains(defaultLogs.Body.String(), "msf web request") {
+		t.Fatalf("default logs route should return msf logs: status=%d body=%s", defaultLogs.Code, defaultLogs.Body.String())
 	}
-	stats := requestJSON(t, app, http.MethodGet, "/api/v1/logs/msm/stats", token, nil)
-	if stats.Code != http.StatusOK || !strings.Contains(stats.Body.String(), `"total":`) || !strings.Contains(stats.Body.String(), `"service":"msm"`) {
-		t.Fatalf("msm log stats should include default app log lines: status=%d body=%s", stats.Code, stats.Body.String())
+	stats := requestJSON(t, app, http.MethodGet, "/api/v1/logs/msf/stats", token, nil)
+	if stats.Code != http.StatusOK || !strings.Contains(stats.Body.String(), `"total":`) || !strings.Contains(stats.Body.String(), `"service":"msf"`) {
+		t.Fatalf("msf log stats should include default app log lines: status=%d body=%s", stats.Code, stats.Body.String())
 	}
 	put := requestJSON(t, app, http.MethodPut, "/api/v1/config/file", token, map[string]any{"path": "configs/mihomo/config.yaml", "content": "mode: rule\n", "comment": "test save"})
 	if put.Code != http.StatusOK || !strings.Contains(put.Body.String(), "history_id") || !strings.Contains(put.Body.String(), "restart_required") {
@@ -1645,11 +1813,11 @@ func TestBasicManagementUsersTokensSettingsAndDiagnostics(t *testing.T) {
 		t.Fatalf("self disable should be blocked: status=%d body=%s", selfDisable.Code, selfDisable.Body.String())
 	}
 	tokenCreate := requestJSON(t, app, http.MethodPost, "/api/v1/api-tokens", token, map[string]any{"name": "test-token", "expires_in": 60, "scope": "admin"})
-	if tokenCreate.Code != http.StatusOK || !strings.Contains(tokenCreate.Body.String(), "msmf_") {
+	if tokenCreate.Code != http.StatusOK || !strings.Contains(tokenCreate.Body.String(), "msf_") {
 		t.Fatalf("api token create failed: status=%d body=%s", tokenCreate.Code, tokenCreate.Body.String())
 	}
 	tokenList := requestJSON(t, app, http.MethodGet, "/api/v1/api-tokens", token, nil)
-	if tokenList.Code != http.StatusOK || strings.Contains(tokenList.Body.String(), "msmf_") || !strings.Contains(tokenList.Body.String(), `"scope":"admin"`) {
+	if tokenList.Code != http.StatusOK || strings.Contains(tokenList.Body.String(), "msf_") || !strings.Contains(tokenList.Body.String(), `"scope":"admin"`) {
 		t.Fatalf("api token list should include metadata only: status=%d body=%s", tokenList.Code, tokenList.Body.String())
 	}
 	audit := requestJSON(t, app, http.MethodGet, "/api/v1/audit-logs?action=user.create", token, nil)
@@ -1714,7 +1882,7 @@ func TestBasicManagementUsersTokensSettingsAndDiagnostics(t *testing.T) {
 	if data["github_proxy_enabled"] != true || data["github_https_proxy"] != "http://127.0.0.1:7890" || data["github_socks5_proxy"] != "socks5://127.0.0.1:7891" || data["github_accelerator_enabled"] != true || data["github_accelerator_url"] != "https://gh-proxy.com" {
 		t.Fatalf("setup config should preserve github download options: %#v", data)
 	}
-	manualProvider, err := os.ReadFile(filepath.Join(app.DataDir, "configs/mihomo/proxy_providers/msm_manual.yaml"))
+	manualProvider, err := os.ReadFile(filepath.Join(app.DataDir, "configs/mihomo/proxy_providers/msf_manual.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1743,7 +1911,7 @@ func TestAPITokenScopesRestrictEffectivePermissions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	legacyToken := "msmf_legacy_test"
+	legacyToken := "msf_legacy_test"
 	if _, err := app.DB.Exec(`insert into api_tokens(user_id,name,token_hash,expires_at,created_at,revoked) values(?,?,?,?,?,false)`, adminUser.ID, "legacy", tokenHash(legacyToken), nil, time.Now()); err != nil {
 		t.Fatal(err)
 	}
@@ -1754,7 +1922,7 @@ func TestAPITokenScopesRestrictEffectivePermissions(t *testing.T) {
 	if res := requestJSON(t, app, http.MethodGet, "/api/v1/monitor/system", readToken, nil); res.Code != http.StatusOK {
 		t.Fatalf("read token should read monitor, status=%d body=%s", res.Code, res.Body.String())
 	}
-	if res := requestJSON(t, app, http.MethodGet, "/api/v1/logs/msm", readToken, nil); res.Code != http.StatusOK {
+	if res := requestJSON(t, app, http.MethodGet, "/api/v1/logs/msf", readToken, nil); res.Code != http.StatusOK {
 		t.Fatalf("read token should read logs, status=%d body=%s", res.Code, res.Body.String())
 	}
 	if res := requestJSON(t, app, http.MethodPost, "/api/v1/services/start-all", readToken, nil); res.Code != http.StatusForbidden {

@@ -65,7 +65,7 @@ func (a *App) handleCreateAPIToken(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
-	token := "msmf_" + randomHex(32)
+	token := "msf_" + randomHex(32)
 	var expires any
 	if req.ExpiresIn > 0 {
 		expires = time.Now().Add(time.Duration(req.ExpiresIn) * time.Second)

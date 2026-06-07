@@ -71,7 +71,7 @@ func (a *App) handleDiagnosticsDownload(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.Header().Set("Content-Disposition", "attachment; filename=msm-free-diagnostics.json")
+	w.Header().Set("Content-Disposition", "attachment; filename=msf-diagnostics.json")
 	_, _ = w.Write(b)
 }
 
@@ -248,7 +248,7 @@ func fetchExitBody(client *http.Client, endpoint string) ([]byte, error) {
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/json,text/plain,*/*")
-	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; msm-free/exit-probe)")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; msf/exit-probe)")
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -493,7 +493,7 @@ func (a *App) clearNFT(ctx context.Context) (string, error) {
 	}
 	var output bytes.Buffer
 	cmds := [][]string{
-		{"nft", "delete", "table", "inet", "msm_free"},
+		{"nft", "delete", "table", "inet", "msf"},
 		{"ip", "rule", "del", "fwmark", "1", "table", "100"},
 		{"ip", "route", "del", "local", "0.0.0.0/0", "dev", "lo", "table", "100"},
 		{"ip", "-6", "rule", "del", "fwmark", "1", "table", "100"},
@@ -516,7 +516,7 @@ func (a *App) nftStatus() map[string]any {
 	if runtime.GOOS != "linux" {
 		return status
 	}
-	if out, err := combinedOutputWithTimeout(context.Background(), 3*time.Second, "nft", "list", "table", "inet", "msm_free"); err == nil {
+	if out, err := combinedOutputWithTimeout(context.Background(), 3*time.Second, "nft", "list", "table", "inet", "msf"); err == nil {
 		status["table_loaded"] = true
 		status["nft"] = string(out)
 	}
@@ -630,7 +630,7 @@ func (a *App) handleSettingsAppearancePut(w http.ResponseWriter, r *http.Request
 
 func (a *App) handleLicenseStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"success": true, "data": map[string]any{
-		"edition": "free", "status": "unlocked", "is_pro": true, "features": "all", "message": "msm-free does not enforce paid licensing",
+		"edition": "free", "status": "unlocked", "is_pro": true, "features": "all", "message": "msf does not enforce paid licensing",
 	}})
 }
 
@@ -683,7 +683,7 @@ func dirWritable(path string) bool {
 	if err := os.MkdirAll(path, 0755); err != nil {
 		return false
 	}
-	tmp := filepath.Join(path, ".msm-free-write-test")
+	tmp := filepath.Join(path, ".msf-write-test")
 	if err := os.WriteFile(tmp, []byte("ok"), 0644); err != nil {
 		return false
 	}

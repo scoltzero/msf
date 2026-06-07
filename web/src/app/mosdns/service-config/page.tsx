@@ -16,6 +16,7 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
+import { YamlEditor } from "@/components/mihomo/YamlEditor";
 import { MosdnsHero } from "@/components/mosdns/MosdnsHero";
 import { ServiceControlCard } from "@/components/mosdns/ServiceControlCard";
 import { useToaster, ToastStack } from "@/components/Toaster";
@@ -297,15 +298,13 @@ export default function ServiceConfigPage() {
                   </button>
                 </div>
               </div>
-              <div className="overflow-hidden" style={{ backgroundColor: "#1e1e1e" }}>
-                <textarea
-                  value={content}
-                  onChange={(event) => setContent(event.target.value)}
-                  spellCheck={false}
-                  className="min-h-[480px] w-full resize-y bg-transparent p-3 font-mono text-[13px] leading-6 text-[#d4d4d4] outline-none"
-                  placeholder={loading ? "加载中..." : "配置文件为空"}
-                />
-              </div>
+              {loading ? (
+                <div className="flex h-[480px] items-center justify-center bg-[#1e1e1e] text-sm text-[#d4d4d4]">
+                  正在加载配置...
+                </div>
+              ) : (
+                <YamlEditor value={content} onChange={setContent} maxHeight={480} />
+              )}
             </div>
           </div>
         </div>

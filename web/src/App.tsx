@@ -33,7 +33,7 @@ function Splash() {
     <div className="grid min-h-screen place-items-center bg-background text-foreground">
       <div className="flex items-center gap-3 rounded-xl border bg-card px-5 py-4 shadow-sm">
         <Loader2 className="h-5 w-5 animate-spin text-primary" />
-        <span className="text-sm text-muted-foreground">正在加载 MSM 管理平台</span>
+        <span className="text-sm text-muted-foreground">正在加载 MSF 管理平台</span>
       </div>
     </div>
   );

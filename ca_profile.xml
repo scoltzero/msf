@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Maintainer>
+  <Icon>https://raw.githubusercontent.com/scoltzero/msf/main/packaging/unraid/msf.png</Icon>
+  <Profile>Maintainer of msf — an open reimplementation of the MSM-style MosDNS + Mihomo manager, packaged as a native Unraid plugin. Issues and support are handled on GitHub.</Profile>
+  <WebPage>https://github.com/scoltzero/msf</WebPage>
+  <!-- Support is handled via GitHub Issues: https://github.com/scoltzero/msf/issues -->
+  <!-- <Forum>https://forums.unraid.net/profile/your-forum-id/</Forum> -->
+  <!-- <DonateLink>https://...</DonateLink> -->
+  <!-- <DonateText>If msf is useful to you, consider supporting development.</DonateText> -->
+</Maintainer>

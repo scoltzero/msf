@@ -1176,7 +1176,7 @@ func (a *App) uploadConfigZip(w http.ResponseWriter, r *http.Request, destRel st
 		return
 	}
 	defer file.Close()
-	tmp, err := os.CreateTemp("", "msm-free-config-*.zip")
+	tmp, err := os.CreateTemp("", "msf-config-*.zip")
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "temp_failed", err.Error())
 		return

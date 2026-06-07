@@ -11,7 +11,7 @@ import (
 func (a *App) handleLogs(w http.ResponseWriter, r *http.Request) {
 	service := normalizeServiceName(r.PathValue("service"))
 	if service == "" {
-		service = "msm"
+		service = "msf"
 	}
 	linesLimit := queryInt(r, "lines", 1000)
 	sourceRows := a.serviceLogLinesWithSources(service, linesLimit)
@@ -57,7 +57,7 @@ func (a *App) handleLogs(w http.ResponseWriter, r *http.Request) {
 func (a *App) handleLogsClear(w http.ResponseWriter, r *http.Request) {
 	service := normalizeServiceName(r.PathValue("service"))
 	if service == "" {
-		service = "msm"
+		service = "msf"
 	}
 	cleared := 0
 	for _, path := range a.logPaths(service) {
@@ -72,7 +72,7 @@ func (a *App) handleLogsClear(w http.ResponseWriter, r *http.Request) {
 func (a *App) handleLogsDownload(w http.ResponseWriter, r *http.Request) {
 	service := normalizeServiceName(r.PathValue("service"))
 	if service == "" {
-		service = "msm"
+		service = "msf"
 	}
 	paths := a.logPaths(service)
 	files := map[string]string{}
@@ -105,7 +105,7 @@ func (a *App) handleLogsDownload(w http.ResponseWriter, r *http.Request) {
 func (a *App) handleLogsStats(w http.ResponseWriter, r *http.Request) {
 	service := normalizeServiceName(r.PathValue("service"))
 	if service == "" {
-		service = "msm"
+		service = "msf"
 	}
 	size := int64(0)
 	for _, path := range a.logPaths(service) {

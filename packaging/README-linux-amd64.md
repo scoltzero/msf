@@ -1,27 +1,27 @@
-# msm-free Linux 安装包
+# msf Linux 安装包
 
-这个压缩包包含 `msm-free` Linux 二进制、systemd 安装脚本和卸载脚本。请下载与机器架构匹配的压缩包，例如 `linux-amd64` 或 `linux-arm64`。
+这个压缩包包含 `msf` Linux 二进制、systemd 安装脚本和卸载脚本。请下载与机器架构匹配的压缩包，例如 `linux-amd64` 或 `linux-arm64`。
 
 ## 安装
 
 ```sh
-tar -xzf msm-free-linux-<arch>.tar.gz
-cd msm-free-*-linux-<arch>
+tar -xzf msf-linux-<arch>.tar.gz
+cd msf-*-linux-<arch>
 sudo ./install.sh
 ```
 
 默认路径：
 
-- 二进制：`/usr/local/bin/msm-free`
+- 二进制：`/usr/local/bin/msf`
 - 兼容命令：`/usr/local/bin/msm`
-- 数据目录：`/opt/msm-free`
+- 数据目录：`/opt/msf`
 - WebUI：`http://<server-ip>:7777`
-- systemd 服务：`msm-free`
+- systemd 服务：`msf`
 
 自定义安装：
 
 ```sh
-sudo ./install.sh --data-dir /opt/msm-free --host 0.0.0.0 --port 7777
+sudo ./install.sh --data-dir /opt/msf --host 0.0.0.0 --port 7777
 ```
 
 ## 停止
@@ -29,32 +29,32 @@ sudo ./install.sh --data-dir /opt/msm-free --host 0.0.0.0 --port 7777
 systemd 停止：
 
 ```sh
-sudo systemctl stop msm-free
+sudo systemctl stop msf
 ```
 
 也可以直接使用二进制命令：
 
 ```sh
-sudo msm stop
+sudo msf stop
 ```
 
-`stop` 会优雅停止 `msm-free` 管理进程，并由管理进程停止托管的 MosDNS 和 Mihomo 子进程。超时仍未退出时可以使用：
+`stop` 会优雅停止 `msf` 管理进程，并由管理进程停止托管的 MosDNS 和 Mihomo 子进程。超时仍未退出时可以使用：
 
 ```sh
-sudo msm stop --timeout 20s --force
+sudo msf stop --timeout 20s --force
 ```
 
 常用 CLI：
 
 ```sh
-msm status
-msm restart
-msm logs msm
-msm logs --lines 200 mosdns
-msm logs --lines 200 mihomo
-msm doctor
-msm license status
-sudo msm update
+msf status
+msf restart
+msf logs msf
+msf logs --lines 200 mosdns
+msf logs --lines 200 mihomo
+msf doctor
+msf license status
+sudo msf update
 ```
 
 ## 升级
@@ -70,7 +70,7 @@ sudo ./install.sh
 推荐直接使用二进制自带卸载命令：
 
 ```sh
-sudo msm uninstall
+sudo msf uninstall
 ```
 
 也可以使用压缩包内的卸载脚本：
@@ -79,10 +79,10 @@ sudo msm uninstall
 sudo ./uninstall.sh
 ```
 
-默认卸载只删除 systemd 服务和 `/usr/local/bin/msm-free`，保留 `/opt/msm-free`。如需彻底删除数据目录：
+默认卸载只删除 systemd 服务和 `/usr/local/bin/msf`，保留 `/opt/msf`。如需彻底删除数据目录：
 
 ```sh
-sudo msm uninstall --purge
+sudo msf uninstall --purge
 sudo ./uninstall.sh --purge
 ```
 
@@ -90,5 +90,5 @@ sudo ./uninstall.sh --purge
 
 ```sh
 sha256sum -c SHA256SUMS
-systemctl status msm-free
+systemctl status msf
 ```

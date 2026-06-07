@@ -186,7 +186,7 @@ func diagnosticPortRows() []map[string]any {
 		Port    int
 		Desc    string
 	}{
-		{"msm", 7777, "Web UI"},
+		{"msf", 7777, "Web UI"},
 		{"mosdns", 53, "DNS 服务入口"},
 		{"mosdns", 2222, "国内 DNS"},
 		{"mosdns", 3333, "国外转发"},

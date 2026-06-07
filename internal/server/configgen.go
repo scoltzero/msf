@@ -135,7 +135,7 @@ func (a *App) writeGeneratedConfigs(cfg SetupConfig) error {
 		files["configs/mihomo/config.yaml"] = a.renderMihomoYAML(cfg)
 	}
 	if manual := renderMihomoManualProviderYAML(cfg.MihomoProxies); strings.TrimSpace(manual) != "" {
-		files["configs/mihomo/proxy_providers/msm_manual.yaml"] = manual
+		files["configs/mihomo/proxy_providers/msf_manual.yaml"] = manual
 	}
 	for rel, content := range files {
 		if err := a.writeTextFile(rel, content); err != nil {
@@ -207,7 +207,7 @@ func renderMihomoTemplate(template string, cfg SetupConfig) string {
 func renderMihomoFallbackYAML(cfg SetupConfig) string {
 	providerYAML := renderProxyProvidersYAML(parseSubscriptionProviders(cfg.SubscriptionURLs), hasMihomoManualProxies(cfg.MihomoProxies))
 	ipv6 := boolYAML(cfg.EnableIPv6)
-	return fmt.Sprintf(`# msm-free generated Mihomo config
+	return fmt.Sprintf(`# msf generated Mihomo config
 mode: rule
 log-level: info
 unified-delay: true
@@ -274,7 +274,7 @@ func renderProxyProvidersYAML(providers map[string]string, includeManual bool) s
 	var b strings.Builder
 	b.WriteString("proxy-providers:\n")
 	if includeManual {
-		b.WriteString("  msm_manual:\n    type: file\n    path: './proxy_providers/msm_manual.yaml'\n    health-check:\n      enable: true\n      url: http://detectportal.firefox.com/success.txt\n      interval: 120\n")
+		b.WriteString("  msf_manual:\n    type: file\n    path: './proxy_providers/msf_manual.yaml'\n    health-check:\n      enable: true\n      url: http://detectportal.firefox.com/success.txt\n      interval: 120\n")
 	}
 	keys := make([]string, 0, len(providers))
 	for k := range providers {
@@ -409,7 +409,7 @@ func (a *App) renderNFT(cfg SetupConfig) string {
 	return fmt.Sprintf(`#!/usr/sbin/nft -f
 flush ruleset
 
-table inet msm_free {
+table inet msf {
   set local_ipv4 {
     type ipv4_addr
     flags interval

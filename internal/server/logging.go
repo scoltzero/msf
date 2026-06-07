@@ -67,18 +67,18 @@ func (r *statusRecorder) statusCode() int {
 }
 
 func (a *App) LogInfo(caller, msg string, fields map[string]any) {
-	a.logMSM("info", caller, msg, fields)
+	a.logMSF("info", caller, msg, fields)
 }
 
 func (a *App) LogWarn(caller, msg string, fields map[string]any) {
-	a.logMSM("warn", caller, msg, fields)
+	a.logMSF("warn", caller, msg, fields)
 }
 
 func (a *App) LogError(caller, msg string, fields map[string]any) {
-	a.logMSM("error", caller, msg, fields)
+	a.logMSF("error", caller, msg, fields)
 }
 
-func (a *App) logMSM(level, caller, msg string, fields map[string]any) {
+func (a *App) logMSF(level, caller, msg string, fields map[string]any) {
 	if a == nil || a.DataDir == "" {
 		return
 	}
@@ -98,7 +98,7 @@ func (a *App) logMSM(level, caller, msg string, fields map[string]any) {
 	if err != nil {
 		return
 	}
-	path := filepath.Join(a.DataDir, "logs/msm.log")
+	path := filepath.Join(a.DataDir, "logs/msf.log")
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return
 	}

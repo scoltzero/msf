@@ -1,4 +1,4 @@
-module github.com/msm-free/msm-free
+module github.com/scoltzero/msf
 
 go 1.24.0
 

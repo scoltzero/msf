@@ -42,25 +42,27 @@ function linePath(values: number[]): string {
   return ys.map((y, i) => `${i === 0 ? "M" : "L"}${(i * step).toFixed(1)},${y.toFixed(1)}`).join(" ");
 }
 
+/**
+ * Quadratic-midpoint smoothing, identical to the live site: each data point is
+ * a control point and the curve passes through the midpoints between them.
+ * Produces `M p0 Q p0,mid01 Q p1,mid12 … L pLast`.
+ */
 function smoothLinePath(values: number[]): string {
   const ys = values.length === 1 ? [values[0], values[0]] : values;
-  if (ys.length === 0) return "";
-  if (ys.length === 2) return linePath(ys);
-  const step = 300 / (ys.length - 1);
-  let path = `M0,${ys[0].toFixed(1)}`;
-  for (let i = 0; i < ys.length - 1; i += 1) {
-    const y0 = ys[Math.max(0, i - 1)];
-    const y1 = ys[i];
-    const y2 = ys[i + 1];
-    const y3 = ys[Math.min(ys.length - 1, i + 2)];
-    const x1 = i * step;
-    const x2 = (i + 1) * step;
-    const cp1x = x1 + step / 6;
-    const cp1y = y1 + (y2 - y0) / 6;
-    const cp2x = x2 - step / 6;
-    const cp2y = y2 - (y3 - y1) / 6;
-    path += ` C${cp1x.toFixed(1)},${cp1y.toFixed(1)} ${cp2x.toFixed(1)},${cp2y.toFixed(1)} ${x2.toFixed(1)},${y2.toFixed(1)}`;
+  const n = ys.length;
+  if (n === 0) return "";
+  const step = n > 1 ? 300 / (n - 1) : 300;
+  const x = (i: number) => i * step;
+  let path = `M ${x(0).toFixed(2)},${ys[0].toFixed(2)}`;
+  if (n === 1) return path;
+  for (let i = 1; i < n; i += 1) {
+    const cx = x(i - 1);
+    const cy = ys[i - 1];
+    const mx = (x(i - 1) + x(i)) / 2;
+    const my = (ys[i - 1] + ys[i]) / 2;
+    path += ` Q ${cx.toFixed(2)},${cy.toFixed(2)} ${mx.toFixed(2)},${my.toFixed(2)}`;
   }
+  path += ` L ${x(n - 1).toFixed(2)},${ys[n - 1].toFixed(2)}`;
   return path;
 }
 
@@ -154,23 +156,27 @@ export function TrendChart({
           <stop offset="100%" stopColor="oklch(60% 0.21 235)" stopOpacity="0.05" />
         </linearGradient>
         <linearGradient id="memoryGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-          <stop offset="0%" stopColor="oklch(58% 0.25 293)" stopOpacity="0.3" />
-          <stop offset="100%" stopColor="oklch(58% 0.25 293)" stopOpacity="0.05" />
+          <stop offset="0%" stopColor="rgb(147, 51, 234)" stopOpacity="0.3" />
+          <stop offset="100%" stopColor="rgb(147, 51, 234)" stopOpacity="0.05" />
         </linearGradient>
       </defs>
-      <path d={areaPath(memoryYs)} fill="url(#memoryGradient)" />
+      <path d={areaPath(memoryYs, true)} fill="url(#memoryGradient)" />
       <path
-        d={linePath(memoryYs)}
+        d={smoothLinePath(memoryYs)}
         fill="none"
-        stroke="oklch(58% 0.25 293)"
+        stroke="rgb(147, 51, 234)"
         strokeWidth="1"
+        strokeLinecap="round"
+        strokeLinejoin="round"
       />
-      <path d={areaPath(cpuYs)} fill="url(#cpuGradient)" />
+      <path d={areaPath(cpuYs, true)} fill="url(#cpuGradient)" />
       <path
-        d={linePath(cpuYs)}
+        d={smoothLinePath(cpuYs)}
         fill="none"
         stroke="oklch(60% 0.21 235)"
         strokeWidth="1"
+        strokeLinecap="round"
+        strokeLinejoin="round"
       />
     </svg>
   );
@@ -219,40 +225,50 @@ export function RateChart({
     >
       <svg
         viewBox="0 0 300 100"
-        className="h-full w-full"
+        className="h-full w-full cursor-crosshair"
         preserveAspectRatio="none"
       >
         <Gridlines />
         <defs>
           <linearGradient id={`dlGradient-${id}`} x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stopColor="oklch(60% 0.21 235)" stopOpacity="0.28" />
-            <stop offset="100%" stopColor="oklch(60% 0.21 235)" stopOpacity="0.02" />
+            <stop offset="0%" stopColor="oklch(60% 0.21 235)" stopOpacity="0.3" />
+            <stop offset="100%" stopColor="oklch(60% 0.21 235)" stopOpacity="0.05" />
           </linearGradient>
           <linearGradient id={`ulGradient-${id}`} x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stopColor="oklch(60% 0.17 152)" stopOpacity="0.28" />
-            <stop offset="100%" stopColor="oklch(60% 0.17 152)" stopOpacity="0.02" />
+            <stop offset="0%" stopColor="rgb(22, 163, 74)" stopOpacity="0.3" />
+            <stop offset="100%" stopColor="rgb(22, 163, 74)" stopOpacity="0.05" />
+          </linearGradient>
+          <linearGradient id={`connGradient-${id}`} x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stopColor="rgb(234, 179, 8)" stopOpacity="0.3" />
+            <stop offset="100%" stopColor="rgb(234, 179, 8)" stopOpacity="0.05" />
           </linearGradient>
         </defs>
-        <path d={smoothLinePath(connYs)} fill="none" stroke="oklch(75% 0.15 75)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
         <path d={areaPath(dlYs, true)} fill={`url(#dlGradient-${id})`} />
         <path
           d={smoothLinePath(dlYs)}
           fill="none"
           stroke="oklch(60% 0.21 235)"
-          strokeWidth="3"
+          strokeWidth="1.5"
           strokeLinecap="round"
           strokeLinejoin="round"
-          vectorEffect="non-scaling-stroke"
         />
         <path d={areaPath(ulYs, true)} fill={`url(#ulGradient-${id})`} />
         <path
           d={smoothLinePath(ulYs)}
           fill="none"
-          stroke="oklch(60% 0.17 152)"
-          strokeWidth="3"
+          stroke="rgb(22, 163, 74)"
+          strokeWidth="1.5"
           strokeLinecap="round"
           strokeLinejoin="round"
-          vectorEffect="non-scaling-stroke"
+        />
+        <path d={areaPath(connYs, true)} fill={`url(#connGradient-${id})`} />
+        <path
+          d={smoothLinePath(connYs)}
+          fill="none"
+          stroke="rgb(234, 179, 8)"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
         />
         {activePoint ? (
           <line

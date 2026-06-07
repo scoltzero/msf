@@ -95,11 +95,14 @@ interface ReleaseItem {
 interface ComponentUpdateState {
   component?: string;
   current_version?: string;
+  current_version_detail?: string;
   latest_version?: string;
   has_update?: boolean;
+  can_update?: boolean;
   status?: string;
   progress?: number;
   error_message?: string;
+  download_url?: string;
   last_check_time?: string;
 }
 
@@ -148,7 +151,7 @@ const themeOptions: Array<{ id: ThemeMode; label: string; Icon: LucideIcon }> = 
 ];
 
 const RELEASE_REPO_OWNER = "scoltzero";
-const RELEASE_REPO_NAME = "msm-free";
+const RELEASE_REPO_NAME = "msf";
 const RELEASE_REPO = `${RELEASE_REPO_OWNER}/${RELEASE_REPO_NAME}`;
 const RELEASE_REPO_URL = `https://github.com/${RELEASE_REPO}`;
 
@@ -1074,7 +1077,7 @@ function AppearanceTab({ showToast }: { showToast: (message: string) => void }) 
     const dark = mode === "system" ? window.matchMedia("(prefers-color-scheme: dark)").matches : mode === "dark";
     document.documentElement.classList.toggle("dark", dark);
     document.documentElement.classList.toggle("light", !dark);
-    localStorage.setItem("msm-theme", mode);
+    localStorage.setItem("msf-theme", mode);
   };
 
   useEffect(() => {
@@ -1233,8 +1236,10 @@ function ComponentUpdateCard({
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const current = item?.current_version || "-";
+  const currentDetail = item?.current_version_detail || "";
   const latest = item?.latest_version || "-";
-  const canUpdate = Boolean(item?.has_update);
+  const hasUpdate = Boolean(item?.has_update);
+  const canUpdate = Boolean(item?.can_update || item?.has_update);
   const isBusy = busy === component;
   const progress = typeof item?.progress === "number" ? item.progress : 0;
   const effectiveConfig = config || { component, auto_check: true, check_interval: 43200, auto_update: false };
@@ -1245,7 +1250,8 @@ function ComponentUpdateCard({
         <div className="min-w-0">
           <div className="flex items-center gap-2 font-semibold text-foreground">
             {name}
-            {canUpdate ? <span className="rounded-full bg-green-500/10 px-2 py-0.5 text-xs text-green-600">可更新</span> : null}
+            {hasUpdate ? <span className="rounded-full bg-green-500/10 px-2 py-0.5 text-xs text-green-600">可更新</span> : null}
+            {!hasUpdate && canUpdate ? <span className="rounded-full bg-blue-500/10 px-2 py-0.5 text-xs text-blue-600">可覆盖</span> : null}
           </div>
           <div className="mt-1 text-xs text-muted-foreground">
             状态: {statusLabel(item?.status)} · 最后检查: {formatDateTime(item?.last_check_time)}
@@ -1272,8 +1278,8 @@ function ComponentUpdateCard({
             <RefreshCw className={cn("h-3.5 w-3.5", isBusy && "animate-spin")} />
             检查更新
           </OutlineButton>
-          <PrimaryButton disabled={isBusy || !canUpdate || latest === "-"} onClick={() => onUpdate(component)} className="h-8 min-w-[52px] px-3 text-xs">
-            更新
+          <PrimaryButton disabled={isBusy || !canUpdate} onClick={() => onUpdate(component)} className="h-8 min-w-[52px] px-3 text-xs">
+            {hasUpdate ? "更新" : "覆盖更新"}
           </PrimaryButton>
         </div>
       </div>
@@ -1292,7 +1298,7 @@ function ComponentUpdateCard({
         <div className="rounded-lg bg-muted/20 p-3">
           <div className="text-xs text-muted-foreground">当前版本</div>
           <div className="mt-1 font-mono text-foreground">{current}</div>
-          <div className="mt-1 text-xs text-muted-foreground">时间: -</div>
+          <div className="mt-1 break-all text-xs text-muted-foreground">{currentDetail ? `详情: ${currentDetail}` : "时间: -"}</div>
         </div>
         <div className="rounded-lg bg-muted/20 p-3">
           <div className="text-xs text-muted-foreground">最新版本</div>
@@ -1499,7 +1505,7 @@ function UpdateTab({ showToast }: { showToast: (message: string) => void }) {
   };
 
   const installUpdate = async () => {
-    if (!window.confirm("安装更新会重启 msm-free 服务，当前 WebUI 会短暂断开。是否继续？")) return;
+    if (!window.confirm("安装更新会重启 msf 服务，当前 WebUI 会短暂断开。是否继续？")) return;
     try {
       const payload = await api<any>("/api/v1/update/install", { method: "POST" });
       if (payload.success === false) {
@@ -1526,10 +1532,20 @@ function UpdateTab({ showToast }: { showToast: (message: string) => void }) {
     setComponentBusy(component);
     try {
       const payload = await api<any>(`/api/v1/component-updates/${component}/check`, { method: "POST" });
+      if (payload.success === false) {
+        showToast(`${component} 检查更新失败: ${payload.error || "未知错误"}`);
+        await reloadComponents();
+        return;
+      }
       const data = apiData<ComponentUpdateState>(payload, {});
       const config = componentConfigs[component];
       if (data.has_update && config?.auto_update) {
-        await api(`/api/v1/component-updates/${component}/update`, { method: "POST" });
+        const updatePayload = await api<any>(`/api/v1/component-updates/${component}/update`, { method: "POST" });
+        if (updatePayload.success === false) {
+          showToast(`${component} 自动更新失败: ${updatePayload.error || "未知错误"}`);
+          await reloadComponents();
+          return;
+        }
         showToast(`${component} 检测到更新，已自动执行更新任务`);
       } else {
         showToast(`${component} 已检查更新`);
@@ -1545,7 +1561,12 @@ function UpdateTab({ showToast }: { showToast: (message: string) => void }) {
   const updateComponent = async (component: string) => {
     setComponentBusy(component);
     try {
-      await api(`/api/v1/component-updates/${component}/update`, { method: "POST" });
+      const payload = await api<any>(`/api/v1/component-updates/${component}/update`, { method: "POST" });
+      if (payload.success === false) {
+        showToast(`${component} 更新失败: ${payload.error || "未知错误"}`);
+        await reloadComponents();
+        return;
+      }
       showToast(`${component} 更新任务已执行`);
       await reloadComponents();
     } catch (err) {

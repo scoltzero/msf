@@ -150,7 +150,7 @@ func (a *App) migrate() error {
 		)`,
 		`create table if not exists update_info (
 			id integer primary key autoincrement,
-			component text default 'msm-free',
+			component text default 'msf',
 			current_version text,
 			latest_version text,
 			has_update numeric default false,
@@ -194,6 +194,19 @@ func (a *App) migrate() error {
 		}
 	}
 	if err := a.ensureAPITokenScopeColumn(); err != nil {
+		return err
+	}
+	if err := a.migrateLegacyRows(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (a *App) migrateLegacyRows() error {
+	if _, err := a.DB.Exec(`update update_info set component='msf' where component in ('msm-free','msm')`); err != nil {
+		return err
+	}
+	if _, err := a.DB.Exec(`update config_histories set file_path=replace(file_path,'msm_manual.yaml','msf_manual.yaml') where file_path like '%msm_manual.yaml%'`); err != nil {
 		return err
 	}
 	return nil

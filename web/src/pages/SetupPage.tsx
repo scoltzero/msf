@@ -639,14 +639,14 @@ function SetupDownloadView({
           <div className="mb-4 flex justify-center">
             <div className="relative">
               <div className="absolute inset-0 rounded-full bg-primary/20 blur-xl" />
-              <img src="/logo/logo-square.svg" alt="MSM" className="relative z-10 h-16 w-16" />
+              <img src="/logo/logo-square.png" alt="MSF" className="relative z-10 h-16 w-16" />
             </div>
           </div>
           <h2 className="mb-2 text-2xl font-bold tracking-normal text-foreground">
             {status === "failed" ? "初始化失败" : "正在初始化系统"}
           </h2>
           <p className="text-sm text-muted-foreground">
-            {status === "failed" ? "核心组件未安装完成，请重试或稍后手动下载。" : "请稍候,我们正在为您配置 MSM 管理平台..."}
+            {status === "failed" ? "核心组件未安装完成，请重试或稍后手动下载。" : "请稍候,我们正在为您配置 MSF 管理平台..."}
           </p>
         </div>
 
@@ -1040,8 +1040,8 @@ export function SetupPage() {
 
       <main className="mx-auto w-full max-w-[896px] px-2 pb-8 pt-10">
         <header className="flex items-center gap-3 px-7">
-          <img src="/logo/logo-square.svg" alt="MSM" className="h-9 w-9" />
-          <h1 className="text-xl font-bold tracking-normal text-foreground">MSM 初始化向导</h1>
+          <img src="/logo/logo-square.png" alt="MSF" className="h-9 w-9" />
+          <h1 className="text-xl font-bold tracking-normal text-foreground">MSF 初始化向导</h1>
         </header>
 
         <div className="mt-6 overflow-hidden rounded-2xl border border-border/60 bg-card/80 shadow-apple-lg">
@@ -1051,7 +1051,7 @@ export function SetupPage() {
               <div className="mx-auto max-w-md space-y-4 py-1 text-center">
                 <StepIcon icon={Rocket} />
                 <div>
-                  <h2 className="text-lg font-bold text-foreground">欢迎使用 MSM 管理平台</h2>
+                  <h2 className="text-lg font-bold text-foreground">欢迎使用 MSF 管理平台</h2>
                   <p className="mt-1 text-xs text-muted-foreground">Mosdns · Singbox · Mihomo Manager</p>
                 </div>
                 {privilege && (

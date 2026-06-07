@@ -41,7 +41,7 @@ func (a *App) handleSingBoxUnavailable(w http.ResponseWriter, r *http.Request) {
 			"installed":    false,
 			"running":      false,
 			"status":       "disabled",
-			"message":      "sing-box is not implemented in msm-free x86 first version",
+			"message":      "sing-box is not implemented in msf x86 first version",
 		},
 	})
 }

@@ -42,8 +42,9 @@
   --radius-2xl: calc(var(--radius) * 1.8);
 }
 
-/* ---- MSM 管理平台 design tokens (extracted from live site) ---- */
+/* ---- MSF 管理平台 design tokens (extracted from live site) ---- */
 :root {
+  color-scheme: light;
   --font-app-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display",
     "SF Pro Text", "Helvetica Neue", "PingFang SC", "Hiragino Sans GB",
     "Microsoft YaHei", "Source Han Sans SC", "Noto Sans CJK SC", sans-serif;
@@ -80,6 +81,7 @@
 }
 
 .dark {
+  color-scheme: dark;
   --background: oklch(18% 0.005 240);
   --foreground: oklch(95% 0.005 240);
   --card: oklch(22% 0.008 240);
@@ -271,11 +273,22 @@
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
   }
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklch, var(--border) 80%, transparent) transparent;
+  }
   .scrollbar-thin::-webkit-scrollbar {
     width: 6px;
+    height: 6px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
   }
   .scrollbar-thin::-webkit-scrollbar-thumb {
     background: color-mix(in oklch, var(--border) 80%, transparent);
     border-radius: 9999px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in oklch, var(--muted-foreground) 60%, transparent);
   }
 }

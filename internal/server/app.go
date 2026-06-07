@@ -61,6 +61,9 @@ func New(opts Options) (*App, error) {
 	if err := os.MkdirAll(opts.DataDir, 0755); err != nil {
 		return nil, err
 	}
+	if err := MigrateLegacyLayout(opts.DataDir); err != nil {
+		return nil, err
+	}
 	dbPath := databasePath(opts.DataDir)
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
 		return nil, err

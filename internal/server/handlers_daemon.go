@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-const daemonSystemdUnit = "msm-free.service"
+const daemonSystemdUnit = "msf.service"
 
 func (a *App) handleDaemonStatus(w http.ResponseWriter, r *http.Request) {
 	payload := a.daemonStatusPayload()
@@ -71,7 +71,7 @@ func (a *App) handleDaemonStop(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) daemonStatusPayload() map[string]any {
 	return map[string]any{
-		"name":      "msm-free",
+		"name":      "msf",
 		"status":    "running",
 		"running":   true,
 		"pid":       os.Getpid(),

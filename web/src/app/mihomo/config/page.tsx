@@ -87,7 +87,7 @@ function isUserConfigPath(path: string) {
 }
 
 function isReservedConfigName(name: string) {
-  return ["config.yaml", "phone_config.yaml", "msm_generated.backup.yaml", "config.yaml.backup"].includes(name.trim().toLowerCase());
+  return ["config.yaml", "phone_config.yaml", "msf_generated.backup.yaml", "config.yaml.backup"].includes(name.trim().toLowerCase());
 }
 
 function normalizeClientConfigName(name: string) {
@@ -351,7 +351,7 @@ export default function MihomoConfigPage() {
   }, [dirty, showToast, suggestedName]);
 
   const restoreDefault = useCallback(async () => {
-    if (!window.confirm("确定恢复 MSM 预设 Mihomo 配置？当前自定义 config.yaml 会进入历史备份。")) return;
+    if (!window.confirm("确定恢复 MSF 预设 Mihomo 配置？当前自定义 config.yaml 会进入历史备份。")) return;
     setActing(true);
     try {
       await api("/api/v1/mihomo/config/restore-default", { method: "POST" });
@@ -505,7 +505,7 @@ export default function MihomoConfigPage() {
               <button onClick={newTemplate} className="rounded-lg border border-border/60 p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" aria-label="新建模板" title="新建自定义模板">
                 <FileText className="h-4 w-4" />
               </button>
-              <button onClick={restoreDefault} disabled={acting} className="rounded-lg border border-border/60 p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50" aria-label="恢复预设" title="恢复 MSM 预设配置">
+              <button onClick={restoreDefault} disabled={acting} className="rounded-lg border border-border/60 p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50" aria-label="恢复预设" title="恢复 MSF 预设配置">
                 <RotateCcw className="h-4 w-4" />
               </button>
               <button onClick={() => void reloadAll()} disabled={loading} className="rounded-lg border border-border/60 p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50" aria-label="刷新配置" title="刷新配置">
