@@ -58,3 +58,19 @@ func TestSelfUpdateArchiveNameUsesRuntimeArch(t *testing.T) {
 		t.Fatalf("selfUpdateArchiveName(linux, amd64) = %q", got)
 	}
 }
+
+func TestDefaultDataDirUsesMSFEnvBeforeLegacyEnv(t *testing.T) {
+	t.Setenv("MSF_DATA_DIR", "/tmp/msf-data")
+	t.Setenv("MSM_FREE_DATA_DIR", "/tmp/msm-free-data")
+	if got := defaultDataDir(); got != "/tmp/msf-data" {
+		t.Fatalf("defaultDataDir() = %q, want MSF_DATA_DIR", got)
+	}
+}
+
+func TestDefaultDataDirFallsBackToLegacyEnv(t *testing.T) {
+	t.Setenv("MSF_DATA_DIR", "")
+	t.Setenv("MSM_FREE_DATA_DIR", "/tmp/msm-free-data")
+	if got := defaultDataDir(); got != "/tmp/msm-free-data" {
+		t.Fatalf("defaultDataDir() = %q, want legacy MSM_FREE_DATA_DIR", got)
+	}
+}

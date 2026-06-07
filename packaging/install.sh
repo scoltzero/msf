@@ -1,15 +1,21 @@
 #!/usr/bin/env sh
 set -eu
 
-APP_NAME="msm-free"
+APP_NAME="msf"
+LEGACY_APP_NAME="msm-free"
 PREFIX="/usr/local"
-DATA_DIR="/opt/msm-free"
+DEFAULT_DATA_DIR="/opt/msf"
+LEGACY_DATA_DIR="/opt/msm-free"
+DATA_DIR="$DEFAULT_DATA_DIR"
 HOST="0.0.0.0"
 PORT="7777"
-SERVICE_NAME="msm-free"
+SERVICE_NAME="msf"
+LEGACY_SERVICE_NAME="msm-free"
 START_SERVICE="1"
 ALIAS_NAME="msm"
 INSTALL_ALIAS="1"
+DATA_DIR_SET="0"
+SERVICE_NAME_SET="0"
 
 usage() {
   cat <<'EOF'
@@ -17,11 +23,11 @@ Usage: ./install.sh [options]
 
 Options:
   --prefix PATH        Install binary under PATH/bin (default: /usr/local)
-  --data-dir PATH      msm-free data directory (default: /opt/msm-free)
+  --data-dir PATH      msf data directory (default: /opt/msf)
   --host HOST          HTTP listen host (default: 0.0.0.0)
   --port PORT          HTTP listen port (default: 7777)
-  --service-name NAME  systemd service name (default: msm-free)
-  --alias-name NAME    CLI alias to register under PATH/bin (default: msm)
+  --service-name NAME  systemd service name (default: msf)
+  --alias-name NAME    optional extra CLI alias to register under PATH/bin (default: msm)
   --no-alias           Do not register the msm compatibility alias
   --no-start           Install and enable the service, but do not start it
   -h, --help           Show this help
@@ -36,6 +42,7 @@ while [ "$#" -gt 0 ]; do
       ;;
     --data-dir)
       DATA_DIR="${2:?missing value for --data-dir}"
+      DATA_DIR_SET="1"
       shift 2
       ;;
     --host)
@@ -48,6 +55,7 @@ while [ "$#" -gt 0 ]; do
       ;;
     --service-name)
       SERVICE_NAME="${2:?missing value for --service-name}"
+      SERVICE_NAME_SET="1"
       shift 2
       ;;
     --alias-name)
@@ -86,15 +94,46 @@ if [ ! -f "$BIN_SRC" ]; then
   exit 1
 fi
 
+legacy_detected="0"
+if [ "$DATA_DIR" = "$LEGACY_DATA_DIR" ] || [ "$SERVICE_NAME" = "$LEGACY_SERVICE_NAME" ]; then
+  legacy_detected="1"
+elif [ "$DATA_DIR_SET" = "0" ] && { [ -d "$LEGACY_DATA_DIR" ] || [ -f "/etc/systemd/system/$LEGACY_SERVICE_NAME.service" ]; }; then
+  legacy_detected="1"
+fi
+
+if [ "$legacy_detected" = "1" ]; then
+  echo "detected legacy $LEGACY_APP_NAME installation; migrating to $APP_NAME"
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl stop "$LEGACY_SERVICE_NAME" >/dev/null 2>&1 || true
+    systemctl disable "$LEGACY_SERVICE_NAME" >/dev/null 2>&1 || true
+  fi
+  rm -f "/etc/systemd/system/$LEGACY_SERVICE_NAME.service"
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl daemon-reload >/dev/null 2>&1 || true
+    systemctl reset-failed "$LEGACY_SERVICE_NAME" >/dev/null 2>&1 || true
+  fi
+  if [ -d "$LEGACY_DATA_DIR" ] && [ ! -e "$DEFAULT_DATA_DIR" ]; then
+    mkdir -p "$(dirname "$DEFAULT_DATA_DIR")"
+    cp -a "$LEGACY_DATA_DIR" "$DEFAULT_DATA_DIR"
+  fi
+  if [ "$DATA_DIR" = "$LEGACY_DATA_DIR" ] || [ "$DATA_DIR_SET" = "0" ]; then
+    DATA_DIR="$DEFAULT_DATA_DIR"
+  fi
+  if [ "$SERVICE_NAME" = "$LEGACY_SERVICE_NAME" ] || [ "$SERVICE_NAME_SET" = "0" ]; then
+    SERVICE_NAME="$APP_NAME"
+  fi
+fi
+
 BIN_DIR="$PREFIX/bin"
 BIN_DEST="$BIN_DIR/$APP_NAME"
 SERVICE_PATH="/etc/systemd/system/$SERVICE_NAME.service"
 
 mkdir -p "$BIN_DIR" "$DATA_DIR"
 install -m 0755 "$BIN_SRC" "$BIN_DEST"
-"$BIN_DEST" init --config "$DATA_DIR"
+rm -f "$BIN_DIR/$LEGACY_APP_NAME"
+"$BIN_DEST" migrate --config "$DATA_DIR"
 
-if [ "$INSTALL_ALIAS" = "1" ] && [ -n "$ALIAS_NAME" ]; then
+if [ "$INSTALL_ALIAS" = "1" ] && [ -n "$ALIAS_NAME" ] && [ "$ALIAS_NAME" != "$APP_NAME" ]; then
   ALIAS_DEST="$BIN_DIR/$ALIAS_NAME"
   if [ ! -e "$ALIAS_DEST" ] || [ -L "$ALIAS_DEST" ]; then
     ln -sfn "$BIN_DEST" "$ALIAS_DEST"
@@ -106,7 +145,7 @@ fi
 if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
   cat > "$SERVICE_PATH" <<EOF
 [Unit]
-Description=msm-free service
+Description=msf service
 After=network-online.target
 Wants=network-online.target
 
@@ -114,7 +153,7 @@ Wants=network-online.target
 Type=simple
 User=root
 WorkingDirectory=$DATA_DIR
-Environment=MSM_FREE_DATA_DIR=$DATA_DIR
+Environment=MSF_DATA_DIR=$DATA_DIR
 ExecStart=$BIN_DEST serve --config $DATA_DIR --host $HOST --port $PORT
 Restart=on-failure
 RestartSec=2
@@ -131,13 +170,13 @@ EOF
     systemctl restart "$SERVICE_NAME"
   fi
   echo "installed $APP_NAME to $BIN_DEST"
-  [ "$INSTALL_ALIAS" = "1" ] && [ -n "$ALIAS_NAME" ] && echo "cli alias: $BIN_DIR/$ALIAS_NAME"
+  [ "$INSTALL_ALIAS" = "1" ] && [ -n "$ALIAS_NAME" ] && [ "$ALIAS_NAME" != "$APP_NAME" ] && echo "cli alias: $BIN_DIR/$ALIAS_NAME"
   echo "data directory: $DATA_DIR"
   echo "service: $SERVICE_NAME"
   echo "web UI: http://$(hostname -I 2>/dev/null | awk '{print $1}'):$PORT"
 else
   echo "installed $APP_NAME to $BIN_DEST"
-  [ "$INSTALL_ALIAS" = "1" ] && [ -n "$ALIAS_NAME" ] && echo "cli alias: $BIN_DIR/$ALIAS_NAME"
+  [ "$INSTALL_ALIAS" = "1" ] && [ -n "$ALIAS_NAME" ] && [ "$ALIAS_NAME" != "$APP_NAME" ] && echo "cli alias: $BIN_DIR/$ALIAS_NAME"
   echo "systemd was not detected; start manually:"
   echo "  $BIN_DEST serve --config $DATA_DIR --host $HOST --port $PORT"
 fi

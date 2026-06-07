@@ -138,25 +138,36 @@ jobs:
       - name: Build Unraid plugin package
         run: make unraid VERSION="${VERSION}" UNRAID_VERSION="${VERSION}" GITHUB_REPO="${GITHUB_REPO}" RELEASE_TAG="${RELEASE_TAG}" GOOS=linux GOARCH=amd64
 
+      - name: Create legacy linux asset aliases
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp dist/msf-linux-amd64.tar.gz dist/msm-free-linux-amd64.tar.gz
+          cp dist/msf-linux-arm64.tar.gz dist/msm-free-linux-arm64.tar.gz
+
       - name: Generate checksums
         shell: bash
         run: |
           set -euo pipefail
           cd dist
+          sha256sum msf-linux-amd64.tar.gz > msf-linux-amd64.tar.gz.sha256
+          sha256sum msf-linux-arm64.tar.gz > msf-linux-arm64.tar.gz.sha256
           sha256sum msm-free-linux-amd64.tar.gz > msm-free-linux-amd64.tar.gz.sha256
           sha256sum msm-free-linux-arm64.tar.gz > msm-free-linux-arm64.tar.gz.sha256
-          sha256sum "unraid/msm-free-${VERSION}-x86_64-1.txz" > "unraid/msm-free-${VERSION}-x86_64-1.txz.sha256"
-          sha256sum unraid/msm-free.plg > unraid/msm-free.plg.sha256
+          sha256sum "unraid/msf-${VERSION}-x86_64-1.txz" > "unraid/msf-${VERSION}-x86_64-1.txz.sha256"
+          sha256sum unraid/msf.plg > unraid/msf.plg.sha256
+          sha256sum -c msf-linux-amd64.tar.gz.sha256
+          sha256sum -c msf-linux-arm64.tar.gz.sha256
           sha256sum -c msm-free-linux-amd64.tar.gz.sha256
           sha256sum -c msm-free-linux-arm64.tar.gz.sha256
-          sha256sum -c "unraid/msm-free-${VERSION}-x86_64-1.txz.sha256"
-          sha256sum -c unraid/msm-free.plg.sha256
+          sha256sum -c "unraid/msf-${VERSION}-x86_64-1.txz.sha256"
+          sha256sum -c unraid/msf.plg.sha256
 
       - name: Verify binary architectures
         run: |
           set -euo pipefail
-          file dist/msm-free-linux-amd64 | grep -Eq 'x86-64|x86_64'
-          file dist/msm-free-linux-arm64 | grep -Eq 'ARM aarch64|aarch64'
+          file dist/msf-linux-amd64 | grep -Eq 'x86-64|x86_64'
+          file dist/msf-linux-arm64 | grep -Eq 'ARM aarch64|aarch64'
 
       - name: Create or update release tag
         if: github.ref_type != 'tag'
@@ -177,7 +188,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<'PY' > /tmp/msm-free-release-notes.md
+          python3 - <<'PY' > /tmp/msf-release-notes.md
           import pathlib
           import re
           import os
@@ -197,31 +208,35 @@ jobs:
           end = match.end() + next_match.start() if next_match else len(text)
           print(text[start:end].strip())
           PY
-          cat /tmp/msm-free-release-notes.md
+          cat /tmp/msf-release-notes.md
 
       - name: Publish GitHub release
         shell: bash
         run: |
           set -euo pipefail
           assets=(
+            "dist/msf-linux-amd64.tar.gz"
+            "dist/msf-linux-amd64.tar.gz.sha256"
+            "dist/msf-linux-arm64.tar.gz"
+            "dist/msf-linux-arm64.tar.gz.sha256"
             "dist/msm-free-linux-amd64.tar.gz"
             "dist/msm-free-linux-amd64.tar.gz.sha256"
             "dist/msm-free-linux-arm64.tar.gz"
             "dist/msm-free-linux-arm64.tar.gz.sha256"
-            "dist/unraid/msm-free-${VERSION}-x86_64-1.txz"
-            "dist/unraid/msm-free-${VERSION}-x86_64-1.txz.sha256"
-            "dist/unraid/msm-free.plg"
-            "dist/unraid/msm-free.plg.sha256"
+            "dist/unraid/msf-${VERSION}-x86_64-1.txz"
+            "dist/unraid/msf-${VERSION}-x86_64-1.txz.sha256"
+            "dist/unraid/msf.plg"
+            "dist/unraid/msf.plg.sha256"
           )
 
           if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
             gh release edit "${RELEASE_TAG}" \
               --title "${RELEASE_TAG}" \
-              --notes-file /tmp/msm-free-release-notes.md
+              --notes-file /tmp/msf-release-notes.md
             gh release upload "${RELEASE_TAG}" "${assets[@]}" --clobber
           else
             gh release create "${RELEASE_TAG}" "${assets[@]}" \
               --title "${RELEASE_TAG}" \
-              --notes-file /tmp/msm-free-release-notes.md \
+              --notes-file /tmp/msf-release-notes.md \
               --target "${GITHUB_SHA}"
           fi

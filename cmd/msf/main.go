@@ -50,7 +50,7 @@ func run(args []string) error {
 	fs.IntVar(port, "port", 7777, "HTTP listen port")
 	prefix := fs.String("prefix", "/usr/local", "install prefix for uninstall")
 	serviceName := fs.String("service-name", "msf", "systemd service name")
-	aliasName := fs.String("alias-name", "", "optional extra CLI alias to register under PATH/bin (empty = none)")
+	aliasName := fs.String("alias-name", "msm", "optional extra CLI alias to register under PATH/bin")
 	purge := fs.Bool("purge", false, "remove data directory during uninstall")
 	wait := fs.Bool("wait", true, "wait for stop to complete")
 	force := fs.Bool("force", false, "force kill process if graceful stop times out")
@@ -80,7 +80,7 @@ func run(args []string) error {
 			log.Println("daemon mode is accepted for compatibility; running in foreground")
 		}
 		return serve(*configDir, *host, *port)
-	case "init":
+	case "init", "migrate":
 		app, err := server.New(server.Options{DataDir: *configDir, Version: version})
 		if err != nil {
 			return err
@@ -155,6 +155,7 @@ func printUsage() {
   msf doctor [--config /opt/msf]
   msf update [--repo scoltzero/msf] [--url https://.../msf-linux-amd64.tar.gz]
   msf uninstall [--config /opt/msf] [--prefix /usr/local] [--service-name msf] [--purge]
+  msf migrate [--config /opt/msf]
   msf reset-password [--config /opt/msf] [password]
   msf service install|uninstall [--config /opt/msf]
   msf license status|fingerprint
@@ -234,6 +235,9 @@ func serve(dataDir, host string, port int) error {
 
 func defaultDataDir() string {
 	if v := os.Getenv("MSF_DATA_DIR"); v != "" {
+		return v
+	}
+	if v := os.Getenv("MSM_FREE_DATA_DIR"); v != "" {
 		return v
 	}
 	if os.Geteuid() == 0 {

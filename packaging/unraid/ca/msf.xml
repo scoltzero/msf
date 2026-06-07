@@ -1,22 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Containers>
 <Plugin>True</Plugin>
-<PluginURL>https://raw.githubusercontent.com/scoltzero/msm-free/main/msm-free.plg</PluginURL>
+<PluginURL>https://raw.githubusercontent.com/scoltzero/msf/main/msf.plg</PluginURL>
 <PluginAuthor>scoltzero</PluginAuthor>
 <Beta>False</Beta>
 <Category>Network:Management Tools:System Plugins:</Category>
-<Name>msm-free</Name>
+<Name>msf</Name>
 <Description>
 Open reimplementation of the MSM-style MosDNS + Mihomo manager for Unraid.
-msm-free installs a WebGUI Settings page plus a self-managed local service that runs MosDNS (DNS), Mihomo (proxy/TProxy), and the required nftables rules. Components are downloaded and managed by msm-free after you complete the in-app setup wizard. Custom Mihomo configs, proxy groups/providers, rule-sets and rules are editable in the WebUI (with a CodeMirror YAML editor); MosDNS/Mihomo/Zashboard cores can be installed online or via local upload for offline use. Persistent data lives under /mnt/user/appdata/msm-free.
-Update and remove msm-free from the Unraid Plugins page (not via the in-app updater).
+msf installs a WebGUI Settings page plus a self-managed local service that runs MosDNS (DNS), Mihomo (proxy/TProxy), and the required nftables rules. Components are downloaded and managed by msf after you complete the in-app setup wizard. Custom Mihomo configs, proxy groups/providers, rule-sets and rules are editable in the WebUI (with a CodeMirror YAML editor); MosDNS/Mihomo/Zashboard cores can be installed online or via local upload for offline use. Persistent data lives under /mnt/user/appdata/msf.
+Update and remove msf from the Unraid Plugins page (not via the in-app updater).
 </Description>
-<Support>https://github.com/scoltzero/msm-free/issues</Support>
-<Project>https://github.com/scoltzero/msm-free</Project>
-<Icon>https://raw.githubusercontent.com/scoltzero/msm-free/main/packaging/unraid/msm-free.png</Icon>
+<Support>https://github.com/scoltzero/msf/issues</Support>
+<Project>https://github.com/scoltzero/msf</Project>
+<Icon>https://raw.githubusercontent.com/scoltzero/msf/main/packaging/unraid/msf.png</Icon>
 <Date>2026-06-06</Date>
 <Changes>
-### msm-free 0.2.2
+### msf 0.2.2
 - Mihomo custom config: import, create, name, save, apply and roll back; manage proxy groups, providers, rule-sets and rules in the WebUI.
 - Local upload install for MosDNS / Mihomo / Zashboard cores (offline-friendly).
 - CodeMirror YAML editor with highlighting, line numbers, undo/redo and search.

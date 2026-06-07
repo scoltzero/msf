@@ -1,11 +1,11 @@
 .PHONY: dev build frontend import-web package unraid test clean
 
-APP_NAME := msm-free
+APP_NAME := msf
 DIST := dist
-WEB_EXPORT ?= msm_html_export.tar.gz
+WEB_EXPORT ?= msf_html_export.tar.gz
 VERSION ?= 0.1.0-dev
 UNRAID_VERSION ?= $(VERSION)
-GITHUB_REPO ?= luochuhan/msm-free
+GITHUB_REPO ?= scoltzero/msf
 RELEASE_TAG ?= v$(VERSION)
 GOOS ?= linux
 GOARCH ?= amd64
@@ -28,13 +28,13 @@ import-web:
 	done; \
 	if [ -f internal/server/web/dist/manifest.json ]; then mv internal/server/web/dist/manifest.json internal/server/web/dist/export-manifest.json; fi; \
 	rm -rf "$$tmp"; \
-	echo "imported exported MSM web assets from $(WEB_EXPORT)"
+	echo "imported exported MSF web assets from $(WEB_EXPORT)"
 
 build: package
 
 package: frontend
 	mkdir -p $(DIST)
-	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -trimpath -ldflags "-s -w -X main.version=$(VERSION)" -o $(BIN) ./cmd/msm-free
+	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -trimpath -ldflags "-s -w -X main.version=$(VERSION)" -o $(BIN) ./cmd/msf
 	rm -rf $(PACKAGE_DIR)
 	mkdir -p $(PACKAGE_DIR)/systemd
 	cp $(BIN) $(PACKAGE_DIR)/$(APP_NAME)
@@ -49,7 +49,7 @@ unraid: package
 	APP_NAME=$(APP_NAME) VERSION=$(VERSION) UNRAID_VERSION=$(UNRAID_VERSION) GITHUB_REPO=$(GITHUB_REPO) RELEASE_TAG=$(RELEASE_TAG) DIST=$(DIST) packaging/unraid/build-unraid.sh
 
 dev:
-	go run ./cmd/msm-free serve -c ./data -p 7777
+	go run ./cmd/msf serve -c ./data -p 7777
 
 test:
 	go test ./...

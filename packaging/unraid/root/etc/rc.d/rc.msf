@@ -1,12 +1,12 @@
 #!/bin/sh
 
-CFG="/boot/config/plugins/msm-free/msm-free.cfg"
-APP="/usr/local/emhttp/plugins/msm-free/bin/msm-free"
+CFG="/boot/config/plugins/msf/msf.cfg"
+APP="/usr/local/emhttp/plugins/msf/bin/msf"
 
 ENABLED="yes"
 HOST="0.0.0.0"
 PORT="7777"
-DATA_DIR="/mnt/user/appdata/msm-free"
+DATA_DIR="/mnt/user/appdata/msf"
 
 if [ -f "$CFG" ]; then
   . "$CFG"
@@ -15,10 +15,10 @@ fi
 : "${ENABLED:=yes}"
 : "${HOST:=0.0.0.0}"
 : "${PORT:=7777}"
-: "${DATA_DIR:=/mnt/user/appdata/msm-free}"
+: "${DATA_DIR:=/mnt/user/appdata/msf}"
 
-PID_FILE="${DATA_DIR}/msm-free.pid"
-LOG_FILE="${DATA_DIR}/logs/msm-free.unraid.log"
+PID_FILE="${DATA_DIR}/msf.pid"
+LOG_FILE="${DATA_DIR}/logs/msf.unraid.log"
 
 array_ready() {
   case "$DATA_DIR" in
@@ -48,7 +48,7 @@ is_running() {
 
 start_service() {
   if [ "$ENABLED" != "yes" ]; then
-    echo "msm-free is disabled"
+    echo "msf is disabled"
     return 0
   fi
   if [ ! -x "$APP" ]; then
@@ -60,7 +60,7 @@ start_service() {
     return 0
   fi
   if is_running; then
-    echo "msm-free already running pid=$(pid_value)"
+    echo "msf already running pid=$(pid_value)"
     return 0
   fi
 
@@ -70,10 +70,10 @@ start_service() {
   sleep 2
 
   if is_running; then
-    echo "msm-free started pid=$(pid_value)"
+    echo "msf started pid=$(pid_value)"
     return 0
   fi
-  echo "msm-free failed to start; see $LOG_FILE"
+  echo "msf failed to start; see $LOG_FILE"
   return 1
 }
 
@@ -90,7 +90,7 @@ stop_service() {
     kill -9 "$(pid_value)" 2>/dev/null || true
   fi
   rm -f "$PID_FILE"
-  echo "msm-free stopped"
+  echo "msf stopped"
 }
 
 status_service() {

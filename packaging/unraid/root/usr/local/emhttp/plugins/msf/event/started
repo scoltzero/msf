@@ -1,0 +1,5 @@
+#!/bin/sh
+
+if [ -x /etc/rc.d/rc.msf ]; then
+  /etc/rc.d/rc.msf start >/dev/null 2>&1 &
+fi

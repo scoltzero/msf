@@ -1,10 +1,10 @@
 #!/usr/bin/env sh
 set -eu
 
-APP_NAME="msm-free"
+APP_NAME="msf"
 PREFIX="/usr/local"
-DATA_DIR="/opt/msm-free"
-SERVICE_NAME="msm-free"
+DATA_DIR="/opt/msf"
+SERVICE_NAME="msf"
 PURGE="0"
 ALIAS_NAME="msm"
 
@@ -14,8 +14,8 @@ Usage: ./uninstall.sh [options]
 
 Options:
   --prefix PATH        Binary prefix used during install (default: /usr/local)
-  --data-dir PATH      Data directory used during install (default: /opt/msm-free)
-  --service-name NAME  systemd service name (default: msm-free)
+  --data-dir PATH      Data directory used during install (default: /opt/msf)
+  --service-name NAME  systemd service name (default: msf)
   --alias-name NAME    CLI alias registered during install (default: msm)
   --purge             Remove the data directory as well
   -h, --help           Show this help
@@ -77,7 +77,7 @@ if command -v systemctl >/dev/null 2>&1 && [ -f "$SERVICE_PATH" ]; then
 fi
 
 rm -f "$BIN_DEST"
-if [ -L "$ALIAS_DEST" ]; then
+if [ -n "$ALIAS_NAME" ] && [ "$ALIAS_NAME" != "$APP_NAME" ] && [ -L "$ALIAS_DEST" ]; then
   ALIAS_TARGET=$(readlink "$ALIAS_DEST" || true)
   if [ "$ALIAS_TARGET" = "$BIN_DEST" ] || [ "$ALIAS_TARGET" = "$APP_NAME" ]; then
     rm -f "$ALIAS_DEST"
