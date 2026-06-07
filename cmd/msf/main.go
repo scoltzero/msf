@@ -464,7 +464,7 @@ func uninstallRuntime(opts uninstallOptions) error {
 		return errors.New("on Unraid, remove msf from the WebGUI plugin page; application data is kept under /mnt/user/appdata/msf")
 	}
 	if isFnosRuntime() {
-		return errors.New("在飞牛 fnOS 上，请在应用中心卸载 msm-free，而不要用 systemd 卸载流程")
+		return errors.New("在飞牛 fnOS 上，请在应用中心卸载 msf，而不要用 systemd 卸载流程")
 	}
 	if opts.Prefix == "" {
 		opts.Prefix = "/usr/local"
@@ -528,7 +528,7 @@ func updateRuntime(opts updateOptions) error {
 		return errors.New("on Unraid, update msf from the WebGUI plugin page instead of the Linux tarball updater")
 	}
 	if isFnosRuntime() {
-		return errors.New("在飞牛 fnOS 上，请在应用中心更新 msm-free，而不要用 Linux tarball 自更新")
+		return errors.New("在飞牛 fnOS 上，请在应用中心更新 msf，而不要用 Linux tarball 自更新")
 	}
 	if opts.Repo == "" {
 		opts.Repo = defaultGitHubRepo()
@@ -686,7 +686,7 @@ func removeSystemdService(serviceName string) error {
 		return errors.New("on Unraid, remove msf from the WebGUI plugin page instead of systemd service uninstall")
 	}
 	if isFnosRuntime() {
-		return errors.New("在飞牛 fnOS 上，请在应用中心卸载 msm-free")
+		return errors.New("在飞牛 fnOS 上，请在应用中心卸载 msf")
 	}
 	servicePath := filepath.Join("/etc/systemd/system", serviceName+".service")
 	_ = runQuiet("systemctl", "stop", serviceName)

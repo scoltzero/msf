@@ -1,4 +1,4 @@
-# fnOS .fpk packaging for msm-free
+# fnOS .fpk packaging for msf
 
 ## Build
 
@@ -16,16 +16,16 @@ it from `static2.fnnas.com`.  On macOS the script uses `sips` for icon resizing
 ## Install
 
 - **App Center (manual):** Upload the `.fpk` via the fnOS App Center → Manual Install.
-- **CLI:** `appcenter-cli install-local dist/msm-free_*.fpk`
+- **CLI:** `appcenter-cli install-local dist/msf_*.fpk`
 
 ## Runtime notes
 
-- **Requires root.**  msm-free manages nftables rules, binds `:53` for DNS, and runs
+- **Requires root.**  msf manages nftables rules, binds `:53` for DNS, and runs
   transparent proxy (TProxy) — all of which need `run-as: root` and full network
   capabilities.
-- The binary is installed to `/var/apps/msm-free/app/msm-free`, writeable data to
-  `/var/apps/msm-free/var` (`$TRIM_PKGVAR`).
-- The systemd unit (`msm-free.service`) is registered by fnOS (route 乙 in `resource`).
+- The binary is installed to `/var/apps/msf/app/msf`, writeable data to
+  `/var/apps/msf/var` (`$TRIM_PKGVAR`).
+- The systemd unit (`msf.service`) is registered by fnOS (route 乙 in `resource`).
   The `cmd/main` start/stop/status handler also includes a `nohup` fallback for
   compatibility with non-systemd fnOS installs.
 - `PATH` is extended to include `/usr/sbin` and `/sbin` so that `nft` and `ip` are

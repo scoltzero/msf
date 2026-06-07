@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ── defaults ──────────────────────────────────────────────
-APP_NAME="${APP_NAME:-msm-free}"
+APP_NAME="${APP_NAME:-msf}"
 VERSION="${VERSION:-0.0.0}"
 DIST="${DIST:-dist}"
 ARCH="${ARCH:-amd64}"
@@ -58,7 +58,7 @@ else
 fi
 
 # ── copy assets ───────────────────────────────────────────
-cp packaging/fnos/msm-free.sc       "${STAGE}/msm-free.sc"
+cp packaging/fnos/msf.sc       "${STAGE}/msf.sc"
 cp packaging/fnos/config/privilege  "${STAGE}/config/privilege"
 cp packaging/fnos/config/resource   "${STAGE}/config/resource"
 
@@ -76,10 +76,10 @@ for f in packaging/fnos/wizard/*; do
   chmod 755 "${STAGE}/wizard/${bn}"
 done
 
-cp packaging/fnos/systemd/msm-free.service "${STAGE}/systemd/msm-free.service"
+cp packaging/fnos/systemd/msf.service "${STAGE}/systemd/msf.service"
 
-cp "${SRC_BIN}" "${STAGE}/app/msm-free"
-chmod 755 "${STAGE}/app/msm-free"
+cp "${SRC_BIN}" "${STAGE}/app/msf"
+chmod 755 "${STAGE}/app/msf"
 
 # ── icons ─────────────────────────────────────────────────
 ICON_SRC=""
@@ -138,9 +138,9 @@ fi
 cat > "${STAGE}/app/ui/config" <<'UICONF'
 {
     ".url": {
-        "msm-free.Application": {
-            "title": "MSM Free",
-            "desc": "MSM Free Web UI",
+        "msf.Application": {
+            "title": "MSF Free",
+            "desc": "MSF Free Web UI",
             "icon": "images/{0}.png",
             "type": "url",
             "port": "7777",

@@ -1,5 +1,5 @@
 {
-    "port-config": { "protocol-file": "msm-free.sc" },
+    "port-config": { "protocol-file": "msf.sc" },
     "systemd-unit": {},
-    "data-share": { "shares": [ { "name": "msm-free", "permission": { "rw": ["msm-free"] } } ] }
+    "data-share": { "shares": [ { "name": "msf", "permission": { "rw": ["msf"] } } ] }
 }

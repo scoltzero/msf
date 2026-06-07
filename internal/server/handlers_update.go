@@ -234,7 +234,7 @@ func (a *App) handleUpdateInstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if serverIsFnosRuntime() {
-		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": "飞牛 fnOS 环境请通过应用中心更新 msm-free", "data": a.selfUpdateState()})
+		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": "飞牛 fnOS 环境请通过应用中心更新 msf", "data": a.selfUpdateState()})
 		return
 	}
 	state := a.selfUpdateState()

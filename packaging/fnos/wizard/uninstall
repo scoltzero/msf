@@ -1,7 +1,7 @@
 [{
-  "stepTitle": "卸载 MSM Free",
+  "stepTitle": "卸载 MSF Free",
   "items": [
-    { "type": "tips", "helpText": "卸载前请确认：MSM Free 运行期会写入 nftables 规则与策略路由。卸载会停止服务并清理这些运行态网络配置。" },
+    { "type": "tips", "helpText": "卸载前请确认：MSF Free 运行期会写入 nftables 规则与策略路由。卸载会停止服务并清理这些运行态网络配置。" },
     {
       "type": "radio",
       "field": "wizard_delete_data",

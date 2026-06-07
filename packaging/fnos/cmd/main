@@ -1,12 +1,12 @@
 #!/bin/bash
 export PATH="/usr/sbin:/sbin:/usr/bin:/bin:$PATH"
 
-BIN="${TRIM_APPDEST}/msm-free"
+BIN="${TRIM_APPDEST}/msf"
 DATA="${TRIM_PKGVAR:-${TRIM_APPDEST}/var}"
 PORT="${TRIM_SERVICE_PORT:-7777}"
-export MSM_FREE_DATA_DIR="${DATA}"
+export MSF_DATA_DIR="${DATA}"
 
-LOG_FILE="${DATA}/msm-free.log"
+LOG_FILE="${DATA}/msf.log"
 PID_FILE="${DATA}/app.pid"
 mkdir -p "${DATA}"
 
@@ -49,7 +49,7 @@ stop)
         fi
         rm -f "${PID_FILE}"
     fi
-    pkill -9 -x msm-free 2>/dev/null
+    pkill -9 -x msf 2>/dev/null
     exit 0
     ;;
 status)
