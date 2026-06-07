@@ -1,0 +1,17 @@
+[Unit]
+Description=msm-free (fnOS)
+After=network-online.target
+Wants=network-online.target
+[Service]
+Type=simple
+User=root
+Environment=PATH=/usr/sbin:/sbin:/usr/bin:/bin
+Environment=MSM_FREE_DATA_DIR=/var/apps/msm-free/var
+WorkingDirectory=/var/apps/msm-free/var
+ExecStart=/var/apps/msm-free/target/msm-free serve --config /var/apps/msm-free/var --host 0.0.0.0 --port 7777
+Restart=on-failure
+RestartSec=2
+TimeoutStopSec=30
+LimitNOFILE=1048576
+[Install]
+WantedBy=multi-user.target

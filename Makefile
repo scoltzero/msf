@@ -1,4 +1,4 @@
-.PHONY: dev build frontend import-web package unraid test clean
+.PHONY: dev build frontend import-web package unraid fnos test clean
 
 APP_NAME := msm-free
 DIST := dist
@@ -56,3 +56,6 @@ test:
 
 clean:
 	rm -rf $(DIST)
+
+fnos: package
+	APP_NAME=$(APP_NAME) VERSION=$(VERSION) DIST=$(DIST) ARCH=$(GOARCH) packaging/fnos/build-fpk.sh

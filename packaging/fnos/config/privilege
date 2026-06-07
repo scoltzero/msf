@@ -1,0 +1,5 @@
+{
+    "defaults": { "run-as": "root" },
+    "username": "msm-free",
+    "groupname": "msm-free"
+}

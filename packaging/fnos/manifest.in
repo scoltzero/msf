@@ -1,0 +1,15 @@
+appname         = msm-free
+version         = __VERSION__
+display_name    = MSM Free
+desc            = MosDNS + Mihomo 透明代理与 DNS 分流管理面板
+platform        = x86
+source          = thirdparty
+maintainer      = scoltc
+maintainer_url  = https://github.com/scoltzero/msm-free
+install_type    = root
+service_port    = 7777
+checkport       = true
+desktop_uidir   = ui
+desktop_applaunchname = msm-free.Application
+os_min_version  = 0.9.27
+checksum        = __CHECKSUM__

@@ -466,6 +466,9 @@ func uninstallRuntime(opts uninstallOptions) error {
 	if isUnraidRuntime() {
 		return errors.New("on Unraid, remove msm-free from the WebGUI plugin page; application data is kept under /mnt/user/appdata/msm-free")
 	}
+	if isFnosRuntime() {
+		return errors.New("在飞牛 fnOS 上，请在应用中心卸载 msm-free，而不要用 systemd 卸载流程")
+	}
 	if opts.Prefix == "" {
 		opts.Prefix = "/usr/local"
 	}
@@ -527,6 +530,9 @@ func updateRuntime(opts updateOptions) error {
 	}
 	if isUnraidRuntime() {
 		return errors.New("on Unraid, update msm-free from the WebGUI plugin page instead of the Linux tarball updater")
+	}
+	if isFnosRuntime() {
+		return errors.New("在飞牛 fnOS 上，请在应用中心更新 msm-free，而不要用 Linux tarball 自更新")
 	}
 	if opts.Repo == "" {
 		opts.Repo = defaultGitHubRepo()
@@ -618,6 +624,9 @@ func installSystemdService(opts serviceOptions) error {
 	if isUnraidRuntime() {
 		return errors.New("on Unraid, use /etc/rc.d/rc.msm-free and the WebGUI plugin page instead of systemd service install")
 	}
+	if isFnosRuntime() {
+		return errors.New("在飞牛 fnOS 上，应用生命周期由 fpk/应用中心管理，无需 systemd 装服务")
+	}
 	if opts.ServiceName == "" {
 		opts.ServiceName = "msm-free"
 	}
@@ -679,6 +688,9 @@ func removeSystemdService(serviceName string) error {
 	}
 	if isUnraidRuntime() {
 		return errors.New("on Unraid, remove msm-free from the WebGUI plugin page instead of systemd service uninstall")
+	}
+	if isFnosRuntime() {
+		return errors.New("在飞牛 fnOS 上，请在应用中心卸载 msm-free")
 	}
 	servicePath := filepath.Join("/etc/systemd/system", serviceName+".service")
 	_ = runQuiet("systemctl", "stop", serviceName)
@@ -938,6 +950,16 @@ func isUnraidRuntime() bool {
 		return true
 	}
 	if strings.Contains(strings.ToLower(os.Getenv("UNRAID_VERSION")), "unraid") {
+		return true
+	}
+	return false
+}
+
+func isFnosRuntime() bool {
+	if v := strings.TrimSpace(os.Getenv("TRIM_APPDEST")); v != "" {
+		return true
+	}
+	if fileExists("/var/apps") {
 		return true
 	}
 	return false

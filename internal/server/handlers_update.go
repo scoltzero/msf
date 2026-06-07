@@ -232,6 +232,10 @@ func (a *App) handleUpdateInstall(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": "Unraid 环境请通过插件管理页面更新 msm-free", "data": a.selfUpdateState()})
 		return
 	}
+	if serverIsFnosRuntime() {
+		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": "飞牛 fnOS 环境请通过应用中心更新 msm-free", "data": a.selfUpdateState()})
+		return
+	}
 	state := a.selfUpdateState()
 	rawURL := strings.TrimSpace(fmt.Sprint(state["download_url"]))
 	if rawURL == "" {
@@ -331,6 +335,13 @@ func serverIsUnraidRuntime() bool {
 		return true
 	}
 	return strings.Contains(strings.ToLower(os.Getenv("UNRAID_VERSION")), "unraid")
+}
+
+func serverIsFnosRuntime() bool {
+	if v := strings.TrimSpace(os.Getenv("TRIM_APPDEST")); v != "" {
+		return true
+	}
+	return fileExists("/var/apps")
 }
 
 func (a *App) handleUpdateCancel(w http.ResponseWriter, r *http.Request) {
