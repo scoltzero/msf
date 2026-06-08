@@ -102,7 +102,23 @@ elif [ "$DATA_DIR_SET" = "0" ] && { [ -d "$LEGACY_DATA_DIR" ] || [ -f "/etc/syst
 fi
 
 if [ "$legacy_detected" = "1" ]; then
+  if [ "${MSF_INSTALL_DETACHED:-0}" != "1" ] && command -v systemd-run >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
+    unit="msf-legacy-migrate-$(date +%Y%m%d%H%M%S)"
+    set -- --prefix "$PREFIX" --data-dir "$DATA_DIR" --host "$HOST" --port "$PORT" --service-name "$SERVICE_NAME" --alias-name "$ALIAS_NAME"
+    [ "$INSTALL_ALIAS" = "0" ] && set -- "$@" --no-alias
+    [ "$START_SERVICE" = "0" ] && set -- "$@" --no-start
+    if systemd-run --unit "$unit" --collect --setenv=MSF_INSTALL_DETACHED=1 /bin/sh "$SCRIPT_DIR/install.sh" "$@"; then
+      echo "legacy migration started as systemd unit: $unit"
+      exit 0
+    fi
+    echo "failed to detach legacy migration; continuing in current process" >&2
+  fi
+
   echo "detected legacy $LEGACY_APP_NAME installation; migrating to $APP_NAME"
+  # Let the old WebUI finish its immediate status refresh before this installer stops it.
+  if [ "${MSF_LEGACY_UPDATE_GRACE_SECONDS:-4}" != "0" ]; then
+    sleep "${MSF_LEGACY_UPDATE_GRACE_SECONDS:-4}"
+  fi
   if command -v systemctl >/dev/null 2>&1; then
     systemctl stop "$LEGACY_SERVICE_NAME" >/dev/null 2>&1 || true
     systemctl disable "$LEGACY_SERVICE_NAME" >/dev/null 2>&1 || true

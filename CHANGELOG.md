@@ -1,5 +1,24 @@
 # 更新日志
 
+## v0.3.0 - 2026-06-08
+
+### 说明
+
+- 项目品牌与工程标识从 `msm-free` / `MSM Free` 迁移为 `msf` / `MSF Free`，GitHub 仓库发布路径切换到 `scoltzero/msf`。
+- Linux v0.2.2 用户可通过原有 WebUI 自更新入口升级：发布包继续提供 `msm-free-linux-amd64.tar.gz` 与 `msm-free-linux-arm64.tar.gz` 兼容副本，内容与新 `msf-*` 包逐字节一致。
+
+### 新增
+
+- 新增 `msf migrate` 一次性迁移命令，支持迁移旧数据目录、数据库文件、`update_info` 组件键、`msm_manual` Mihomo provider、旧 PID/日志文件与旧 nftables 表。
+- Linux 安装脚本默认安装到 `/opt/msf`、`msf.service` 和 `/usr/local/bin/msf`，并保留 `/usr/local/bin/msm` CLI 兼容别名。
+- 新增 `msf` Unraid 插件包与 CA 元数据，安装路径切换为 `/mnt/user/appdata/msf`、`rc.msf` 和 `/usr/local/emhttp/plugins/msf`。
+
+### 修复
+
+- 修复改名后发布链路和系统自更新资源名匹配问题，确保新旧 Linux 包名同时发布并生成校验文件。
+- 修复 Unraid/fnOS 环境下网页自更新入口可能使用 Linux systemd 安装流程的问题，改为提示通过对应应用/插件管理入口升级。
+- 修复前端标题、初始化向导、登录页、导航、storage key 和 API token 前缀中的旧 `MSM`/`msm` 标识残留。
+
 ## v0.2.2 - 2026-06-05
 
 ### 说明

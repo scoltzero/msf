@@ -52,7 +52,11 @@ ${APP_NAME}:
 EOF
 
 rm -f "$TXZ"
-tar --uid 0 --gid 0 --uname root --gname root -cJf "$TXZ" -C "$PKG_ROOT" .
+if tar --version 2>/dev/null | grep -qi "gnu tar"; then
+  tar --owner=0 --group=0 --numeric-owner -cJf "$TXZ" -C "$PKG_ROOT" .
+else
+  tar --uid 0 --gid 0 --uname root --gname root -cJf "$TXZ" -C "$PKG_ROOT" .
+fi
 
 if command -v sha256sum >/dev/null 2>&1; then
   PKG_SHA256="$(sha256sum "$TXZ" | awk '{print $1}')"

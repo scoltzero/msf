@@ -240,3 +240,34 @@ jobs:
               --notes-file /tmp/msf-release-notes.md \
               --target "${GITHUB_SHA}"
           fi
+
+      - name: Sync root Unraid plugin manifest
+        shell: bash
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          manifest="$(mktemp)"
+          cp dist/unraid/msf.plg "${manifest}"
+
+          worktree="$(mktemp -d)"
+          cleanup() {
+            git worktree remove --force "${worktree}" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          git fetch origin "${DEFAULT_BRANCH}"
+          git worktree add --detach "${worktree}" "origin/${DEFAULT_BRANCH}"
+          cp "${manifest}" "${worktree}/msf.plg"
+
+          cd "${worktree}"
+          if git diff --quiet -- msf.plg; then
+            echo "root msf.plg already matches release asset"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add msf.plg
+          git commit -m "Update msf Unraid plugin manifest for ${RELEASE_TAG}"
+          git push origin "HEAD:${DEFAULT_BRANCH}"

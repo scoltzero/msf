@@ -37,6 +37,9 @@ func MigrateLegacyLayout(dataDir string) error {
 	if err := migrateLegacyManualProvider(dataDir); err != nil {
 		return err
 	}
+	if err := migrateLegacyTextReferences(dataDir); err != nil {
+		return err
+	}
 	if err := migrateLegacyLogFiles(dataDir); err != nil {
 		return err
 	}
@@ -125,6 +128,70 @@ func replaceLegacyManualReferences(path string) error {
 	return os.WriteFile(path, []byte(replaced), info.Mode())
 }
 
+func migrateLegacyTextReferences(dataDir string) error {
+	replacements := []struct {
+		old string
+		new string
+	}{
+		{"/opt/msm-free", dataDir},
+		{"table inet msm_free", "table inet msf"},
+		{"msm_free", "msf"},
+		{"msm_manual.yaml", "msf_manual.yaml"},
+		{"msm_manual:", "msf_manual:"},
+		{"msm_manual", "msf_manual"},
+		{"msm-free-zashboard-disk-backend", "msf-zashboard-disk-backend"},
+		{"msm-free", "msf"},
+		{"msm.log", "msf.log"},
+	}
+	for _, rel := range []string{"configs"} {
+		root := filepath.Join(dataDir, rel)
+		if err := filepath.WalkDir(root, func(path string, d os.DirEntry, walkErr error) error {
+			if walkErr != nil || d.IsDir() {
+				return walkErr
+			}
+			if !legacyTextFile(path) {
+				return nil
+			}
+			return replaceTextFile(path, replacements)
+		}); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
+	return nil
+}
+
+func legacyTextFile(path string) bool {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".conf", ".ini", ".nft", ".yaml", ".yml", ".json", ".txt", ".log", ".html", ".js", ".css", ".webmanifest":
+		return true
+	default:
+		return false
+	}
+}
+
+func replaceTextFile(path string, replacements []struct {
+	old string
+	new string
+}) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	text := string(b)
+	replaced := text
+	for _, pair := range replacements {
+		replaced = strings.ReplaceAll(replaced, pair.old, pair.new)
+	}
+	if replaced == text {
+		return nil
+	}
+	return os.WriteFile(path, []byte(replaced), info.Mode())
+}
+
 func migrateLegacyLogFiles(dataDir string) error {
 	for _, pair := range [][2]string{
 		{"logs/msm.log", "logs/msf.log"},
@@ -200,27 +267,37 @@ func (a *App) ensureCompatibilityLayout() error {
 	if err := a.ensureCompatibilityDatabaseLink(); err != nil {
 		return err
 	}
-	files := map[string]string{
+	for rel, content := range map[string]string{
 		"configs/supervisor/supervisord.conf":    a.renderSupervisorConf(),
 		"configs/supervisor/services/mihomo.ini": a.renderSupervisorService("mihomo"),
 		"configs/supervisor/services/mosdns.ini": a.renderSupervisorService("mosdns"),
-		"logs/supervisor/supervisord.log":        "",
-		"logs/msf.log":                           "",
-		"configs/logs/mosdns.log":                "",
-		"configs/mosdns/cache/.keep":             "",
-		"configs/mosdns/unpack/.keep":            "",
-		"configs/network/history/.keep":          "",
-		"data/binaries/supervisord/.keep":        "",
-		"configs/mihomo/proxy_providers/.keep":   "",
-		"configs/mihomo/user_configs/.keep":      "",
-		"configs/mihomo/ui/.keep":                "",
-		"configs/mosdns/adguard/.keep":           "",
-		"configs/mosdns/gen/.keep":               "",
-		"configs/mosdns/genblank/.keep":          "",
-		"configs/mosdns/srs/.keep":               "",
-		"configs/mosdns/webinfo/.keep":           "",
-		"configs/mosdns/sub_config/.keep":        "",
-		"configs/mosdns/rule/.keep":              "",
+	} {
+		path := filepath.Join(a.DataDir, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			return err
+		}
+	}
+	files := map[string]string{
+		"logs/supervisor/supervisord.log":      "",
+		"logs/msf.log":                         "",
+		"configs/logs/mosdns.log":              "",
+		"configs/mosdns/cache/.keep":           "",
+		"configs/mosdns/unpack/.keep":          "",
+		"configs/network/history/.keep":        "",
+		"data/binaries/supervisord/.keep":      "",
+		"configs/mihomo/proxy_providers/.keep": "",
+		"configs/mihomo/user_configs/.keep":    "",
+		"configs/mihomo/ui/.keep":              "",
+		"configs/mosdns/adguard/.keep":         "",
+		"configs/mosdns/gen/.keep":             "",
+		"configs/mosdns/genblank/.keep":        "",
+		"configs/mosdns/srs/.keep":             "",
+		"configs/mosdns/webinfo/.keep":         "",
+		"configs/mosdns/sub_config/.keep":      "",
+		"configs/mosdns/rule/.keep":            "",
 	}
 	for rel, content := range files {
 		path := filepath.Join(a.DataDir, rel)

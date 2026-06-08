@@ -40,6 +40,29 @@ func TestNewMigratesLegacyLayout(t *testing.T) {
 	if err := os.WriteFile(mihomoConfig, []byte("proxy-providers:\n  msm_manual:\n    path: './proxy_providers/msm_manual.yaml'\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
+	for rel, content := range map[string]string{
+		"configs/network/network.nft": `#!/usr/sbin/nft -f
+flush ruleset
+
+table inet msm_free {
+  chain nat-prerouting {
+    type nat hook prerouting priority dstnat; policy accept;
+  }
+}
+`,
+		"configs/supervisor/supervisord.conf":    "file=/opt/msm-free/configs/supervisor/supervisor.sock\nlogfile=/opt/msm-free/logs/supervisor/supervisord.log\n",
+		"configs/supervisor/services/mihomo.ini": "command=/opt/msm-free/data/binaries/mihomo/mihomo -d /opt/msm-free/configs/mihomo -f /opt/msm-free/configs/mihomo/config.yaml\n",
+		"configs/supervisor/services/mosdns.ini": "command=/opt/msm-free/data/binaries/mosdns/mosdns start --dir /opt/msm-free/configs/mosdns\n",
+		"configs/mosdns/config.yaml":             "log:\n  file: \"/opt/msm-free/logs/mosdns.log\"\n",
+	} {
+		path := filepath.Join(dataDir, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if err := os.MkdirAll(filepath.Join(dataDir, "logs"), 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -74,6 +97,29 @@ func TestNewMigratesLegacyLayout(t *testing.T) {
 	}
 	if text := string(cfg); !strings.Contains(text, "msf_manual:") || strings.Contains(text, "msm_manual") {
 		t.Fatalf("mihomo config was not rewritten:\n%s", text)
+	}
+	for _, rel := range []string{
+		"configs/network/network.nft",
+		"configs/supervisor/supervisord.conf",
+		"configs/supervisor/services/mihomo.ini",
+		"configs/supervisor/services/mosdns.ini",
+		"configs/mosdns/config.yaml",
+	} {
+		b, err := os.ReadFile(filepath.Join(dataDir, rel))
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := string(b)
+		if strings.Contains(text, "msm_free") || strings.Contains(text, "/opt/msm-free") {
+			t.Fatalf("%s still contains legacy tokens:\n%s", rel, text)
+		}
+	}
+	nft, err := os.ReadFile(filepath.Join(dataDir, "configs/network/network.nft"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(nft), "table inet msf") {
+		t.Fatalf("network.nft should use msf table:\n%s", string(nft))
 	}
 	if _, err := os.Stat(filepath.Join(dataDir, "logs/msf.log")); err != nil {
 		t.Fatalf("msf log should be moved: %v", err)
