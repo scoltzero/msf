@@ -40,7 +40,9 @@ chmod 0755 "$PKG_ROOT/usr/local/emhttp/plugins/${APP_NAME}/event/stopping_svcs"
 cat > "$PKG_ROOT/install/slack-desc" <<EOF
 ${APP_NAME}: ${APP_NAME}
 ${APP_NAME}:
-${APP_NAME}: Open reimplementation of the MSM-style MosDNS + Mihomo manager.
+${APP_NAME}: A free and open-source, user-facing all-in-one
+${APP_NAME}: management tool for DNS and proxy (mihomo /
+${APP_NAME}: sing-box, in development).
 ${APP_NAME}: This package installs the Unraid WebGUI page, rc script,
 ${APP_NAME}: and msf Linux amd64 binary. Persistent data is stored under
 ${APP_NAME}: /mnt/user/appdata/msf by default.

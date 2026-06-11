@@ -85,7 +85,7 @@ $webUrl = "http://" . $serverHost . ":" . $cfg["PORT"];
 </style>
 <div class="msf-panel">
   <div class="msf-note">
-    msf runs as a local Unraid rc service. A fresh install starts the management WebUI only. After the setup wizard is completed, msf restores enabled Mihomo, MosDNS, and nftables state on subsequent starts.
+    This is a lightweight Unraid Settings control page for the local msf rc service. It only manages service enablement, listen address, data directory, status, and the WebUI link. Use Open WebUI for the full management interface.
   </div>
   <?php if ($message !== ""): ?>
     <blockquote><?=msf_e($message)?></blockquote>

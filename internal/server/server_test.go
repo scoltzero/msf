@@ -3,8 +3,11 @@ package server
 import (
 	"archive/zip"
 	"bytes"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -115,7 +118,7 @@ func TestSetupInitializeLoginAndGeneratedConfigs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(nft), `iifname { "lo", "eth0" }`) || !strings.Contains(string(nft), "tproxy to :7896") || !strings.Contains(string(nft), "redirect to :7877") || !strings.Contains(string(nft), "28.0.0.0/8") || !strings.Contains(string(nft), "set dns_ipv4 {\n    type ipv4_addr\n    flags interval") {
+	if strings.Contains(string(nft), "flush ruleset") || !strings.Contains(string(nft), `iifname { "lo", "eth0" }`) || !strings.Contains(string(nft), "tproxy to :7896") || !strings.Contains(string(nft), "redirect to :7877") || !strings.Contains(string(nft), "28.0.0.0/8") || !strings.Contains(string(nft), "set dns_ipv4 {\n    type ipv4_addr\n    flags interval") {
 		t.Fatalf("nft template not rendered correctly:\n%s", nft)
 	}
 }
@@ -228,6 +231,75 @@ func TestComponentDownloadURLForRuntimeArch(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestComponentDownloadAssetFromReleaseRequiresDigest(t *testing.T) {
+	app := newTestApp(t)
+	digest := testSHA256Digest([]byte("dist archive"))
+	release := githubRelease{Assets: []githubAsset{{
+		Name:               "dist.zip",
+		BrowserDownloadURL: "https://example.invalid/dist.zip",
+		Digest:             digest,
+	}}}
+	asset, err := app.componentDownloadAssetFromRelease("zashboard", release)
+	if err != nil {
+		t.Fatalf("componentDownloadAssetFromRelease returned error: %v", err)
+	}
+	if asset.URL != "https://example.invalid/dist.zip" || asset.Digest != digest || asset.VerificationSource != componentVerificationSourceGitHubAssetDigest {
+		t.Fatalf("unexpected asset metadata: %#v", asset)
+	}
+
+	release.Assets[0].Digest = ""
+	if _, err := app.componentDownloadAssetFromRelease("zashboard", release); err == nil || !strings.Contains(err.Error(), "no valid SHA-256 digest") {
+		t.Fatalf("missing digest should fail, got %v", err)
+	}
+	release.Assets[0].Digest = "sha256:not-a-digest"
+	if _, err := app.componentDownloadAssetFromRelease("zashboard", release); err == nil || !strings.Contains(err.Error(), "no valid SHA-256 digest") {
+		t.Fatalf("invalid digest should fail, got %v", err)
+	}
+	release.Assets[0].Digest = digest
+	release.Assets[0].BrowserDownloadURL = ""
+	if _, err := app.componentDownloadAssetFromRelease("zashboard", release); err == nil || !strings.Contains(err.Error(), "no download URL") {
+		t.Fatalf("missing browser download URL should fail, got %v", err)
+	}
+	if _, err := app.componentDownloadAssetFromRelease("zashboard", githubRelease{Assets: []githubAsset{{Name: "other.zip", BrowserDownloadURL: "https://example.invalid/other.zip", Digest: digest}}}); err == nil || !strings.Contains(err.Error(), "expected asset") {
+		t.Fatalf("missing expected asset should fail, got %v", err)
+	}
+}
+
+func TestVerifySHA256File(t *testing.T) {
+	data := []byte("verified artifact")
+	expected := testSHA256Digest(data)
+	path := filepath.Join(t.TempDir(), "artifact.bin")
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := verifySHA256File(path, expected)
+	if err != nil {
+		t.Fatalf("verifySHA256File returned error: %v", err)
+	}
+	if got != expected {
+		t.Fatalf("verified digest = %q, want %q", got, expected)
+	}
+	withoutPrefix, err := canonicalSHA256Digest(strings.TrimPrefix(expected, "sha256:"))
+	if err != nil || withoutPrefix != expected {
+		t.Fatalf("canonical digest without prefix = %q, %v", withoutPrefix, err)
+	}
+	actual, err := verifySHA256File(path, testSHA256Digest([]byte("different artifact")))
+	if err == nil || !strings.Contains(err.Error(), "verification failed") {
+		t.Fatalf("mismatched digest should fail, actual=%q err=%v", actual, err)
+	}
+	if actual != expected {
+		t.Fatalf("mismatch should return actual digest %q, got %q", expected, actual)
+	}
+	if _, err := canonicalSHA256Digest("sha256:1234"); err == nil {
+		t.Fatal("short digest should fail")
+	}
+}
+
+func testSHA256Digest(data []byte) string {
+	sum := sha256.Sum256(data)
+	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
 func TestSelfUpdateAssetContainsForRuntimeArch(t *testing.T) {
@@ -714,6 +786,31 @@ func TestComponentUpdateStateAllowsZashboardOverwriteWhenCurrentUnknown(t *testi
 	}
 }
 
+func TestComponentUpdateStateExposesVerificationFields(t *testing.T) {
+	app := newTestApp(t)
+	now := time.Now()
+	downloadDigest := testSHA256Digest([]byte("download"))
+	verifiedDigest := testSHA256Digest([]byte("verified"))
+	if _, err := app.DB.Exec(`insert into component_update_info(component,current_version,latest_version,has_update,download_url,download_digest,verified_digest,verified,verification_source,status,progress,last_check_time,created_at,updated_at)
+		values(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, "zashboard", "v1.0.0", "v1.0.1", false, "https://example.invalid/dist.zip", downloadDigest, verifiedDigest, true, componentVerificationSourceGitHubAssetDigest, "completed", 100, now, now, now); err != nil {
+		t.Fatal(err)
+	}
+
+	state := app.componentUpdateState("zashboard")
+	if state["download_digest"] != downloadDigest {
+		t.Fatalf("download_digest mismatch: %#v", state)
+	}
+	if state["verified_digest"] != verifiedDigest {
+		t.Fatalf("verified_digest mismatch: %#v", state)
+	}
+	if state["verified"] != true {
+		t.Fatalf("verified should be true: %#v", state)
+	}
+	if state["verification_source"] != componentVerificationSourceGitHubAssetDigest {
+		t.Fatalf("verification_source mismatch: %#v", state)
+	}
+}
+
 func TestComponentUpdateUploadInstallsZashboardZip(t *testing.T) {
 	app := newTestApp(t)
 	token := tokenForRole(t, app, "admin")
@@ -738,7 +835,7 @@ func TestComponentUpdateUploadInstallsZashboardZip(t *testing.T) {
 	}
 
 	uploaded := requestMultipartFile(t, app, http.MethodPost, "/api/v1/component-updates/zashboard/upload", token, "file", "zashboard.zip", buf.Bytes(), nil)
-	if uploaded.Code != http.StatusOK || !strings.Contains(uploaded.Body.String(), `"success":true`) || !strings.Contains(uploaded.Body.String(), "local-upload-") {
+	if uploaded.Code != http.StatusOK || !strings.Contains(uploaded.Body.String(), `"success":true`) || !strings.Contains(uploaded.Body.String(), "local-upload-") || !strings.Contains(uploaded.Body.String(), `"verification_source":"local-upload"`) || !strings.Contains(uploaded.Body.String(), `"verified":false`) {
 		t.Fatalf("zashboard upload status=%d body=%s", uploaded.Code, uploaded.Body.String())
 	}
 	body, err := os.ReadFile(filepath.Join(app.DataDir, "configs/mihomo/ui/index.html"))
@@ -749,7 +846,7 @@ func TestComponentUpdateUploadInstallsZashboardZip(t *testing.T) {
 		t.Fatalf("zashboard index not installed:\n%s", string(body))
 	}
 	state := requestJSON(t, app, http.MethodGet, "/api/v1/component-updates/zashboard", token, nil)
-	if state.Code != http.StatusOK || !strings.Contains(state.Body.String(), `"status":"completed"`) || !strings.Contains(state.Body.String(), `"has_update":false`) {
+	if state.Code != http.StatusOK || !strings.Contains(state.Body.String(), `"status":"completed"`) || !strings.Contains(state.Body.String(), `"has_update":false`) || !strings.Contains(state.Body.String(), `"verification_source":"local-upload"`) || !strings.Contains(state.Body.String(), `"verified":false`) {
 		t.Fatalf("zashboard update state mismatch: status=%d body=%s", state.Code, state.Body.String())
 	}
 }
@@ -773,7 +870,7 @@ func TestStructuredMSFJSONLogsFormatLikeOriginal(t *testing.T) {
 
 func TestStructuredServiceLogsSplitTimeLevelAndMessage(t *testing.T) {
 	entries := structuredLogLines([]string{
-		`time="2026-06-02T15:50:44.905225194+08:00" level=info msg="[TCP] 127.0.0.1:44074 --> 127.0.0.1:7877 match Match using 漏网之鱼[placeholder-node-1]"`,
+		`time="2026-06-02T15:50:44.905225194+08:00" level=info msg="[TCP] 127.0.0.1:44074 --> 127.0.0.1:7877 match Match using 漏网之鱼[placeholder-vless-node]"`,
 		`2026/05/31 12:43:58 [adguard_rule] working directory is: adguard/`,
 	})
 	if len(entries) != 2 {
@@ -1099,6 +1196,58 @@ func TestMosDNS9099TakesPriorityForQueryLogsAndOverview(t *testing.T) {
 	overview := requestJSON(t, app, http.MethodGet, "/api/v1/mosdns/overview", token, nil)
 	if overview.Code != http.StatusOK || !strings.Contains(overview.Body.String(), `"source":"mosdns_9099"`) || !strings.Contains(overview.Body.String(), `"query_count":77`) || !strings.Contains(overview.Body.String(), `"upstream_stats":[`) || !strings.Contains(overview.Body.String(), `"detailed_cache"`) || !strings.Contains(overview.Body.String(), `"audit_stats"`) {
 		t.Fatalf("overview should include 9099 stats: status=%d body=%s", overview.Code, overview.Body.String())
+	}
+}
+
+func TestMosDNSSystemCacheUsesGeneratedDomainBuckets(t *testing.T) {
+	app := newTestApp(t)
+	token := tokenForRole(t, app, "admin")
+	genDir := filepath.Join(app.DataDir, "configs/mosdns/gen")
+	if err := os.WriteFile(filepath.Join(genDir, "realiplist.txt"), []byte("2026-06-08 apple.com 3\nfull:example.cn\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(genDir, "fakeiplist.txt"), []byte("domain:chatgpt.com\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(genDir, "nov4list.txt"), []byte("no-a.example\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(genDir, "nov6list.txt"), []byte("domain:no-aaaa.example\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(app.DataDir, "logs/mosdns.out.log"), []byte(`client_ip=192.168.10.9 query_name=query-only.example qtype=A rule=my_fakeiprule rcode=NOERROR A: 28.0.0.2`+"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	res := requestJSON(t, app, http.MethodGet, "/api/v1/mosdns/system/cache", token, nil)
+	if res.Code != http.StatusOK {
+		t.Fatalf("system cache status=%d body=%s", res.Code, res.Body.String())
+	}
+	var body map[string]any
+	_ = json.Unmarshal(res.Body.Bytes(), &body)
+	data := body["data"].(map[string]any)
+	stats := data["stats"].(map[string]any)
+	if stats["realIp"].(float64) != 2 || stats["fakeIp"].(float64) != 1 || stats["noV4"].(float64) != 1 || stats["noV6"].(float64) != 1 || stats["totalDomains"].(float64) != 5 {
+		t.Fatalf("system cache stats should use generated buckets: %s", res.Body.String())
+	}
+	domains := data["domains"].(map[string]any)
+	if !strings.Contains(fmt.Sprint(domains["realIp"]), "apple.com") || !strings.Contains(fmt.Sprint(domains["fakeIp"]), "chatgpt.com") {
+		t.Fatalf("system cache domains should expose generated buckets: %s", res.Body.String())
+	}
+	if strings.Contains(fmt.Sprint(domains), "query-only.example") {
+		t.Fatalf("system cache domains must not include query-log fallback rows: %s", fmt.Sprint(domains))
+	}
+
+	detail := requestJSON(t, app, http.MethodGet, "/api/v1/mosdns/cache/detailed", token, nil)
+	if detail.Code != http.StatusOK || !strings.Contains(detail.Body.String(), `"totalDomains":5`) || !strings.Contains(detail.Body.String(), "no-aaaa.example") {
+		t.Fatalf("detailed cache should expose generated stats/domains: status=%d body=%s", detail.Code, detail.Body.String())
+	}
+	var detailBody map[string]any
+	_ = json.Unmarshal(detail.Body.Bytes(), &detailBody)
+	detailData := detailBody["data"].(map[string]any)
+	detailDomains := detailData["domains"].(map[string]any)
+	if strings.Contains(fmt.Sprint(detailDomains), "query-only.example") {
+		t.Fatalf("detailed cache domains must not include query-log fallback rows: %s", fmt.Sprint(detailDomains))
 	}
 }
 

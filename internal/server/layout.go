@@ -40,6 +40,14 @@ func MigrateLegacyLayout(dataDir string) error {
 	if err := migrateLegacyTextReferences(dataDir); err != nil {
 		return err
 	}
+	nftPath := filepath.Join(dataDir, "configs/network/network.nft")
+	if _, err := os.Stat(nftPath); err == nil {
+		if err := sanitizeNFTConfigFile(nftPath); err != nil {
+			return err
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
 	if err := migrateLegacyLogFiles(dataDir); err != nil {
 		return err
 	}

@@ -32,7 +32,9 @@ func (a *App) handleDaemonRestart(w http.ResponseWriter, r *http.Request) {
 		})
 	} else {
 		go daemonRunAfterResponse(func() {
-			_ = a.Services.StopAll(context.Background())
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			_ = a.ShutdownRuntime(shutdownCtx)
 			os.Exit(2)
 		})
 	}
@@ -55,7 +57,9 @@ func (a *App) handleDaemonStop(w http.ResponseWriter, r *http.Request) {
 		})
 	} else {
 		go daemonRunAfterResponse(func() {
-			_ = a.Services.StopAll(context.Background())
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			_ = a.ShutdownRuntime(shutdownCtx)
 			os.Exit(0)
 		})
 	}

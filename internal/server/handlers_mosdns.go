@@ -865,9 +865,16 @@ func (a *App) handleMosDNSCacheDetailed(w http.ResponseWriter, r *http.Request) 
 	cacheRows := a.mosDNSCacheOverviewRows(mosDNSMetricCacheCounters(metrics), entries)
 	summary := mosDNSCacheSummaryFromRows(cacheRows)
 	domains := a.mosDNSCacheDomainBuckets(entries)
+	domainStats := mosDNSCacheDomainStats(domains)
 	if data, ok := a.mosDNSProxyCache(); ok {
 		if _, ok := data["summary"]; !ok {
 			data["summary"] = summary
+		}
+		if _, ok := data["stats"]; !ok {
+			data["stats"] = domainStats
+		}
+		if _, ok := data["domain_stats"]; !ok {
+			data["domain_stats"] = domainStats
 		}
 		if _, ok := data["caches"]; !ok {
 			data["caches"] = cacheRows
@@ -885,11 +892,13 @@ func (a *App) handleMosDNSCacheDetailed(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"success": true, "data": map[string]any{
-		"summary": summary,
-		"caches":  cacheRows,
-		"entries": mosDNSCacheRows(entries),
-		"items":   mosDNSCacheRows(entries),
-		"domains": domains,
+		"summary":      summary,
+		"stats":        domainStats,
+		"domain_stats": domainStats,
+		"caches":       cacheRows,
+		"entries":      mosDNSCacheRows(entries),
+		"items":        mosDNSCacheRows(entries),
+		"domains":      domains,
 	}})
 }
 
@@ -1078,13 +1087,41 @@ func (a *App) handleMosDNSConfigUpload(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleMosDNSSystemCache(w http.ResponseWriter, r *http.Request) {
+	entries := a.mosDNSQueryDataset(5000)
+	metrics, _ := a.mosDNSProxyMetrics()
+	cacheRows := a.mosDNSCacheOverviewRows(mosDNSMetricCacheCounters(metrics), entries)
+	summary := mosDNSCacheSummaryFromRows(cacheRows)
+	domains := a.mosDNSCacheDomainBuckets(entries)
+	domainStats := mosDNSCacheDomainStats(domains)
 	if data, ok := a.mosDNSProxyCache(); ok {
+		if _, ok := data["summary"]; !ok {
+			data["summary"] = summary
+		}
+		if _, ok := data["stats"]; !ok {
+			data["stats"] = domainStats
+		}
+		if _, ok := data["domain_stats"]; !ok {
+			data["domain_stats"] = domainStats
+		}
+		if _, ok := data["domains"]; !ok {
+			data["domains"] = domains
+		}
+		if _, ok := data["caches"]; !ok {
+			data["caches"] = cacheRows
+		}
 		writeJSON(w, http.StatusOK, map[string]any{"success": true, "data": data})
 		return
 	}
-	entries := a.mosDNSQueryDataset(5000)
 	writeJSON(w, http.StatusOK, map[string]any{"success": true, "data": map[string]any{
-		"entries": mosDNSCacheSummary(entries)["entries"], "memory": 0, "hit_rate": mosDNSCacheSummary(entries)["hit_rate"], "caches": mosDNSCacheRows(entries),
+		"entries":      summary["entries"],
+		"memory":       0,
+		"hit_rate":     summary["hit_rate"],
+		"summary":      summary,
+		"stats":        domainStats,
+		"domain_stats": domainStats,
+		"caches":       cacheRows,
+		"items":        mosDNSCacheRows(entries),
+		"domains":      domains,
 	}})
 }
 

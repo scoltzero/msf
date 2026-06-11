@@ -218,7 +218,7 @@ func serve(dataDir, host string, port int) error {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		_ = app.Services.StopAll(shutdownCtx)
+		_ = app.ShutdownRuntime(shutdownCtx)
 		_ = srv.Shutdown(shutdownCtx)
 	}()
 
@@ -457,14 +457,14 @@ type uninstallOptions struct {
 }
 
 func uninstallRuntime(opts uninstallOptions) error {
+	if server.IsDockerRuntime() {
+		return errors.New("Docker containers should be removed by stopping/removing the container; application data is kept in the mounted volume")
+	}
 	if os.Geteuid() != 0 {
 		return errors.New("uninstall must be run as root")
 	}
 	if isUnraidRuntime() {
 		return errors.New("on Unraid, remove msf from the WebGUI plugin page; application data is kept under /mnt/user/appdata/msf")
-	}
-	if isFnosRuntime() {
-		return errors.New("在飞牛 fnOS 上，请在应用中心卸载 msf，而不要用 systemd 卸载流程")
 	}
 	if opts.Prefix == "" {
 		opts.Prefix = "/usr/local"
@@ -521,14 +521,14 @@ type updateOptions struct {
 }
 
 func updateRuntime(opts updateOptions) error {
+	if server.IsDockerRuntime() {
+		return errors.New(server.DockerUpdateDisabledReason())
+	}
 	if os.Geteuid() != 0 {
 		return errors.New("update must be run as root")
 	}
 	if isUnraidRuntime() {
 		return errors.New("on Unraid, update msf from the WebGUI plugin page instead of the Linux tarball updater")
-	}
-	if isFnosRuntime() {
-		return errors.New("在飞牛 fnOS 上，请在应用中心更新 msf，而不要用 Linux tarball 自更新")
 	}
 	if opts.Repo == "" {
 		opts.Repo = defaultGitHubRepo()
@@ -595,6 +595,9 @@ type serviceOptions struct {
 }
 
 func serviceCommand(action string, opts serviceOptions) error {
+	if server.IsDockerRuntime() && (action == "install" || action == "uninstall" || action == "remove") {
+		return errors.New("Docker containers do not use systemd service install/uninstall; update or remove the container instead")
+	}
 	switch action {
 	case "install":
 		return installSystemdService(opts)
@@ -619,9 +622,6 @@ func installSystemdService(opts serviceOptions) error {
 	}
 	if isUnraidRuntime() {
 		return errors.New("on Unraid, use /etc/rc.d/rc.msf and the WebGUI plugin page instead of systemd service install")
-	}
-	if isFnosRuntime() {
-		return errors.New("在飞牛 fnOS 上，应用生命周期由 fpk/应用中心管理，无需 systemd 装服务")
 	}
 	if opts.ServiceName == "" {
 		opts.ServiceName = "msf"
@@ -684,9 +684,6 @@ func removeSystemdService(serviceName string) error {
 	}
 	if isUnraidRuntime() {
 		return errors.New("on Unraid, remove msf from the WebGUI plugin page instead of systemd service uninstall")
-	}
-	if isFnosRuntime() {
-		return errors.New("在飞牛 fnOS 上，请在应用中心卸载 msf")
 	}
 	servicePath := filepath.Join("/etc/systemd/system", serviceName+".service")
 	_ = runQuiet("systemctl", "stop", serviceName)
@@ -945,16 +942,6 @@ func isUnraidRuntime() bool {
 		return true
 	}
 	if strings.Contains(strings.ToLower(os.Getenv("UNRAID_VERSION")), "unraid") {
-		return true
-	}
-	return false
-}
-
-func isFnosRuntime() bool {
-	if v := strings.TrimSpace(os.Getenv("TRIM_APPDEST")); v != "" {
-		return true
-	}
-	if fileExists("/var/apps") {
 		return true
 	}
 	return false

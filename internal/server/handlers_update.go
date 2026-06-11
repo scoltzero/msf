@@ -59,6 +59,12 @@ func (a *App) selfUpdateState() map[string]any {
 		"has_update":      false,
 		"status":          "idle",
 		"progress":        0,
+		"supported":       true,
+	}
+	if IsDockerRuntime() {
+		item["supported"] = false
+		item["disabled_reason"] = DockerUpdateDisabledReason()
+		return item
 	}
 	row := a.DB.QueryRow(`select current_version,latest_version,has_update,status,progress,coalesce(error_message,''),coalesce(download_url,''),coalesce(release_notes,''),last_check_time from update_info where component='msf' order by id desc limit 1`)
 	var current, latest, status, errText, downloadURL, notes string
@@ -95,6 +101,10 @@ func (a *App) selfUpdateState() map[string]any {
 }
 
 func (a *App) handleUpdateCheck(w http.ResponseWriter, r *http.Request) {
+	if IsDockerRuntime() {
+		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": DockerUpdateDisabledReason(), "data": a.selfUpdateState()})
+		return
+	}
 	release, err := a.fetchLatestRelease("scoltzero", "msf")
 	if err != nil {
 		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": err.Error(), "data": a.selfUpdateState()})
@@ -194,6 +204,10 @@ func (a *App) handleUpdateReleases(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleUpdateDownload(w http.ResponseWriter, r *http.Request) {
+	if IsDockerRuntime() {
+		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": DockerUpdateDisabledReason(), "data": a.selfUpdateState()})
+		return
+	}
 	state := a.selfUpdateState()
 	rawURL := strings.TrimSpace(fmt.Sprint(state["download_url"]))
 	if rawURL == "" {
@@ -225,16 +239,16 @@ func (a *App) handleUpdateDownload(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleUpdateInstall(w http.ResponseWriter, r *http.Request) {
+	if IsDockerRuntime() {
+		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": DockerUpdateDisabledReason(), "data": a.selfUpdateState()})
+		return
+	}
 	if os.Geteuid() != 0 {
 		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": "需要 root 权限才能安装并重启 msf", "data": a.selfUpdateState()})
 		return
 	}
 	if serverIsUnraidRuntime() {
 		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": "Unraid 环境请通过插件管理页面更新 msf", "data": a.selfUpdateState()})
-		return
-	}
-	if serverIsFnosRuntime() {
-		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": "飞牛 fnOS 环境请通过应用中心更新 msf", "data": a.selfUpdateState()})
 		return
 	}
 	state := a.selfUpdateState()
@@ -338,13 +352,6 @@ func serverIsUnraidRuntime() bool {
 	return strings.Contains(strings.ToLower(os.Getenv("UNRAID_VERSION")), "unraid")
 }
 
-func serverIsFnosRuntime() bool {
-	if v := strings.TrimSpace(os.Getenv("TRIM_APPDEST")); v != "" {
-		return true
-	}
-	return fileExists("/var/apps")
-}
-
 func (a *App) handleUpdateCancel(w http.ResponseWriter, r *http.Request) {
 	_, _ = a.DB.Exec(`update update_info set status='idle',progress=0,updated_at=? where component='msf'`, nowString())
 	writeJSON(w, http.StatusOK, map[string]any{"success": true, "data": a.selfUpdateState()})
@@ -372,15 +379,36 @@ func (a *App) handleComponentUpdateCheck(w http.ResponseWriter, r *http.Request)
 		state["status"] = "failed"
 		state["error_message"] = err.Error()
 		state["last_check_time"] = time.Now()
-		_, _ = a.DB.Exec(`insert into component_update_info(component,current_version,latest_version,has_update,download_url,release_body,status,progress,error_message,last_check_time,created_at,updated_at)
-			values(?,?,?,?,?,?,?,?,?,?,?,?)
-			on conflict(component) do update set current_version=excluded.current_version,status='failed',progress=0,error_message=excluded.error_message,last_check_time=excluded.last_check_time,updated_at=excluded.updated_at`,
-			component, state["current_version"], state["latest_version"], state["has_update"], state["download_url"], "", "failed", 0, err.Error(), state["last_check_time"], time.Now(), time.Now())
+		_, _ = a.DB.Exec(`insert into component_update_info(component,current_version,latest_version,has_update,download_url,download_digest,verified_digest,verified,verification_source,release_body,status,progress,error_message,last_check_time,created_at,updated_at)
+			values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+			on conflict(component) do update set current_version=excluded.current_version,status='failed',progress=0,error_message=excluded.error_message,last_check_time=excluded.last_check_time,updated_at=excluded.updated_at,verified=false`,
+			component, state["current_version"], state["latest_version"], state["has_update"], state["download_url"], "", "", false, "", "", "failed", 0, err.Error(), state["last_check_time"], time.Now(), time.Now())
 		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": err.Error(), "data": state})
 		return
 	}
 	latestVersion := a.componentRemoteVersion(component, remote)
-	downloadURL := firstNonEmpty(a.componentReleaseAssetURL(remote, component), a.componentDownloadURL(component))
+	downloadAsset, err := a.componentDownloadAssetFromRelease(component, remote)
+	if err != nil {
+		now := time.Now()
+		state["status"] = "failed"
+		state["error_message"] = err.Error()
+		state["last_check_time"] = now
+		state["latest_version"] = latestVersion
+		state["download_url"] = a.componentDownloadURL(component)
+		state["download_digest"] = ""
+		state["verified_digest"] = ""
+		state["verified"] = false
+		state["verification_source"] = ""
+		state["release_body"] = remote.Body
+		_, _ = a.DB.Exec(`insert into component_update_info(component,current_version,latest_version,has_update,download_url,download_digest,verified_digest,verified,verification_source,release_body,status,progress,error_message,last_check_time,created_at,updated_at)
+			values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+			on conflict(component) do update set current_version=excluded.current_version,latest_version=excluded.latest_version,download_url=excluded.download_url,download_digest='',verified_digest='',verified=false,verification_source='',release_body=excluded.release_body,status='failed',progress=0,error_message=excluded.error_message,last_check_time=excluded.last_check_time,updated_at=excluded.updated_at`,
+			component, state["current_version"], latestVersion, false, a.componentDownloadURL(component), "", "", false, "", remote.Body, "failed", 0, err.Error(), now, now, now)
+		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": err.Error(), "data": state})
+		return
+	}
+	downloadURL := downloadAsset.URL
+	downloadDigest := downloadAsset.Digest
 	now := time.Now()
 	currentVersion := firstNonEmpty(componentStateString(state, "current_version_detail"), componentStateString(state, "current_version"))
 	hasUpdate := componentHasUpdate(currentVersion, latestVersion)
@@ -393,6 +421,10 @@ func (a *App) handleComponentUpdateCheck(w http.ResponseWriter, r *http.Request)
 	}
 	state["latest_version"] = latestVersion
 	state["download_url"] = downloadURL
+	state["download_digest"] = downloadDigest
+	state["verified_digest"] = ""
+	state["verified"] = false
+	state["verification_source"] = downloadAsset.VerificationSource
 	state["release_body"] = remote.Body
 	state["has_update"] = hasUpdate
 	state["can_update"] = componentCanUpdate(currentVersion, latestVersion, hasUpdate, downloadURL)
@@ -400,10 +432,10 @@ func (a *App) handleComponentUpdateCheck(w http.ResponseWriter, r *http.Request)
 	state["progress"] = 0
 	state["error_message"] = ""
 	state["last_check_time"] = now
-	_, _ = a.DB.Exec(`insert into component_update_info(component,current_version,latest_version,has_update,download_url,release_body,status,progress,error_message,last_check_time,created_at,updated_at)
-		values(?,?,?,?,?,?,?,?,?,?,?,?)
-		on conflict(component) do update set current_version=excluded.current_version,latest_version=excluded.latest_version,has_update=excluded.has_update,download_url=excluded.download_url,release_body=excluded.release_body,status='checked',progress=0,error_message='',last_check_time=excluded.last_check_time,updated_at=excluded.updated_at`,
-		component, currentVersion, latestVersion, hasUpdate, downloadURL, remote.Body, "checked", 0, "", now, now, now)
+	_, _ = a.DB.Exec(`insert into component_update_info(component,current_version,latest_version,has_update,download_url,download_digest,verified_digest,verified,verification_source,release_body,status,progress,error_message,last_check_time,created_at,updated_at)
+		values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		on conflict(component) do update set current_version=excluded.current_version,latest_version=excluded.latest_version,has_update=excluded.has_update,download_url=excluded.download_url,download_digest=excluded.download_digest,verified_digest='',verified=false,verification_source=excluded.verification_source,release_body=excluded.release_body,status='checked',progress=0,error_message='',last_check_time=excluded.last_check_time,updated_at=excluded.updated_at`,
+		component, currentVersion, latestVersion, hasUpdate, downloadURL, downloadDigest, "", false, downloadAsset.VerificationSource, remote.Body, "checked", 0, "", now, now, now)
 	writeJSON(w, http.StatusOK, map[string]any{"success": true, "data": state})
 }
 
@@ -417,10 +449,22 @@ func (a *App) handleComponentUpdateRun(w http.ResponseWriter, r *http.Request) {
 	state := a.componentUpdateState(component)
 	latestVersion := componentStateString(state, "latest_version")
 	downloadURL := componentStateString(state, "download_url")
+	downloadDigest := componentStateString(state, "download_digest")
+	verifiedDigest := ""
+	verificationSource := componentStateString(state, "verification_source")
+	verified := false
 	releaseBody := ""
 	if remote, err := a.componentRemoteInfo(component); err == nil {
 		latestVersion = a.componentRemoteVersion(component, remote)
-		downloadURL = firstNonEmpty(a.componentReleaseAssetURL(remote, component), a.componentDownloadURL(component))
+		if asset, err := a.componentDownloadAssetFromRelease(component, remote); err == nil {
+			downloadURL = asset.URL
+			downloadDigest = asset.Digest
+			verificationSource = asset.VerificationSource
+		} else {
+			downloadURL = a.componentDownloadURL(component)
+			downloadDigest = ""
+			verificationSource = ""
+		}
 		releaseBody = remote.Body
 	}
 	if isPlaceholderComponentVersion(latestVersion) {
@@ -430,14 +474,27 @@ func (a *App) handleComponentUpdateRun(w http.ResponseWriter, r *http.Request) {
 		downloadURL = a.componentDownloadURL(component)
 	}
 	wasRunning := component != "zashboard" && component != "ui" && a.Services.Status(component).Running
-	_, _ = a.DB.Exec(`insert into component_update_info(component,current_version,latest_version,has_update,download_url,release_body,status,progress,error_message,created_at,updated_at)
-		values(?,?,?,?,?,?,?,?,?,?,?)
-		on conflict(component) do update set current_version=excluded.current_version,latest_version=excluded.latest_version,download_url=excluded.download_url,release_body=excluded.release_body,status='running',progress=5,error_message='',updated_at=excluded.updated_at`,
-		component, a.componentCurrentVersion(component), latestVersion, true, downloadURL, releaseBody, "running", 5, "", now, now)
+	_, _ = a.DB.Exec(`insert into component_update_info(component,current_version,latest_version,has_update,download_url,download_digest,verified_digest,verified,verification_source,release_body,status,progress,error_message,created_at,updated_at)
+		values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		on conflict(component) do update set current_version=excluded.current_version,latest_version=excluded.latest_version,download_url=excluded.download_url,download_digest=excluded.download_digest,verified_digest='',verified=false,verification_source=excluded.verification_source,release_body=excluded.release_body,status='running',progress=5,error_message='',updated_at=excluded.updated_at`,
+		component, a.componentCurrentVersion(component), latestVersion, true, downloadURL, downloadDigest, "", false, verificationSource, releaseBody, "running", 5, "", now, now)
 	last := DownloadEvent{Status: "running", Progress: 5, Message: "starting"}
 	err := a.installComponent(component, func(ev DownloadEvent) {
 		last = ev
-		_, _ = a.DB.Exec(`update component_update_info set status=?, progress=?, error_message='', updated_at=? where component=?`, ev.Status, ev.Progress, nowString(), component)
+		if ev.DownloadDigest != "" {
+			downloadDigest = ev.DownloadDigest
+		}
+		if ev.VerifiedDigest != "" {
+			verifiedDigest = ev.VerifiedDigest
+		}
+		if ev.VerificationSource != "" {
+			verificationSource = ev.VerificationSource
+		}
+		if ev.Verified {
+			verified = true
+		}
+		_, _ = a.DB.Exec(`update component_update_info set status=?, progress=?, download_digest=?, verified_digest=?, verified=?, verification_source=?, error_message='', updated_at=? where component=?`,
+			ev.Status, ev.Progress, downloadDigest, verifiedDigest, verified, verificationSource, nowString(), component)
 	})
 	if err != nil {
 		_, _ = a.DB.Exec(`update component_update_info set status='failed', progress=?, error_message=?, updated_at=? where component=?`, last.Progress, err.Error(), nowString(), component)
@@ -457,7 +514,7 @@ func (a *App) handleComponentUpdateRun(w http.ResponseWriter, r *http.Request) {
 	if component == "zashboard" && !isPlaceholderComponentVersion(latestVersion) {
 		currentVersion = latestVersion
 	}
-	_, _ = a.DB.Exec(`update component_update_info set current_version=?, latest_version=?, has_update=false, status='completed', progress=100, error_message='', last_check_time=?, updated_at=? where component=?`, currentVersion, latestVersion, now, nowString(), component)
+	_, _ = a.DB.Exec(`update component_update_info set current_version=?, latest_version=?, has_update=false, download_digest=?, verified_digest=?, verified=?, verification_source=?, status='completed', progress=100, error_message='', last_check_time=?, updated_at=? where component=?`, currentVersion, latestVersion, downloadDigest, verifiedDigest, verified, verificationSource, now, nowString(), component)
 	next := a.componentUpdateState(component)
 	next["restarted"] = restarted
 	writeJSON(w, http.StatusOK, map[string]any{"success": true, "data": next})
@@ -498,26 +555,30 @@ func (a *App) componentUpdateState(component string) map[string]any {
 	current := a.componentCurrentVersion(component)
 	installed := current != "not-installed"
 	state := map[string]any{
-		"component":       component,
-		"current_version": current,
-		"latest_version":  "-",
-		"has_update":      !installed,
-		"can_update":      a.componentDownloadURL(component) != "",
-		"download_url":    a.componentDownloadURL(component),
-		"status":          "idle",
-		"progress":        0,
-		"error_message":   "",
+		"component":           component,
+		"current_version":     current,
+		"latest_version":      "-",
+		"has_update":          !installed,
+		"can_update":          a.componentDownloadURL(component) != "",
+		"download_url":        a.componentDownloadURL(component),
+		"download_digest":     "",
+		"verified_digest":     "",
+		"verified":            false,
+		"verification_source": "",
+		"status":              "idle",
+		"progress":            0,
+		"error_message":       "",
 	}
 	if display, detail := componentDisplayCurrentVersion(component, current, "-"); display != current {
 		state["current_version"] = display
 		state["current_version_detail"] = detail
 	}
-	row := a.DB.QueryRow(`select current_version,latest_version,has_update,coalesce(download_url,''),status,progress,coalesce(error_message,''),last_check_time from component_update_info where component=?`, component)
+	row := a.DB.QueryRow(`select current_version,latest_version,has_update,coalesce(download_url,''),coalesce(download_digest,''),coalesce(verified_digest,''),coalesce(verified,false),coalesce(verification_source,''),status,progress,coalesce(error_message,''),last_check_time from component_update_info where component=?`, component)
 	var last sql.NullTime
-	var currentVersion, latestVersion, downloadURL, status, errText string
-	var hasUpdate bool
+	var currentVersion, latestVersion, downloadURL, downloadDigest, verifiedDigest, verificationSource, status, errText string
+	var hasUpdate, verified bool
 	var progress int
-	if err := row.Scan(&currentVersion, &latestVersion, &hasUpdate, &downloadURL, &status, &progress, &errText, &last); err == nil {
+	if err := row.Scan(&currentVersion, &latestVersion, &hasUpdate, &downloadURL, &downloadDigest, &verifiedDigest, &verified, &verificationSource, &status, &progress, &errText, &last); err == nil {
 		if shouldUseLiveComponentVersion(component, current, currentVersion) {
 			currentVersion = current
 		}
@@ -542,6 +603,10 @@ func (a *App) componentUpdateState(component string) map[string]any {
 		state["has_update"] = hasUpdate
 		state["can_update"] = componentCanUpdate(currentVersion, latestVersion, hasUpdate, firstNonEmpty(downloadURL, a.componentDownloadURL(component)))
 		state["download_url"] = downloadURL
+		state["download_digest"] = downloadDigest
+		state["verified_digest"] = verifiedDigest
+		state["verified"] = verified
+		state["verification_source"] = verificationSource
 		state["status"] = status
 		state["progress"] = progress
 		state["error_message"] = errText
@@ -960,6 +1025,7 @@ func normalizeComponent(component string) string {
 type githubAsset struct {
 	Name               string `json:"name"`
 	BrowserDownloadURL string `json:"browser_download_url"`
+	Digest             string `json:"digest"`
 }
 
 type githubRelease struct {
@@ -1053,16 +1119,24 @@ func selfUpdateAssetContainsFor(goos, goarch string) string {
 }
 
 func (a *App) componentReleaseAssetURL(release githubRelease, component string) string {
+	asset, ok := a.componentReleaseAsset(release, component)
+	if !ok {
+		return ""
+	}
+	return asset.BrowserDownloadURL
+}
+
+func (a *App) componentReleaseAsset(release githubRelease, component string) (githubAsset, bool) {
 	want := downloadAssetName(a.componentDownloadURL(component))
 	if want == "" {
-		return ""
+		return githubAsset{}, false
 	}
 	for _, asset := range release.Assets {
 		if strings.EqualFold(asset.Name, want) {
-			return asset.BrowserDownloadURL
+			return asset, true
 		}
 	}
-	return ""
+	return githubAsset{}, false
 }
 
 func downloadAssetName(rawURL string) string {

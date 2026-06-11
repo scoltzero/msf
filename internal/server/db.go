@@ -170,6 +170,10 @@ func (a *App) migrate() error {
 			latest_version text,
 			has_update numeric default false,
 			download_url text,
+			download_digest text,
+			verified_digest text,
+			verified numeric default false,
+			verification_source text,
 			release_body text,
 			status text default 'idle',
 			progress integer default 0,
@@ -196,6 +200,9 @@ func (a *App) migrate() error {
 	if err := a.ensureAPITokenScopeColumn(); err != nil {
 		return err
 	}
+	if err := a.ensureComponentUpdateInfoComplianceColumns(); err != nil {
+		return err
+	}
 	if err := a.migrateLegacyRows(); err != nil {
 		return err
 	}
@@ -213,11 +220,27 @@ func (a *App) migrateLegacyRows() error {
 }
 
 func (a *App) ensureAPITokenScopeColumn() error {
-	rows, err := a.DB.Query(`pragma table_info(api_tokens)`)
+	return a.ensureTableColumns("api_tokens", map[string]string{
+		"scope": "text not null default 'admin'",
+	})
+}
+
+func (a *App) ensureComponentUpdateInfoComplianceColumns() error {
+	return a.ensureTableColumns("component_update_info", map[string]string{
+		"download_digest":     "text",
+		"verified_digest":     "text",
+		"verified":            "numeric default false",
+		"verification_source": "text",
+	})
+}
+
+func (a *App) ensureTableColumns(table string, columns map[string]string) error {
+	rows, err := a.DB.Query(fmt.Sprintf("pragma table_info(%s)", table))
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
+	existing := map[string]bool{}
 	for rows.Next() {
 		var cid int
 		var name, typ string
@@ -226,12 +249,17 @@ func (a *App) ensureAPITokenScopeColumn() error {
 		if err := rows.Scan(&cid, &name, &typ, &notNull, &defaultValue, &pk); err != nil {
 			return err
 		}
-		if name == "scope" {
-			return nil
+		existing[name] = true
+	}
+	for name, definition := range columns {
+		if existing[name] {
+			continue
+		}
+		if _, err := a.DB.Exec(fmt.Sprintf("alter table %s add column %s %s", table, name, definition)); err != nil {
+			return err
 		}
 	}
-	_, err = a.DB.Exec(`alter table api_tokens add column scope text not null default 'admin'`)
-	return err
+	return nil
 }
 
 func (a *App) IsInitialized() bool {

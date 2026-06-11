@@ -1,0 +1,16 @@
+services:
+  msf:
+    image: ghcr.io/scoltzero/msf:latest
+    container_name: msf
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    environment:
+      MSF_RUNTIME: docker
+      MSF_DATA_DIR: /opt/msf
+      MSF_DOCKER_CLEANUP_NETWORK_ON_EXIT: "true"
+    volumes:
+      - ./msf-data:/opt/msf
+    restart: unless-stopped
+    stop_grace_period: 30s

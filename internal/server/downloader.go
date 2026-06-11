@@ -4,7 +4,9 @@ import (
 	"archive/tar"
 	"archive/zip"
 	"compress/gzip"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
@@ -17,9 +19,24 @@ import (
 )
 
 type DownloadEvent struct {
-	Status   string `json:"status"`
-	Progress int    `json:"progress"`
-	Message  string `json:"message"`
+	Status             string `json:"status"`
+	Progress           int    `json:"progress"`
+	Message            string `json:"message"`
+	DownloadDigest     string `json:"download_digest,omitempty"`
+	VerifiedDigest     string `json:"verified_digest,omitempty"`
+	Verified           bool   `json:"verified,omitempty"`
+	VerificationSource string `json:"verification_source,omitempty"`
+}
+
+const (
+	componentVerificationSourceGitHubAssetDigest = "github_release_asset_digest"
+	componentVerificationSourceLocalUpload       = "local-upload"
+)
+
+type componentDownloadAsset struct {
+	URL                string
+	Digest             string
+	VerificationSource string
 }
 
 func (a *App) componentDownloadURL(component string) string {
@@ -117,17 +134,29 @@ func (a *App) installComponent(component string, emit func(DownloadEvent)) error
 	if _, err := os.Stat(target); err == nil {
 		emit(DownloadEvent{Status: "running", Progress: 5, Message: component + " already installed; refreshing files"})
 	}
-	url := a.componentDownloadURL(component)
-	if url == "" {
-		return fmt.Errorf("no download URL for %s on %s/%s", component, runtime.GOOS, runtime.GOARCH)
+	asset, err := a.componentDownloadAsset(component)
+	if err != nil {
+		return err
 	}
+	url := asset.URL
 	emit(DownloadEvent{Status: "running", Progress: 5, Message: "downloading " + url})
 	tmp := filepath.Join(a.DataDir, "data", component+".download")
 	_ = os.Remove(tmp)
-	if err := a.downloadFile(url, tmp, emit); err != nil {
+	verifiedDigest, err := a.downloadVerifiedFile(url, asset.Digest, tmp, emit)
+	if err != nil {
 		_ = os.Remove(tmp)
 		return err
 	}
+	verifiedEvent := DownloadEvent{
+		Status:             "running",
+		Progress:           58,
+		Message:            "verified sha256 " + verifiedDigest,
+		DownloadDigest:     asset.Digest,
+		VerifiedDigest:     verifiedDigest,
+		Verified:           true,
+		VerificationSource: asset.VerificationSource,
+	}
+	emit(verifiedEvent)
 	emit(DownloadEvent{Status: "running", Progress: 60, Message: "extracting"})
 	if component == "zashboard" || component == "ui" {
 		err := installZashboardArchive(tmp, filepath.Join(a.DataDir, "configs", "mihomo", "ui"))
@@ -135,7 +164,7 @@ func (a *App) installComponent(component string, emit func(DownloadEvent)) error
 		if err != nil {
 			return err
 		}
-		emit(DownloadEvent{Status: "completed", Progress: 100, Message: component + " installed"})
+		emit(DownloadEvent{Status: "completed", Progress: 100, Message: component + " installed", DownloadDigest: asset.Digest, VerifiedDigest: verifiedDigest, Verified: true, VerificationSource: asset.VerificationSource})
 		return nil
 	}
 	extractDir, err := os.MkdirTemp(filepath.Join(a.DataDir, "data"), component+"-extract-*")
@@ -167,8 +196,45 @@ func (a *App) installComponent(component string, emit func(DownloadEvent)) error
 		return err
 	}
 	_ = os.Chmod(target, 0755)
-	emit(DownloadEvent{Status: "completed", Progress: 100, Message: component + " installed"})
+	emit(DownloadEvent{Status: "completed", Progress: 100, Message: component + " installed", DownloadDigest: asset.Digest, VerifiedDigest: verifiedDigest, Verified: true, VerificationSource: asset.VerificationSource})
 	return nil
+}
+
+func (a *App) componentDownloadAsset(component string) (componentDownloadAsset, error) {
+	component = normalizeComponent(component)
+	url := a.componentDownloadURL(component)
+	if url == "" {
+		return componentDownloadAsset{}, fmt.Errorf("no download URL for %s on %s/%s", component, runtime.GOOS, runtime.GOARCH)
+	}
+	release, err := a.componentRemoteInfo(component)
+	if err != nil {
+		return componentDownloadAsset{}, fmt.Errorf("fetch %s release metadata before download: %w", component, err)
+	}
+	return a.componentDownloadAssetFromRelease(component, release)
+}
+
+func (a *App) componentDownloadAssetFromRelease(component string, release githubRelease) (componentDownloadAsset, error) {
+	component = normalizeComponent(component)
+	asset, ok := a.componentReleaseAsset(release, component)
+	if !ok {
+		want := downloadAssetName(a.componentDownloadURL(component))
+		if want == "" {
+			want = component
+		}
+		return componentDownloadAsset{}, fmt.Errorf("%s release metadata does not include expected asset %q", component, want)
+	}
+	if strings.TrimSpace(asset.BrowserDownloadURL) == "" {
+		return componentDownloadAsset{}, fmt.Errorf("%s release asset %q has no download URL", component, asset.Name)
+	}
+	digest, err := canonicalSHA256Digest(asset.Digest)
+	if err != nil {
+		return componentDownloadAsset{}, fmt.Errorf("%s release asset %q has no valid SHA-256 digest; use local upload or wait for a verified release: %w", component, asset.Name, err)
+	}
+	return componentDownloadAsset{
+		URL:                asset.BrowserDownloadURL,
+		Digest:             digest,
+		VerificationSource: componentVerificationSourceGitHubAssetDigest,
+	}, nil
 }
 
 func (a *App) componentTarget(component string) string {
@@ -229,6 +295,54 @@ func (a *App) downloadFile(rawURL, dest string, emit func(DownloadEvent)) error 
 		}
 	}
 	return nil
+}
+
+func (a *App) downloadVerifiedFile(rawURL, expectedDigest, dest string, emit func(DownloadEvent)) (string, error) {
+	expected, err := canonicalSHA256Digest(expectedDigest)
+	if err != nil {
+		return "", fmt.Errorf("download %s requires a valid SHA-256 digest: %w", rawURL, err)
+	}
+	if err := a.downloadFile(rawURL, dest, emit); err != nil {
+		return "", err
+	}
+	actual, err := verifySHA256File(dest, expected)
+	if err != nil {
+		return actual, err
+	}
+	return actual, nil
+}
+
+func verifySHA256File(path, expectedDigest string) (string, error) {
+	expected, err := canonicalSHA256Digest(expectedDigest)
+	if err != nil {
+		return "", err
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	actual := "sha256:" + hex.EncodeToString(h.Sum(nil))
+	if actual != expected {
+		return actual, fmt.Errorf("SHA-256 verification failed for %s: got %s, want %s", filepath.Base(path), actual, expected)
+	}
+	return actual, nil
+}
+
+func canonicalSHA256Digest(value string) (string, error) {
+	raw := strings.ToLower(strings.TrimSpace(value))
+	raw = strings.TrimPrefix(raw, "sha256:")
+	if len(raw) != sha256.Size*2 {
+		return "", fmt.Errorf("expected sha256:<64 hex chars>, got %q", value)
+	}
+	if _, err := hex.DecodeString(raw); err != nil {
+		return "", err
+	}
+	return "sha256:" + raw, nil
 }
 
 func (a *App) DownloadFile(rawURL, dest string, emit func(DownloadEvent)) error {

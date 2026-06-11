@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -72,5 +73,22 @@ func TestDefaultDataDirFallsBackToLegacyEnv(t *testing.T) {
 	t.Setenv("MSM_FREE_DATA_DIR", "/tmp/msm-free-data")
 	if got := defaultDataDir(); got != "/tmp/msm-free-data" {
 		t.Fatalf("defaultDataDir() = %q, want legacy MSM_FREE_DATA_DIR", got)
+	}
+}
+
+func TestDockerRuntimeBlocksHostInstallers(t *testing.T) {
+	t.Setenv("MSF_RUNTIME", "docker")
+	for _, item := range []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"update", updateRuntime(updateOptions{DataDir: t.TempDir()}), "Docker containers should be updated"},
+		{"uninstall", uninstallRuntime(uninstallOptions{DataDir: t.TempDir()}), "Docker containers should be removed"},
+		{"service install", serviceCommand("install", serviceOptions{DataDir: t.TempDir()}), "Docker containers do not use systemd"},
+	} {
+		if item.err == nil || !strings.Contains(item.err.Error(), item.want) {
+			t.Fatalf("%s error = %v, want substring %q", item.name, item.err, item.want)
+		}
 	}
 }

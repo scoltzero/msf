@@ -8,8 +8,8 @@
 | 文件 | 作用 |
 |------|------|
 | `../../../LICENSE` | 仓库根的 **GPL-3.0** 全文（CA 要求 OSI 认可协议） |
-| `../../../ca_profile.xml` | 仓库根的 **维护者资料**（`<Maintainer>`：图标、简介、主页） |
-| `ca/msf.xml` | **CA 插件列表条目**（`<Containers>`：`Plugin/PluginURL/Name/Description/Support/Icon/Category/Changes`） |
+| `../../../ca_profile.xml` | 仓库根的 **维护者资料**（`<CommunityApplications>`：`Profile/Icon/WebPage`） |
+| `ca/msf.xml` | **CA 插件模板**（根元素 `<Plugin>`：`Name/PluginURL/Icon/Overview/Support/Project/Category/Beta`） |
 | `../msf.png` | 256×256 列表图标（被 `ca_profile.xml` 与 `ca/msf.xml` 的 `<Icon>` 引用） |
 | `../../../msf.plg` | 安装入口，`<PLUGIN>` 已补 `support="https://github.com/scoltzero/msf/issues"` |
 

@@ -61,10 +61,11 @@ func (a *App) handleComponentUpdateUpload(w http.ResponseWriter, r *http.Request
 
 	now := time.Now()
 	version := "local-upload-" + now.Format("200601021504")
-	_, _ = a.DB.Exec(`insert into component_update_info(component,current_version,latest_version,has_update,download_url,status,progress,error_message,last_check_time,created_at,updated_at)
-		values(?,?,?,?,?,?,?,?,?,?,?)
-		on conflict(component) do update set status='running',progress=5,error_message='',updated_at=excluded.updated_at`,
-		component, a.componentCurrentVersion(component), version, true, "local-upload:"+filepath.Base(header.Filename), "running", 5, "", now, now, now)
+	downloadURL := "local-upload:" + filepath.Base(header.Filename)
+	_, _ = a.DB.Exec(`insert into component_update_info(component,current_version,latest_version,has_update,download_url,download_digest,verified_digest,verified,verification_source,status,progress,error_message,last_check_time,created_at,updated_at)
+		values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		on conflict(component) do update set current_version=excluded.current_version,latest_version=excluded.latest_version,has_update=excluded.has_update,download_url=excluded.download_url,download_digest='',verified_digest='',verified=false,verification_source=excluded.verification_source,status='running',progress=5,error_message='',last_check_time=excluded.last_check_time,updated_at=excluded.updated_at`,
+		component, a.componentCurrentVersion(component), version, true, downloadURL, "", "", false, componentVerificationSourceLocalUpload, "running", 5, "", now, now, now)
 
 	if err := a.installUploadedComponent(component, tmpPath, header.Filename); err != nil {
 		_, _ = a.DB.Exec(`update component_update_info set status='failed',progress=5,error_message=?,updated_at=? where component=?`, err.Error(), nowString(), component)
@@ -79,8 +80,8 @@ func (a *App) handleComponentUpdateUpload(w http.ResponseWriter, r *http.Request
 			restarted = true
 		}
 	}
-	_, _ = a.DB.Exec(`update component_update_info set current_version=?,latest_version=?,has_update=false,download_url=?,status='completed',progress=100,error_message='',last_check_time=?,updated_at=? where component=?`,
-		version, version, "local-upload:"+filepath.Base(header.Filename), now, now, component)
+	_, _ = a.DB.Exec(`update component_update_info set current_version=?,latest_version=?,has_update=false,download_url=?,download_digest='',verified_digest='',verified=false,verification_source=?,status='completed',progress=100,error_message='',last_check_time=?,updated_at=? where component=?`,
+		version, version, downloadURL, componentVerificationSourceLocalUpload, now, now, component)
 	state := a.componentUpdateState(component)
 	state["restarted"] = restarted
 	writeJSON(w, http.StatusOK, map[string]any{"success": true, "data": state})

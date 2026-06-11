@@ -21,18 +21,18 @@ func TestParseIPIPExitText(t *testing.T) {
 func TestNormalizeInternationalExit(t *testing.T) {
 	info := normalizeInternationalExit(map[string]any{
 		"ip":           "198.51.100.10",
-		"country":      "United States",
-		"region":       "California",
-		"city":         "Los Angeles",
-		"organization": "DMIT",
+		"country":      "Exampleland",
+		"region":       "Example Region",
+		"city":         "Example City",
+		"organization": "Example Transit",
 	})
 	if info["ip"] != "198.51.100.10" {
 		t.Fatalf("ip mismatch: %#v", info)
 	}
-	if info["location"] != "United States DMIT" {
+	if info["location"] != "Exampleland Example Transit" {
 		t.Fatalf("location mismatch: %#v", info)
 	}
-	if info["region"] != "California" || info["city"] != "Los Angeles" || info["isp"] != "DMIT" {
+	if info["region"] != "Example Region" || info["city"] != "Example City" || info["isp"] != "Example Transit" {
 		t.Fatalf("metadata mismatch: %#v", info)
 	}
 }

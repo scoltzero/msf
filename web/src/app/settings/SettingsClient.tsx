@@ -103,6 +103,10 @@ interface ComponentUpdateState {
   progress?: number;
   error_message?: string;
   download_url?: string;
+  download_digest?: string;
+  verified_digest?: string;
+  verified?: boolean;
+  verification_source?: string;
   last_check_time?: string;
 }
 
@@ -232,6 +236,21 @@ function statusLabel(status?: string) {
   }
 }
 
+function shortDigest(value?: string) {
+  const digest = String(value || "").trim();
+  if (!digest) return "-";
+  const raw = digest.replace(/^sha256:/i, "");
+  if (raw.length <= 12) return digest;
+  return `sha256:${raw.slice(0, 12)}...`;
+}
+
+function componentVerificationLabel(item?: ComponentUpdateState) {
+  if (item?.verified) return `已校验 ${shortDigest(item.verified_digest || item.download_digest)}`;
+  if (item?.verification_source === "local-upload") return "本地上传，未项目校验";
+  if (item?.download_digest) return `待安装校验 ${shortDigest(item.download_digest)}`;
+  return "未校验";
+}
+
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
@@ -259,25 +278,10 @@ const defaultInitConfig: InitConfigState = {
   dnsEnable: "127.0.0.1",
   dnsDisable: "223.5.5.5",
   ipv6: false,
-  subscriptions: [
-    {
-      id: "kur",
-      name: "kur",
-      url: "https://example.invalid/subscription.yaml",
-    },
-    {
-      id: "imm",
-      name: "imm",
-      url: "https://example.invalid/subscription.yaml",
-    },
-  ],
+  subscriptions: [],
   nodeMode: "share",
-  shareNodes: [
-    "vless://00000000-0000-4000-8000-000000000000@example.invalid:443?encryption=none&security=reality&type=tcp&sni=example.invalid&fp=chrome#placeholder-node-1",
-    "vless://00000000-0000-4000-8000-000000000001@example.invalid:443?encryption=none&security=reality&type=tcp&sni=example.invalid&fp=chrome#placeholder-node-2",
-  ],
-  yamlNodes:
-    "proxies:\n  - name: placeholder-node-1\n    type: vless\n    server: 198.51.100.10\n    port: 28578\n    uuid: 00000000-0000-4000-8000-000000000000\n    network: tcp\n    tls: true\n    reality-opts:\n      public-key: xxx\n  - name: placeholder-node-2\n    type: vless\n    server: 203.0.113.10\n    port: 11451",
+  shareNodes: [],
+  yamlNodes: "",
 };
 
 const defaultUpdateConfig: UpdateConfigState = {
@@ -855,7 +859,7 @@ function InitConfigEditor({
                 <input
                   value={item.name}
                   onChange={(event) => updateSub(item.id, { name: event.target.value })}
-                  placeholder={`✈️机场${index + 1}`}
+                  placeholder={`订阅 ${index + 1}`}
                   className={`${inputClass} h-12 text-base`}
                 />
               </Field>
@@ -863,7 +867,7 @@ function InitConfigEditor({
                 <input
                   value={item.url}
                   onChange={(event) => updateSub(item.id, { url: event.target.value })}
-                  placeholder="https://..."
+                  placeholder="https://example.invalid/subscription.yaml"
                   className={`${inputClass} h-12 text-base`}
                 />
               </Field>
@@ -877,7 +881,7 @@ function InitConfigEditor({
             </div>
           ))}
         </div>
-        <p className="mt-3 text-sm text-muted-foreground">✈️机场1</p>
+        <p className="mt-3 text-sm text-muted-foreground">默认不内置任何订阅地址。</p>
       </SectionBox>
 
       <SectionBox>
@@ -919,7 +923,7 @@ function InitConfigEditor({
                 <input
                   value={node}
                   onChange={(event) => updateNode(index, event.target.value)}
-                  placeholder="ss:// / trojan:// / vmess:// / vless:// / hysteria2:// / tuic:// ..."
+                  placeholder="粘贴节点分享链接；示例主机请使用 example.invalid"
                   className={`${inputClass} h-10 min-w-0 flex-1`}
                 />
                 <button
@@ -944,7 +948,7 @@ function InitConfigEditor({
             <textarea
               value={draft.yamlNodes}
               onChange={(event) => setDraft((current) => ({ ...current, yamlNodes: event.target.value }))}
-              placeholder={'proxies:\n  - name: "my-node"\n    type: trojan\n    server: example.com\n    port: 443\n    password: "xxx"\n    sni: example.com'}
+              placeholder={'proxies:\n  - name: "placeholder-node"\n    type: trojan\n    server: example.invalid\n    port: 443\n    password: "placeholder"\n    sni: example.invalid'}
               className={`${inputClass} min-h-56 font-mono leading-relaxed`}
             />
             <p className="mt-2 text-xs text-muted-foreground">💡 提示：可以直接从 Mihomo 配置文件复制 proxies 部分粘贴到这里</p>
@@ -1258,6 +1262,8 @@ function ComponentUpdateCard({
   const isBusy = busy === component;
   const progress = typeof item?.progress === "number" ? item.progress : 0;
   const effectiveConfig = config || { component, auto_check: true, check_interval: 43200, auto_update: false };
+  const VerificationIcon = item?.verified ? Check : ShieldAlert;
+  const verificationTone = item?.verified ? "text-green-600" : item?.verification_source === "local-upload" ? "text-amber-600" : "text-muted-foreground";
 
   return (
     <div className="rounded-xl border border-border/50 p-4">
@@ -1270,6 +1276,10 @@ function ComponentUpdateCard({
           </div>
           <div className="mt-1 text-xs text-muted-foreground">
             状态: {statusLabel(item?.status)} · 最后检查: {formatDateTime(item?.last_check_time)}
+          </div>
+          <div className={cn("mt-1 flex items-center gap-1 text-xs", verificationTone)}>
+            <VerificationIcon className="h-3.5 w-3.5" />
+            <span>{componentVerificationLabel(item)}</span>
           </div>
           {item?.error_message ? <div className="mt-1 text-xs text-destructive">{item.error_message}</div> : null}
         </div>

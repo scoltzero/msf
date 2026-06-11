@@ -407,8 +407,6 @@ func (a *App) renderNetworkYAML(cfg SetupConfig) string {
 func (a *App) renderNFT(cfg SetupConfig) string {
 	ifaceSet := nftInterfaceSet(cfg.SelectedInterface)
 	return fmt.Sprintf(`#!/usr/sbin/nft -f
-flush ruleset
-
 table inet msf {
   set local_ipv4 {
     type ipv4_addr

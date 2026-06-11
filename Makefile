@@ -1,4 +1,4 @@
-.PHONY: dev build frontend import-web package unraid fnos test clean
+.PHONY: dev build frontend import-web package unraid fnos test audit-compliance clean
 
 APP_NAME := msf
 DIST := dist
@@ -53,6 +53,9 @@ dev:
 
 test:
 	go test ./...
+
+audit-compliance:
+	scripts/audit-compliance.sh
 
 clean:
 	rm -rf $(DIST)

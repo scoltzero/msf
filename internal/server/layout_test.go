@@ -121,6 +121,9 @@ table inet msm_free {
 	if !strings.Contains(string(nft), "table inet msf") {
 		t.Fatalf("network.nft should use msf table:\n%s", string(nft))
 	}
+	if strings.Contains(string(nft), "flush ruleset") {
+		t.Fatalf("network.nft should not flush the global nftables ruleset:\n%s", string(nft))
+	}
 	if _, err := os.Stat(filepath.Join(dataDir, "logs/msf.log")); err != nil {
 		t.Fatalf("msf log should be moved: %v", err)
 	}

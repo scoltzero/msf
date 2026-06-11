@@ -366,58 +366,79 @@ func (a *App) mosDNSCacheOverviewRows(counters map[string]map[string]any, entrie
 	return rows
 }
 
-func (a *App) mosDNSCacheDomainBuckets(entries []map[string]any) map[string]any {
-	buckets := map[string][]map[string]any{
-		"realIp": a.mosDNSCacheDumpDomainRows([]string{"cache_all", "cache_all_noleak", "cache_cn", "cache_cnmihomo", "cache_google", "cache_node", "cache_google_node"}, 1000),
-		"fakeIp": {},
-		"noV4":   {},
-		"noV6":   {},
+func (a *App) mosDNSCacheDomainBuckets(_ []map[string]any) map[string]any {
+	return map[string]any{
+		"realIp": a.mosDNSGeneratedDomainRows([]string{"realiplist.txt"}, 1000),
+		"fakeIp": a.mosDNSGeneratedDomainRows([]string{"fakeiplist.txt"}, 1000),
+		"noV4":   a.mosDNSGeneratedDomainRows([]string{"nov4list.txt"}, 1000),
+		"noV6":   a.mosDNSGeneratedDomainRows([]string{"nov6list.txt"}, 1000),
 	}
-	seen := map[string]map[string]bool{
-		"realIp": {},
-		"fakeIp": {},
-		"noV4":   {},
-		"noV6":   {},
-	}
-	for _, row := range buckets["realIp"] {
-		seen["realIp"][stringMapValue(row, "domain")] = true
-	}
-	for _, entry := range entries {
-		domain := normalizeCacheDomainCandidate(stringMapValue(entry, "query_name"))
-		if domain == "" {
-			continue
-		}
-		bucket := "realIp"
-		rule := strings.ToLower(stringMapValue(entry, "domain_set") + " " + stringMapValue(entry, "rule"))
-		switch {
-		case strings.Contains(rule, "nov4") || strings.Contains(rule, "no_v4"):
-			bucket = "noV4"
-		case strings.Contains(rule, "nov6") || strings.Contains(rule, "no_v6"):
-			bucket = "noV6"
-		case entryHasFakeIP(entry):
-			bucket = "fakeIp"
-		}
-		if seen[bucket][domain] {
-			continue
-		}
-		seen[bucket][domain] = true
-		buckets[bucket] = append(buckets[bucket], map[string]any{
-			"id":     fmt.Sprintf("%010d", len(buckets[bucket])+1),
-			"domain": domain,
-			"date":   dateOnly(stringMapValue(entry, "query_time")),
-			"source": "query-log",
-		})
-	}
-	out := map[string]any{}
-	for key, rows := range buckets {
-		for i := range rows {
-			if rows[i]["id"] == nil || rows[i]["id"] == "" {
-				rows[i]["id"] = fmt.Sprintf("%010d", i+1)
+}
+
+func (a *App) mosDNSGeneratedDomainRows(names []string, limit int) []map[string]any {
+	seen := map[string]bool{}
+	var rows []map[string]any
+	for _, name := range names {
+		rel := filepath.ToSlash(filepath.Join("configs/mosdns/gen", name))
+		content, _ := a.readTextFile(rel)
+		for _, line := range splitNonEmptyLines(content) {
+			domain, date := parseMosDNSGeneratedDomainLine(line)
+			if domain == "" || seen[domain] {
+				continue
+			}
+			seen[domain] = true
+			row := map[string]any{
+				"id":     fmt.Sprintf("%010d", len(rows)+1),
+				"domain": domain,
+				"source": name,
+			}
+			if date != "" {
+				row["date"] = date
+			}
+			rows = append(rows, row)
+			if limit > 0 && len(rows) >= limit {
+				return rows
 			}
 		}
-		out[key] = rows
 	}
-	return out
+	return rows
+}
+
+func parseMosDNSGeneratedDomainLine(line string) (string, string) {
+	line = strings.TrimSpace(line)
+	if line == "" || strings.HasPrefix(line, "#") {
+		return "", ""
+	}
+	date := ""
+	if match := leadingDateTimeRE.FindStringSubmatch(line); len(match) > 1 {
+		date = strings.ReplaceAll(match[1], "/", "-")
+	} else if match := leadingRFC3339TimeRE.FindStringSubmatch(line); len(match) > 1 {
+		date = match[1][:10]
+	}
+	for _, raw := range cacheDomainRE.FindAllString(line, -1) {
+		if domain := normalizeCacheDomainCandidate(raw); domain != "" {
+			return domain, date
+		}
+	}
+	return "", date
+}
+
+func mosDNSCacheDomainStats(domains map[string]any) map[string]any {
+	stats := map[string]any{
+		"realIp":       0,
+		"fakeIp":       0,
+		"noV4":         0,
+		"noV6":         0,
+		"totalDomains": 0,
+	}
+	total := 0
+	for _, key := range []string{"realIp", "fakeIp", "noV4", "noV6"} {
+		count := len(anyMapSlice(domains[key]))
+		stats[key] = count
+		total += count
+	}
+	stats["totalDomains"] = total
+	return stats
 }
 
 func (a *App) mosDNSCacheDumpDomainRows(tags []string, limit int) []map[string]any {

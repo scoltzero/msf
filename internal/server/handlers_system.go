@@ -451,27 +451,113 @@ func (a *App) applyNFT(ctx context.Context) (string, error) {
 	if _, err := os.Stat(nftPath); err != nil {
 		return "", fmt.Errorf("nftables config is missing: %s", nftPath)
 	}
-	var output bytes.Buffer
-	cmds := [][]string{
-		{"nft", "-f", nftPath},
-		{"ip", "rule", "add", "fwmark", "1", "table", "100"},
-		{"ip", "route", "add", "local", "0.0.0.0/0", "dev", "lo", "table", "100"},
-		{"ip", "-6", "rule", "add", "fwmark", "1", "table", "100"},
-		{"ip", "-6", "route", "add", "local", "::/0", "dev", "lo", "table", "100"},
+	if err := sanitizeNFTConfigFile(nftPath); err != nil {
+		return "", err
 	}
+	var output bytes.Buffer
+	ignoreNetworkCommandError(ctx, &output, 8*time.Second, "nft", "delete", "table", "inet", "msf")
+	cmds := [][]string{{"nft", "-f", nftPath}}
+	runNetworkCommandsIgnoringErrors(ctx, &output, 8*time.Second, policyRouteRuleDeleteCommands())
+	cmds = append(cmds, policyRouteInstallCommands()...)
 	for _, args := range cmds {
-		out, err := combinedOutputWithTimeout(ctx, 8*time.Second, args[0], args[1:]...)
-		if len(out) > 0 {
-			output.Write(out)
-			if output.Len() > 0 && !bytes.HasSuffix(output.Bytes(), []byte("\n")) {
-				output.WriteByte('\n')
-			}
-		}
-		if err != nil && !strings.Contains(string(out), "File exists") {
-			return output.String(), fmt.Errorf("%s: %w", strings.Join(args, " "), err)
+		if err := runNetworkCommand(ctx, &output, 8*time.Second, args...); err != nil {
+			return output.String(), err
 		}
 	}
 	return output.String(), nil
+}
+
+func policyRouteRuleDeleteCommands() [][]string {
+	const attemptsPerFamily = 16
+	var cmds [][]string
+	for i := 0; i < attemptsPerFamily; i++ {
+		cmds = append(cmds, []string{"ip", "rule", "del", "fwmark", "1", "table", "100"})
+	}
+	for i := 0; i < attemptsPerFamily; i++ {
+		cmds = append(cmds, []string{"ip", "-6", "rule", "del", "fwmark", "1", "table", "100"})
+	}
+	return cmds
+}
+
+func policyRouteInstallCommands() [][]string {
+	return [][]string{
+		{"ip", "rule", "add", "fwmark", "1", "table", "100"},
+		{"ip", "route", "replace", "local", "0.0.0.0/0", "dev", "lo", "table", "100"},
+		{"ip", "-6", "rule", "add", "fwmark", "1", "table", "100"},
+		{"ip", "-6", "route", "replace", "local", "::/0", "dev", "lo", "table", "100"},
+	}
+}
+
+func policyRouteClearCommands() [][]string {
+	cmds := policyRouteRuleDeleteCommands()
+	cmds = append(cmds,
+		[]string{"ip", "route", "del", "local", "0.0.0.0/0", "dev", "lo", "table", "100"},
+		[]string{"ip", "-6", "route", "del", "local", "::/0", "dev", "lo", "table", "100"},
+	)
+	return cmds
+}
+
+func runNetworkCommand(ctx context.Context, output *bytes.Buffer, timeout time.Duration, args ...string) error {
+	if len(args) == 0 {
+		return nil
+	}
+	out, err := combinedOutputWithTimeout(ctx, timeout, args[0], args[1:]...)
+	appendCommandOutput(output, out)
+	if err != nil {
+		return fmt.Errorf("%s: %w", strings.Join(args, " "), err)
+	}
+	return nil
+}
+
+func ignoreNetworkCommandError(ctx context.Context, output *bytes.Buffer, timeout time.Duration, args ...string) {
+	if len(args) == 0 {
+		return
+	}
+	out, _ := combinedOutputWithTimeout(ctx, timeout, args[0], args[1:]...)
+	appendCommandOutput(output, out)
+}
+
+func appendCommandOutput(output *bytes.Buffer, out []byte) {
+	if len(out) == 0 {
+		return
+	}
+	output.Write(out)
+	if output.Len() > 0 && !bytes.HasSuffix(output.Bytes(), []byte("\n")) {
+		output.WriteByte('\n')
+	}
+}
+
+func runNetworkCommandsIgnoringErrors(ctx context.Context, output *bytes.Buffer, timeout time.Duration, cmds [][]string) {
+	for _, args := range cmds {
+		ignoreNetworkCommandError(ctx, output, timeout, args...)
+	}
+}
+
+func sanitizeNFTConfigFile(path string) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	sanitized := stripGlobalNFTRulesetFlush(string(raw))
+	if sanitized == string(raw) {
+		return nil
+	}
+	return os.WriteFile(path, []byte(sanitized), info.Mode())
+}
+
+func stripGlobalNFTRulesetFlush(text string) string {
+	var out strings.Builder
+	for _, line := range strings.SplitAfter(text, "\n") {
+		if strings.EqualFold(strings.TrimSpace(line), "flush ruleset") {
+			continue
+		}
+		out.WriteString(line)
+	}
+	return out.String()
 }
 
 func (a *App) handleNFTClear(w http.ResponseWriter, r *http.Request) {
@@ -492,22 +578,8 @@ func (a *App) clearNFT(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("root permission is required to clear nftables and policy routing")
 	}
 	var output bytes.Buffer
-	cmds := [][]string{
-		{"nft", "delete", "table", "inet", "msf"},
-		{"ip", "rule", "del", "fwmark", "1", "table", "100"},
-		{"ip", "route", "del", "local", "0.0.0.0/0", "dev", "lo", "table", "100"},
-		{"ip", "-6", "rule", "del", "fwmark", "1", "table", "100"},
-		{"ip", "-6", "route", "del", "local", "::/0", "dev", "lo", "table", "100"},
-	}
-	for _, args := range cmds {
-		out, _ := combinedOutputWithTimeout(ctx, 5*time.Second, args[0], args[1:]...)
-		if len(out) > 0 {
-			output.Write(out)
-			if output.Len() > 0 && !bytes.HasSuffix(output.Bytes(), []byte("\n")) {
-				output.WriteByte('\n')
-			}
-		}
-	}
+	ignoreNetworkCommandError(ctx, &output, 5*time.Second, "nft", "delete", "table", "inet", "msf")
+	runNetworkCommandsIgnoringErrors(ctx, &output, 5*time.Second, policyRouteClearCommands())
 	return output.String(), nil
 }
 

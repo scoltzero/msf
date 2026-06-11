@@ -16,6 +16,7 @@ import {
   type FilterSettings,
   type ResolutionSettings,
   type CacheSystemData,
+  type CacheStats,
   type CacheDomainRow,
   type UpstreamServer,
   type UpstreamGroup,
@@ -96,6 +97,47 @@ function asBool(value: unknown) {
   return Boolean(value);
 }
 
+function numberValue(value: unknown) {
+  const next = Number(value);
+  return Number.isFinite(next) ? next : 0;
+}
+
+function cacheStatFromRecord(value: unknown): CacheStats | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as RawRecord;
+  const stats = {
+    realIp: numberValue(record.realIp ?? record.realip ?? record.real_ip ?? record.real),
+    fakeIp: numberValue(record.fakeIp ?? record.fakeip ?? record.fake_ip ?? record.fake),
+    noV4: numberValue(record.noV4 ?? record.nov4 ?? record.no_v4),
+    noV6: numberValue(record.noV6 ?? record.nov6 ?? record.no_v6),
+    totalDomains: numberValue(record.totalDomains ?? record.total_domains ?? record.total ?? record.entries),
+  };
+  const sum = stats.realIp + stats.fakeIp + stats.noV4 + stats.noV6;
+  if (sum === 0) return null;
+  if (stats.totalDomains === 0) stats.totalDomains = sum;
+  return stats;
+}
+
+function cacheStatFromDomainPayload(...payloads: unknown[]): CacheStats | null {
+  for (const payload of payloads) {
+    const data = apiData<RawRecord>(payload as any, payload as RawRecord) || {};
+    const domainBuckets = (data.domains || data.domain_lists || data.domainLists || {}) as RawRecord;
+    const counts = {
+      realIp: normalizeCacheDomainRows(domainBuckets.realIp || domainBuckets.realip || domainBuckets.real).length,
+      fakeIp: normalizeCacheDomainRows(domainBuckets.fakeIp || domainBuckets.fakeip || domainBuckets.fake).length,
+      noV4: normalizeCacheDomainRows(domainBuckets.noV4 || domainBuckets.nov4 || domainBuckets.no_v4).length,
+      noV6: normalizeCacheDomainRows(domainBuckets.noV6 || domainBuckets.nov6 || domainBuckets.no_v6).length,
+      totalDomains: 0,
+    };
+    const sum = counts.realIp + counts.fakeIp + counts.noV4 + counts.noV6;
+    if (sum > 0) {
+      counts.totalDomains = sum;
+      return counts;
+    }
+  }
+  return null;
+}
+
 function switchMap(...payloads: unknown[]) {
   const map: Record<string, boolean> = {};
   payloads.forEach((payload) => {
@@ -164,17 +206,25 @@ function extractSocks5(groups: UpstreamGroup[]) {
   return "";
 }
 
-function normalizeCacheData(cachePayload: unknown, routingPayload: unknown, switches: Record<string, boolean>): CacheSystemData {
+function normalizeCacheData(cachePayload: unknown, routingPayload: unknown, switches: Record<string, boolean>, cacheDetailPayload?: unknown): CacheSystemData {
   const cache = apiData<RawRecord>(cachePayload as any, cachePayload as RawRecord) || {};
   const routing = apiData<RawRecord>(routingPayload as any, routingPayload as RawRecord) || {};
   const scheduler = (routing.scheduler || {}) as RawRecord;
   const entries = Number(cache.entries || cache.total || 0);
+  const directStats =
+    cacheStatFromRecord(cache.stats) ||
+    cacheStatFromRecord(cache.domain_stats) ||
+    cacheStatFromRecord(cache.domainStats) ||
+    cacheStatFromDomainPayload(cachePayload, cacheDetailPayload);
   const caches = Array.isArray(cache.caches) ? cache.caches : [];
+  let classifiedCaches = 0;
   const counts = caches.reduce(
     (acc, item) => {
       const row = item as RawRecord;
       const name = String(row.name || row.type || row.tag || "").toLowerCase();
       const count = Number(row.entries || row.count || row.size || 0);
+      if (count <= 0 || !name) return acc;
+      classifiedCaches += 1;
       if (name.includes("fake")) acc.fakeIp += count;
       else if (name.includes("nov4") || name.includes("no_v4")) acc.noV4 += count;
       else if (name.includes("nov6") || name.includes("no_v6")) acc.noV6 += count;
@@ -183,15 +233,16 @@ function normalizeCacheData(cachePayload: unknown, routingPayload: unknown, swit
     },
     { realIp: 0, fakeIp: 0, noV4: 0, noV6: 0 }
   );
-  if (caches.length === 0) counts.realIp = entries;
+  if (!directStats && classifiedCaches === 0) counts.realIp = entries;
+  const stats = directStats || {
+    realIp: counts.realIp,
+    fakeIp: counts.fakeIp,
+    noV4: counts.noV4,
+    noV6: counts.noV6,
+    totalDomains: entries || counts.realIp + counts.fakeIp + counts.noV4 + counts.noV6,
+  };
   return {
-    stats: {
-      realIp: counts.realIp,
-      fakeIp: counts.fakeIp,
-      noV4: counts.noV4,
-      noV6: counts.noV6,
-      totalDomains: entries || counts.realIp + counts.fakeIp + counts.noV4 + counts.noV6,
-    },
+    stats,
     strategy: {
       expiredCache1: switches[SWITCH.expiredCache1] === true,
       expiredCache2: switches[SWITCH.expiredCache2] === true,
@@ -313,7 +364,7 @@ export default function MosdnsSystemPage() {
         ipv6First: switches[SWITCH.ipv6First] === true,
       });
       setRunMode(switches[SWITCH.runMode] === false ? "safe" : "compatible");
-      setCacheData(normalizeCacheData(cachePayload, routingPayload, switches));
+      setCacheData(normalizeCacheData(cachePayload, routingPayload, switches, cacheDetailPayload));
       setCacheDomains(normalizeCacheDomains(cacheDetailPayload));
     } catch (error) {
       showToast(error instanceof Error ? error.message : "MosDNS 系统配置加载失败");

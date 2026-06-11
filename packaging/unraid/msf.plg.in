@@ -13,13 +13,10 @@
   <CHANGES>
     <![CDATA[
 ### msf __PLUGIN_VERSION__
-- msf 主要功能已基本稳定，初始化、MosDNS/Mihomo 管理、代理规则、更新与发布链路进入可持续迭代状态。
-- 新增 Mihomo 自定义配置：用户配置可导入、新建、命名、保存、应用和回滚，代理分组、代理供应商、规则集和规则可在 WebUI 管理。
-- 新增 MosDNS、Mihomo、Zashboard 本地上传安装，网络困难时可用预下载核心离线安装。
-- 新增 CodeMirror YAML 配置编辑器，支持高亮、行号、撤销重做和搜索快捷键。
-- 修复 ARM64 版本下载组件核心时架构不匹配的问题，ARM64 系统会下载并校验 ARM64 MosDNS/Mihomo。
-- 修复初始化 6 步完成后的核心下载流程、Mihomo 节点整卡选择、节点宽度稳定和 MosDNS 客户端来源展示。
-- 修复 MSF 自身更新的安装并重启操作，并让 WebUI 与 CLI 更新复用初始化阶段配置的 GitHub 代理/加速设置。
+- 在线安装 MosDNS、Mihomo、Zashboard 时强制读取并校验 GitHub Release API asset SHA-256 digest，通过后才解压/覆盖。
+- 本地上传核心仍支持离线安装，但状态会标记为 local-upload，不会宣称由项目校验。
+- 默认初始化配置不再包含真实订阅链接、真实节点或真实 IP，示例数据统一替换为 inert placeholders。
+- Unraid Settings 入口保留为轻量插件控制页，完整管理界面通过独立 msf WebUI 打开。
     ]]>
   </CHANGES>
 
