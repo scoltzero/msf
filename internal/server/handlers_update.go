@@ -66,6 +66,11 @@ func (a *App) selfUpdateState() map[string]any {
 		item["disabled_reason"] = DockerUpdateDisabledReason()
 		return item
 	}
+	if IsFnOSFPKRuntime() {
+		item["supported"] = false
+		item["disabled_reason"] = FnOSUpdateDisabledReason()
+		return item
+	}
 	row := a.DB.QueryRow(`select current_version,latest_version,has_update,status,progress,coalesce(error_message,''),coalesce(download_url,''),coalesce(release_notes,''),last_check_time from update_info where component='msf' order by id desc limit 1`)
 	var current, latest, status, errText, downloadURL, notes string
 	var hasUpdate bool
@@ -103,6 +108,10 @@ func (a *App) selfUpdateState() map[string]any {
 func (a *App) handleUpdateCheck(w http.ResponseWriter, r *http.Request) {
 	if IsDockerRuntime() {
 		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": DockerUpdateDisabledReason(), "data": a.selfUpdateState()})
+		return
+	}
+	if IsFnOSFPKRuntime() {
+		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": FnOSUpdateDisabledReason(), "data": a.selfUpdateState()})
 		return
 	}
 	release, err := a.fetchLatestRelease("scoltzero", "msf")
@@ -208,6 +217,10 @@ func (a *App) handleUpdateDownload(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": DockerUpdateDisabledReason(), "data": a.selfUpdateState()})
 		return
 	}
+	if IsFnOSFPKRuntime() {
+		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": FnOSUpdateDisabledReason(), "data": a.selfUpdateState()})
+		return
+	}
 	state := a.selfUpdateState()
 	rawURL := strings.TrimSpace(fmt.Sprint(state["download_url"]))
 	if rawURL == "" {
@@ -241,6 +254,10 @@ func (a *App) handleUpdateDownload(w http.ResponseWriter, r *http.Request) {
 func (a *App) handleUpdateInstall(w http.ResponseWriter, r *http.Request) {
 	if IsDockerRuntime() {
 		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": DockerUpdateDisabledReason(), "data": a.selfUpdateState()})
+		return
+	}
+	if IsFnOSFPKRuntime() {
+		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": FnOSUpdateDisabledReason(), "data": a.selfUpdateState()})
 		return
 	}
 	if os.Geteuid() != 0 {

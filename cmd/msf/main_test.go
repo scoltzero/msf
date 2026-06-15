@@ -149,6 +149,7 @@ func TestFnOSRuntimeBlocksHostUninstallers(t *testing.T) {
 		err  error
 		want string
 	}{
+		{"update", updateRuntime(updateOptions{DataDir: t.TempDir()}), "fnOS FPK installs must be updated"},
 		{"uninstall", uninstallRuntime(uninstallOptions{DataDir: t.TempDir()}), "fnOS FPK installs must be removed"},
 		{"service uninstall", serviceCommand("uninstall", serviceOptions{DataDir: t.TempDir()}), "fnOS FPK installs must be managed"},
 	} {
@@ -177,6 +178,39 @@ ExecStart=/usr/local/bin/msf serve --config /wrong
 	explicit := resolveUninstallDataDir(uninstallOptions{DataDir: "/explicit", DataDirExplicit: true, ServiceName: "msf"})
 	if explicit != "/explicit" {
 		t.Fatalf("explicit data dir = %q", explicit)
+	}
+}
+
+func TestResolveUpdateDataDirPrefersSystemdService(t *testing.T) {
+	oldSystemdDir := systemdServiceDir
+	systemdServiceDir = t.TempDir()
+	t.Cleanup(func() { systemdServiceDir = oldSystemdDir })
+	dataDir := filepath.Join(t.TempDir(), "msf-data")
+	service := `[Service]
+ExecStart=/usr/local/bin/msf serve --config=` + dataDir + ` --host 127.0.0.1 --port 8888
+`
+	if err := os.WriteFile(filepath.Join(systemdServiceDir, "msf.service"), []byte(service), 0644); err != nil {
+		t.Fatal(err)
+	}
+	got := resolveUpdateDataDir(updateOptions{DataDir: "/opt/msf", ServiceName: "msf"})
+	if got != dataDir {
+		t.Fatalf("resolveUpdateDataDir() = %q, want %q", got, dataDir)
+	}
+	if got := resolveUpdateHost(updateOptions{Host: "0.0.0.0", ServiceName: "msf"}); got != "127.0.0.1" {
+		t.Fatalf("resolveUpdateHost() = %q, want 127.0.0.1", got)
+	}
+	if got := resolveUpdatePort(updateOptions{Port: 7777, ServiceName: "msf"}); got != 8888 {
+		t.Fatalf("resolveUpdatePort() = %d, want 8888", got)
+	}
+	explicit := resolveUpdateDataDir(updateOptions{DataDir: "/explicit", DataDirExplicit: true, ServiceName: "msf"})
+	if explicit != "/explicit" {
+		t.Fatalf("explicit update data dir = %q", explicit)
+	}
+	if got := resolveUpdateHost(updateOptions{Host: "0.0.0.0", HostExplicit: true, ServiceName: "msf"}); got != "0.0.0.0" {
+		t.Fatalf("explicit update host = %q", got)
+	}
+	if got := resolveUpdatePort(updateOptions{Port: 7777, PortExplicit: true, ServiceName: "msf"}); got != 7777 {
+		t.Fatalf("explicit update port = %d", got)
 	}
 }
 
