@@ -25,18 +25,19 @@ function Toggle({
 }) {
   return (
     <button
+      type="button"
       role="switch"
       aria-checked={checked}
       onClick={onChange}
       className={cn(
-        "relative w-10 h-5 rounded-full transition-colors flex-shrink-0",
+        "relative inline-flex h-5 w-10 flex-shrink-0 items-center rounded-full transition-colors",
         checked ? "bg-primary" : "bg-muted"
       )}
     >
       <span
         className={cn(
-          "absolute top-[2px] h-4 w-4 rounded-full bg-white shadow transition-transform",
-          checked ? "translate-x-[22px]" : "translate-x-[2px]"
+          "absolute left-[2px] top-[2px] h-4 w-4 rounded-full bg-white shadow transition-transform",
+          checked ? "translate-x-5" : "translate-x-0"
         )}
       />
     </button>
@@ -53,6 +54,7 @@ const primaryBtn =
   "inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-medium shadow-sm hover:bg-primary/90 transition-colors";
 const outlineBtn =
   "inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border border-border bg-background text-sm font-medium text-foreground hover:bg-accent transition-colors";
+const switchCellCls = "flex items-center justify-center";
 
 function RowActions({
   onEdit,
@@ -122,7 +124,7 @@ export function AdblockView({
           </h3>
         </div>
         <div className={cn(headColCls, GRID)}>
-          <span>启用</span>
+          <span className="text-center">启用</span>
           <span>名称</span>
           <span>清单网址</span>
           <span>规则数</span>
@@ -131,7 +133,9 @@ export function AdblockView({
         </div>
         {lists.map((r) => (
           <div key={r.id} className={cn(rowCls, GRID)}>
-            <Toggle checked={r.enabled} onChange={() => onToggle(r)} />
+            <div className={switchCellCls}>
+              <Toggle checked={r.enabled} onChange={() => onToggle(r)} />
+            </div>
             <span className="font-medium text-foreground truncate">{r.name}</span>
             <span
               className="font-mono text-xs text-muted-foreground truncate pr-3"
@@ -237,7 +241,7 @@ export function RoutingView({
           </h3>
         </div>
         <div className={cn(headColCls, GRID)}>
-          <span>启用</span>
+          <span className="text-center">启用</span>
           <span>类型</span>
           <span>名称</span>
           <span>清单网址</span>
@@ -247,7 +251,9 @@ export function RoutingView({
         </div>
         {visible.map((r) => (
           <div key={r.id} className={cn(rowCls, GRID)}>
-            <Toggle checked={r.enabled} onChange={() => onToggle(r)} />
+            <div className={switchCellCls}>
+              <Toggle checked={r.enabled} onChange={() => onToggle(r)} />
+            </div>
             <span>
               <span
                 className={cn(

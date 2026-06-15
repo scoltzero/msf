@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   AlertCircle,
@@ -70,6 +70,46 @@ interface SubscriptionRow {
 interface SetupValidationIssue {
   step: number;
   message: string;
+}
+
+interface SetupPortListener {
+  port?: number;
+  protocol?: string;
+  address?: string;
+  pid?: number;
+  process?: string;
+  source?: string;
+}
+
+interface SetupPortCheck {
+  port: number;
+  protocol: string;
+  service: string;
+  status: string;
+  message?: string;
+  listeners?: SetupPortListener[];
+}
+
+interface SetupPreflight {
+  success?: boolean;
+  dns53?: {
+    status?: string;
+    message?: string;
+    remediated?: boolean;
+    can_remediate?: boolean;
+    blockers?: SetupPortListener[];
+  };
+  timezone?: {
+    current?: string;
+    target?: string;
+    needs_change?: boolean;
+    valid?: boolean;
+    message?: string;
+  };
+  reserved_ports?: SetupPortCheck[];
+  blocking?: boolean;
+  warnings?: string[];
+  errors?: string[];
 }
 
 const defaultForm = {
@@ -211,6 +251,22 @@ function networkRows(payload: any): NetworkInterface[] {
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
+}
+
+function occupiedReservedPorts(preflight: SetupPreflight | null) {
+  return (preflight?.reserved_ports || []).filter((item) => item.status === "occupied");
+}
+
+function listenerText(listener: SetupPortListener) {
+  const owner = listener.process ? `${listener.process}${listener.pid ? `(${listener.pid})` : ""}` : listener.pid ? `PID ${listener.pid}` : "未知进程";
+  return [owner, listener.address].filter(Boolean).join(" · ");
+}
+
+function preflightDNSLabel(status?: string) {
+  if (status === "ok") return "可用";
+  if (status === "remediated") return "已自动修复";
+  if (status === "blocked") return "阻断";
+  return "未知";
 }
 
 function serializeSubscriptions(rows: SubscriptionRow[]) {
@@ -817,6 +873,9 @@ export function SetupPage() {
   const [failedComponent, setFailedComponent] = useState("");
   const [system, setSystem] = useState<SetupSystemInfo | null>(null);
   const [privilege, setPrivilege] = useState<PrivilegeInfo | null>(null);
+  const [preflight, setPreflight] = useState<SetupPreflight | null>(null);
+  const [preflightBusy, setPreflightBusy] = useState(false);
+  const [portRiskAccepted, setPortRiskAccepted] = useState(false);
   const [ifaces, setIfaces] = useState<NetworkInterface[]>([]);
   const [form, setForm] = useState<SetupForm>(defaultForm);
   const [subscriptions, setSubscriptions] = useState<SubscriptionRow[]>([]);
@@ -880,8 +939,31 @@ export function SetupPage() {
           .filter(Boolean)
           .join("\n");
   const manualNodeCount = nodeMode === "yaml" ? (form.mihomo_proxies.trim() ? 1 : 0) : manualNodes.filter((node) => node.trim()).length;
+  const occupiedPorts = useMemo(() => occupiedReservedPorts(preflight), [preflight]);
+  const hasPortWarnings = occupiedPorts.length > 0;
+
+  const fetchPreflight = useCallback(async () => {
+    setPreflightBusy(true);
+    try {
+      const payload = await api<SetupPreflight>(`/api/v1/setup/preflight?timezone=${encodeURIComponent(form.timezone)}`, { skipAuth: true });
+      setPreflight(payload);
+      if (occupiedReservedPorts(payload).length === 0) setPortRiskAccepted(false);
+      return payload;
+    } finally {
+      setPreflightBusy(false);
+    }
+  }, [form.timezone]);
+
+  useEffect(() => {
+    if (step !== steps.length - 1 || downloadStatus !== "idle") return;
+    void fetchPreflight().catch((err) => setMessage(errorMessage(err)));
+  }, [downloadStatus, fetchPreflight, step]);
 
   const update = (key: keyof SetupForm, value: string | boolean) => {
+    if (key === "timezone") {
+      setPreflight(null);
+      setPortRiskAccepted(false);
+    }
     setForm((current) => ({ ...current, [key]: value }));
   };
 
@@ -1001,6 +1083,16 @@ export function SetupPage() {
     setBusy(true);
     setMessage("");
     try {
+      const latestPreflight = await fetchPreflight();
+      const latestOccupiedPorts = occupiedReservedPorts(latestPreflight);
+      if (latestPreflight.blocking) {
+        setMessage((latestPreflight.errors || []).join("；") || latestPreflight.dns53?.message || "初始化前检查未通过");
+        return;
+      }
+      if (latestOccupiedPorts.length > 0 && !portRiskAccepted) {
+        setMessage("检测到非常用端口占用，请确认风险后再继续初始化");
+        return;
+      }
       const payload = await api<any>("/api/v1/setup/initialize", {
         method: "POST",
         body: JSON.stringify({
@@ -1058,7 +1150,11 @@ export function SetupPage() {
           <ArrowRight className="h-4 w-4" />
         </SetupPageButton>
       ) : (
-        <SetupPageButton variant="primary" disabled={busy} onClick={() => void completeInitialize()}>
+        <SetupPageButton
+          variant="primary"
+          disabled={busy || preflightBusy || Boolean(preflight?.blocking) || (hasPortWarnings && !portRiskAccepted)}
+          onClick={() => void completeInitialize()}
+        >
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
           完成初始化
         </SetupPageButton>
@@ -1656,6 +1752,97 @@ export function SetupPage() {
                   <SummaryRow label="代理核心" value={form.proxyCore === "mihomo" ? "Mihomo" : form.proxyCore} />
                   <SummaryRow label="自定义节点" value={manualNodeCount > 0 ? `${manualNodeCount} 条/组` : "未配置"} />
                   <SummaryRow label="GitHub 加速" value={form.github_proxy_enabled || form.github_accelerator_enabled ? "已配置" : "未配置"} />
+                </div>
+                <div className="rounded-xl border border-border bg-background p-4 text-left">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <h3 className="text-sm font-semibold">初始化前检查</h3>
+                    <SetupPageButton disabled={preflightBusy} onClick={() => void fetchPreflight().catch((err) => setMessage(errorMessage(err)))}>
+                      {preflightBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                      重新检查
+                    </SetupPageButton>
+                  </div>
+                  {preflightBusy && !preflight ? (
+                    <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      正在检查 53 端口、宿主机时区和业务端口占用
+                    </div>
+                  ) : preflight ? (
+                    <div className="space-y-3">
+                      <div
+                        className={cn(
+                          "rounded-lg border p-3 text-xs leading-5",
+                          preflight.dns53?.status === "blocked"
+                            ? "border-red-500/25 bg-red-500/10 text-red-700 dark:text-red-300"
+                            : "border-green-500/25 bg-green-500/10 text-green-700 dark:text-green-300"
+                        )}
+                      >
+                        <div className="flex items-start gap-2">
+                          {preflight.dns53?.status === "blocked" ? <AlertCircle className="mt-0.5 h-4 w-4" /> : <CheckCircle2 className="mt-0.5 h-4 w-4" />}
+                          <div className="min-w-0">
+                            <div className="font-medium">53 端口：{preflightDNSLabel(preflight.dns53?.status)}</div>
+                            <div className="mt-0.5 break-words">{preflight.dns53?.message || "未返回检查结果"}</div>
+                            {(preflight.dns53?.blockers || []).length > 0 && (
+                              <div className="mt-1 space-y-0.5">
+                                {(preflight.dns53?.blockers || []).map((item, index) => (
+                                  <div key={`${item.protocol}-${item.address}-${index}`} className="break-words text-[11px]">
+                                    {item.protocol || "端口"} {listenerText(item)}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="rounded-lg border border-border bg-muted/20 p-3 text-xs leading-5 text-muted-foreground">
+                        <div className="font-medium text-foreground">宿主机时区</div>
+                        <div className="mt-1">
+                          当前：{preflight.timezone?.current || "未知"}，目标：{preflight.timezone?.target || form.timezone}
+                        </div>
+                        <div>{preflight.timezone?.message || "初始化时会同步宿主机时区"}</div>
+                      </div>
+                      {occupiedPorts.length > 0 ? (
+                        <div className="rounded-lg border border-yellow-500/25 bg-yellow-500/10 p-3 text-xs leading-5 text-yellow-800 dark:text-yellow-300">
+                          <div className="mb-2 flex items-center gap-2 font-medium">
+                            <AlertCircle className="h-4 w-4" />
+                            检测到非常用端口占用
+                          </div>
+                          <div className="max-h-32 space-y-1 overflow-y-auto pr-1">
+                            {occupiedPorts.map((item, index) => (
+                              <div key={`${item.protocol}-${item.port}-${index}`} className="break-words rounded-md bg-background/70 px-2 py-1">
+                                <span className="font-medium">
+                                  {item.protocol.toUpperCase()} {item.port}
+                                </span>
+                                <span> · {item.service}</span>
+                                {(item.listeners || []).length > 0 ? (
+                                  <span> · {(item.listeners || []).map(listenerText).join("；")}</span>
+                                ) : item.message ? (
+                                  <span> · {item.message}</span>
+                                ) : null}
+                              </div>
+                            ))}
+                          </div>
+                          <label className="mt-3 flex cursor-pointer items-start gap-2 text-xs">
+                            <input
+                              type="checkbox"
+                              checked={portRiskAccepted}
+                              onChange={(event) => setPortRiskAccepted(event.target.checked)}
+                              className="mt-0.5 h-3.5 w-3.5 accent-primary"
+                            />
+                            <span>我已确认这些端口占用风险，继续初始化。MSF 不会自动释放或杀死这些端口的进程。</span>
+                          </label>
+                        </div>
+                      ) : (
+                        <div className="rounded-lg border border-green-500/25 bg-green-500/10 p-3 text-xs text-green-700 dark:text-green-300">
+                          <div className="flex items-center gap-2">
+                            <CheckCircle2 className="h-4 w-4" />
+                            非 53 业务端口未发现占用
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-border bg-muted/20 p-3 text-xs text-muted-foreground">进入最后一步后将自动检查端口和时区。</div>
+                  )}
                 </div>
               </div>
             )}

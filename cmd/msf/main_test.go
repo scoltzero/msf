@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/scoltzero/msf/internal/cloudflareredirect"
 )
 
 func TestStopRuntimeTerminatesPIDAndRemovesPIDFiles(t *testing.T) {
@@ -90,5 +92,32 @@ func TestDockerRuntimeBlocksHostInstallers(t *testing.T) {
 		if item.err == nil || !strings.Contains(item.err.Error(), item.want) {
 			t.Fatalf("%s error = %v, want substring %q", item.name, item.err, item.want)
 		}
+	}
+}
+
+func TestCloudflareRedirectAcceptsConfigBeforeOrAfterAction(t *testing.T) {
+	dataDir := t.TempDir()
+	if err := cloudflareredirect.EnsureDefaultConfig(dataDir); err != nil {
+		t.Fatal(err)
+	}
+	if err := run([]string{"cloudflare-redirect", "--config", dataDir, "status"}); err != nil {
+		t.Fatalf("config before action failed: %v", err)
+	}
+	if err := run([]string{"cloudflare-redirect", "status", "--config", dataDir}); err != nil {
+		t.Fatalf("config after action failed: %v", err)
+	}
+	if err := run([]string{"cf-redirect", "status", "--config", dataDir}); err != nil {
+		t.Fatalf("short alias failed: %v", err)
+	}
+}
+
+func TestCloudflareRedirectUsesDiscoveredDataDir(t *testing.T) {
+	dataDir := t.TempDir()
+	if err := cloudflareredirect.EnsureDefaultConfig(dataDir); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("MSF_DATA_DIR", dataDir)
+	if err := run([]string{"cloudflare-redirect", "status"}); err != nil {
+		t.Fatalf("discovered data dir failed: %v", err)
 	}
 }

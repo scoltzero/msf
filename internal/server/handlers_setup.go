@@ -89,11 +89,20 @@ func (a *App) handleSetupPrivilege(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (a *App) handleSetupPreflight(w http.ResponseWriter, r *http.Request) {
+	timezone := strings.TrimSpace(r.URL.Query().Get("timezone"))
+	if timezone == "" {
+		timezone = "Asia/Shanghai"
+	}
+	result := a.buildSetupPreflight(r.Context(), timezone, false)
+	writeJSON(w, http.StatusOK, result)
+}
+
 func (a *App) handleSetupGetConfig(w http.ResponseWriter, r *http.Request) {
-	row := a.DB.QueryRow(`select username,email,web_port,amd64v3_enabled,selected_interface,mihomo_core_type,auto_set_dns,dns_on,dns_off,enable_ipv6,fake_ip_range_v4,fake_ip_range_v6,linux_proxy_mode,nft_proxy_policy,proxy_core,mos_dns_enabled,subscription_urls,mihomo_proxies,github_proxy_enabled,github_https_proxy,github_http_proxy,github_socks5_proxy,github_accelerator_enabled,github_accelerator_url,is_initialized from system_setups order by id desc limit 1`)
+	row := a.DB.QueryRow(`select username,email,timezone,web_port,amd64v3_enabled,selected_interface,mihomo_core_type,auto_set_dns,dns_on,dns_off,enable_ipv6,fake_ip_range_v4,fake_ip_range_v6,linux_proxy_mode,nft_proxy_policy,proxy_core,mos_dns_enabled,subscription_urls,mihomo_proxies,github_proxy_enabled,github_https_proxy,github_http_proxy,github_socks5_proxy,github_accelerator_enabled,github_accelerator_url,is_initialized from system_setups order by id desc limit 1`)
 	var cfg SetupConfig
 	var initialized bool
-	err := row.Scan(&cfg.Username, &cfg.Email, &cfg.WebPort, &cfg.AMD64v3Enabled, &cfg.SelectedInterface, &cfg.MihomoCoreType, &cfg.AutoSetDNS, &cfg.DNSOn, &cfg.DNSOff, &cfg.EnableIPv6, &cfg.FakeIPRangeV4, &cfg.FakeIPRangeV6, &cfg.LinuxProxyMode, &cfg.NFTProxyPolicy, &cfg.ProxyCore, &cfg.MosDNSEnabled, &cfg.SubscriptionURLs, &cfg.MihomoProxies, &cfg.GitHubProxyEnabled, &cfg.GitHubHTTPSProxy, &cfg.GitHubHTTPProxy, &cfg.GitHubSocks5Proxy, &cfg.GitHubAcceleratorEnabled, &cfg.GitHubAcceleratorURL, &initialized)
+	err := row.Scan(&cfg.Username, &cfg.Email, &cfg.Timezone, &cfg.WebPort, &cfg.AMD64v3Enabled, &cfg.SelectedInterface, &cfg.MihomoCoreType, &cfg.AutoSetDNS, &cfg.DNSOn, &cfg.DNSOff, &cfg.EnableIPv6, &cfg.FakeIPRangeV4, &cfg.FakeIPRangeV6, &cfg.LinuxProxyMode, &cfg.NFTProxyPolicy, &cfg.ProxyCore, &cfg.MosDNSEnabled, &cfg.SubscriptionURLs, &cfg.MihomoProxies, &cfg.GitHubProxyEnabled, &cfg.GitHubHTTPSProxy, &cfg.GitHubHTTPProxy, &cfg.GitHubSocks5Proxy, &cfg.GitHubAcceleratorEnabled, &cfg.GitHubAcceleratorURL, &initialized)
 	if err != nil {
 		cfg.defaults()
 	}
@@ -111,18 +120,26 @@ func (a *App) handleSetupGetConfig(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) handleSetupPutConfig(w http.ResponseWriter, r *http.Request) {
 	var cfg SetupConfig
-	if err := decodeSetupConfigRequest(r, &cfg); err != nil {
+	meta, err := decodeSetupConfigRequestWithMeta(r, &cfg)
+	if err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
+	}
+	if existing, _, ok := a.latestSetupConfigForSettings(); ok {
+		preserveMissingGitHubDownloadFields(&cfg, meta, existing)
 	}
 	cfg.defaults()
 	if cfg.Username == "" {
 		cfg.Username = "root"
 	}
+	if err := applyHostTimezone(r.Context(), cfg.Timezone); err != nil {
+		writeError(w, http.StatusConflict, "timezone_error", err.Error())
+		return
+	}
 	now := time.Now()
-	_, err := a.DB.Exec(`insert into system_setups(created_at,updated_at,username,email,web_port,amd64v3_enabled,selected_interface,mihomo_core_type,auto_set_dns,dns_on,dns_off,enable_ipv6,fake_ip_range_v4,fake_ip_range_v6,linux_proxy_mode,nft_proxy_policy,proxy_core,mos_dns_enabled,subscription_urls,mihomo_proxies,github_proxy_enabled,github_https_proxy,github_http_proxy,github_socks5_proxy,github_accelerator_enabled,github_accelerator_url,is_initialized)
-		values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,true)`,
-		now, now, cfg.Username, cfg.Email, cfg.WebPort, cfg.AMD64v3Enabled, cfg.SelectedInterface, cfg.MihomoCoreType, cfg.AutoSetDNS, cfg.DNSOn, cfg.DNSOff, cfg.EnableIPv6, cfg.FakeIPRangeV4, cfg.FakeIPRangeV6, cfg.LinuxProxyMode, cfg.NFTProxyPolicy, "mihomo", true, cfg.SubscriptionURLs, cfg.MihomoProxies, cfg.GitHubProxyEnabled, cfg.GitHubHTTPSProxy, cfg.GitHubHTTPProxy, cfg.GitHubSocks5Proxy, cfg.GitHubAcceleratorEnabled, cfg.GitHubAcceleratorURL)
+	_, err = a.DB.Exec(`insert into system_setups(created_at,updated_at,username,email,timezone,web_port,amd64v3_enabled,selected_interface,mihomo_core_type,auto_set_dns,dns_on,dns_off,enable_ipv6,fake_ip_range_v4,fake_ip_range_v6,linux_proxy_mode,nft_proxy_policy,proxy_core,mos_dns_enabled,subscription_urls,mihomo_proxies,github_proxy_enabled,github_https_proxy,github_http_proxy,github_socks5_proxy,github_accelerator_enabled,github_accelerator_url,is_initialized)
+		values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,true)`,
+		now, now, cfg.Username, cfg.Email, cfg.Timezone, cfg.WebPort, cfg.AMD64v3Enabled, cfg.SelectedInterface, cfg.MihomoCoreType, cfg.AutoSetDNS, cfg.DNSOn, cfg.DNSOff, cfg.EnableIPv6, cfg.FakeIPRangeV4, cfg.FakeIPRangeV6, cfg.LinuxProxyMode, cfg.NFTProxyPolicy, "mihomo", true, cfg.SubscriptionURLs, cfg.MihomoProxies, cfg.GitHubProxyEnabled, cfg.GitHubHTTPSProxy, cfg.GitHubHTTPProxy, cfg.GitHubSocks5Proxy, cfg.GitHubAcceleratorEnabled, cfg.GitHubAcceleratorURL)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "setup_error", err.Error())
 		return
@@ -159,6 +176,36 @@ func (a *App) handleSetupPutConfig(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, response)
 }
 
+type setupConfigRequestMeta struct {
+	GitHubProxyEnabled       bool
+	GitHubHTTPSProxy         bool
+	GitHubHTTPProxy          bool
+	GitHubSocks5Proxy        bool
+	GitHubAcceleratorEnabled bool
+	GitHubAcceleratorURL     bool
+}
+
+func preserveMissingGitHubDownloadFields(cfg *SetupConfig, meta setupConfigRequestMeta, existing SetupConfig) {
+	if !meta.GitHubProxyEnabled {
+		cfg.GitHubProxyEnabled = existing.GitHubProxyEnabled
+	}
+	if !meta.GitHubHTTPSProxy {
+		cfg.GitHubHTTPSProxy = existing.GitHubHTTPSProxy
+	}
+	if !meta.GitHubHTTPProxy {
+		cfg.GitHubHTTPProxy = existing.GitHubHTTPProxy
+	}
+	if !meta.GitHubSocks5Proxy {
+		cfg.GitHubSocks5Proxy = existing.GitHubSocks5Proxy
+	}
+	if !meta.GitHubAcceleratorEnabled {
+		cfg.GitHubAcceleratorEnabled = existing.GitHubAcceleratorEnabled
+	}
+	if !meta.GitHubAcceleratorURL {
+		cfg.GitHubAcceleratorURL = existing.GitHubAcceleratorURL
+	}
+}
+
 func (a *App) handleSetupInitialize(w http.ResponseWriter, r *http.Request) {
 	var cfg SetupConfig
 	if err := decodeSetupConfigRequest(r, &cfg); err != nil {
@@ -168,6 +215,20 @@ func (a *App) handleSetupInitialize(w http.ResponseWriter, r *http.Request) {
 	cfg.defaults()
 	if cfg.Username == "" || cfg.Password == "" {
 		writeError(w, http.StatusBadRequest, "validation_error", "username and password are required")
+		return
+	}
+	preflight := a.buildSetupPreflight(r.Context(), cfg.Timezone, true)
+	if preflight.Blocking {
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"success":   false,
+			"error":     "preflight_blocked",
+			"message":   strings.Join(preflight.Errors, "; "),
+			"preflight": preflight,
+		})
+		return
+	}
+	if err := applyHostTimezone(r.Context(), cfg.Timezone); err != nil {
+		writeError(w, http.StatusConflict, "timezone_error", err.Error())
 		return
 	}
 	if err := a.EnsureBaseLayout(); err != nil {
@@ -183,9 +244,9 @@ func (a *App) handleSetupInitialize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := time.Now()
-	_, err := a.DB.Exec(`insert into system_setups(created_at,updated_at,username,email,web_port,amd64v3_enabled,selected_interface,mihomo_core_type,auto_set_dns,dns_on,dns_off,enable_ipv6,fake_ip_range_v4,fake_ip_range_v6,linux_proxy_mode,nft_proxy_policy,proxy_core,mos_dns_enabled,subscription_urls,mihomo_proxies,github_proxy_enabled,github_https_proxy,github_http_proxy,github_socks5_proxy,github_accelerator_enabled,github_accelerator_url,is_initialized)
-		values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,true)`,
-		now, now, cfg.Username, cfg.Email, cfg.WebPort, cfg.AMD64v3Enabled, cfg.SelectedInterface, cfg.MihomoCoreType, cfg.AutoSetDNS, cfg.DNSOn, cfg.DNSOff, cfg.EnableIPv6, cfg.FakeIPRangeV4, cfg.FakeIPRangeV6, cfg.LinuxProxyMode, cfg.NFTProxyPolicy, "mihomo", true, cfg.SubscriptionURLs, cfg.MihomoProxies, cfg.GitHubProxyEnabled, cfg.GitHubHTTPSProxy, cfg.GitHubHTTPProxy, cfg.GitHubSocks5Proxy, cfg.GitHubAcceleratorEnabled, cfg.GitHubAcceleratorURL)
+	_, err := a.DB.Exec(`insert into system_setups(created_at,updated_at,username,email,timezone,web_port,amd64v3_enabled,selected_interface,mihomo_core_type,auto_set_dns,dns_on,dns_off,enable_ipv6,fake_ip_range_v4,fake_ip_range_v6,linux_proxy_mode,nft_proxy_policy,proxy_core,mos_dns_enabled,subscription_urls,mihomo_proxies,github_proxy_enabled,github_https_proxy,github_http_proxy,github_socks5_proxy,github_accelerator_enabled,github_accelerator_url,is_initialized)
+		values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,true)`,
+		now, now, cfg.Username, cfg.Email, cfg.Timezone, cfg.WebPort, cfg.AMD64v3Enabled, cfg.SelectedInterface, cfg.MihomoCoreType, cfg.AutoSetDNS, cfg.DNSOn, cfg.DNSOff, cfg.EnableIPv6, cfg.FakeIPRangeV4, cfg.FakeIPRangeV6, cfg.LinuxProxyMode, cfg.NFTProxyPolicy, "mihomo", true, cfg.SubscriptionURLs, cfg.MihomoProxies, cfg.GitHubProxyEnabled, cfg.GitHubHTTPSProxy, cfg.GitHubHTTPProxy, cfg.GitHubSocks5Proxy, cfg.GitHubAcceleratorEnabled, cfg.GitHubAcceleratorURL)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "setup_error", err.Error())
 		return
@@ -202,9 +263,22 @@ func (a *App) handleSetupInitialize(w http.ResponseWriter, r *http.Request) {
 }
 
 func decodeSetupConfigRequest(r *http.Request, cfg *SetupConfig) error {
+	_, err := decodeSetupConfigRequestWithMeta(r, cfg)
+	return err
+}
+
+func decodeSetupConfigRequestWithMeta(r *http.Request, cfg *SetupConfig) (setupConfigRequestMeta, error) {
 	var raw map[string]any
 	if err := decodeJSON(r, &raw); err != nil {
-		return err
+		return setupConfigRequestMeta{}, err
+	}
+	meta := setupConfigRequestMeta{
+		GitHubProxyEnabled:       setupHasValue(raw, "github_proxy_enabled", "githubProxyEnabled"),
+		GitHubHTTPSProxy:         setupHasValue(raw, "github_https_proxy", "githubHTTPSProxy"),
+		GitHubHTTPProxy:          setupHasValue(raw, "github_http_proxy", "githubHTTPProxy"),
+		GitHubSocks5Proxy:        setupHasValue(raw, "github_socks5_proxy", "githubSocks5Proxy"),
+		GitHubAcceleratorEnabled: setupHasValue(raw, "github_accelerator_enabled", "githubAcceleratorEnabled"),
+		GitHubAcceleratorURL:     setupHasValue(raw, "github_accelerator_url", "githubAcceleratorURL"),
 	}
 	cfg.Username = setupString(raw, "username")
 	cfg.Password = setupString(raw, "password")
@@ -228,7 +302,7 @@ func decodeSetupConfigRequest(r *http.Request, cfg *SetupConfig) error {
 	if value, ok := setupValue(raw, "subscription_urls", "subscriptionURLs"); ok {
 		subscriptions, err := normalizeSubscriptionURLsValue(value)
 		if err != nil {
-			return err
+			return meta, err
 		}
 		cfg.SubscriptionURLs = subscriptions
 	}
@@ -239,7 +313,7 @@ func decodeSetupConfigRequest(r *http.Request, cfg *SetupConfig) error {
 	cfg.GitHubSocks5Proxy = setupString(raw, "github_socks5_proxy", "githubSocks5Proxy")
 	cfg.GitHubAcceleratorEnabled = setupBool(raw, false, "github_accelerator_enabled", "githubAcceleratorEnabled")
 	cfg.GitHubAcceleratorURL = setupString(raw, "github_accelerator_url", "githubAcceleratorURL")
-	return nil
+	return meta, nil
 }
 
 func setupValue(raw map[string]any, keys ...string) (any, bool) {
@@ -250,6 +324,11 @@ func setupValue(raw map[string]any, keys ...string) (any, bool) {
 		}
 	}
 	return nil, false
+}
+
+func setupHasValue(raw map[string]any, keys ...string) bool {
+	_, ok := setupValue(raw, keys...)
+	return ok
 }
 
 func setupConfigPayload(cfg SetupConfig, initialized bool) map[string]any {
@@ -356,6 +435,17 @@ func (a *App) handleSetupActivate(w http.ResponseWriter, r *http.Request) {
 	report := a.RestoreConfiguredRuntime(ctx)
 	if len(report.Errors) > 0 {
 		log.Printf("setup activation completed with errors: %s", strings.Join(report.Errors, "; "))
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"success":            false,
+			"error":              "activation_failed",
+			"message":            strings.Join(report.Errors, "; "),
+			"port_changed":       false,
+			"port":               7777,
+			"activation_pending": false,
+			"runtime":            report,
+			"errors":             report.Errors,
+		})
+		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"success":            true,

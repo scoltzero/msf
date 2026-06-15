@@ -55,6 +55,12 @@ interface InitConfigState {
   nodeMode: NodeEditMode;
   shareNodes: string[];
   yamlNodes: string;
+  githubProxyEnabled: boolean;
+  githubHttpsProxy: string;
+  githubHttpProxy: string;
+  githubSocks5Proxy: string;
+  githubAcceleratorEnabled: boolean;
+  githubAcceleratorUrl: string;
 }
 
 interface VersionInfo {
@@ -107,6 +113,9 @@ interface ComponentUpdateState {
   verified_digest?: string;
   verified?: boolean;
   verification_source?: string;
+  installed_verified_digest?: string;
+  installed_verification_source?: string;
+  installed_verified_at?: string;
   last_check_time?: string;
 }
 
@@ -158,6 +167,20 @@ const RELEASE_REPO_OWNER = "scoltzero";
 const RELEASE_REPO_NAME = "msf";
 const RELEASE_REPO = `${RELEASE_REPO_OWNER}/${RELEASE_REPO_NAME}`;
 const RELEASE_REPO_URL = `https://github.com/${RELEASE_REPO}`;
+const COMPONENT_RELEASE_LINKS: Record<string, { label: string; url: string }> = {
+  mosdns: {
+    label: "baozaodetudou/mssb/releases/tag/mosdns",
+    url: "https://github.com/baozaodetudou/mssb/releases/tag/mosdns",
+  },
+  mihomo: {
+    label: "MetaCubeX/mihomo/releases",
+    url: "https://github.com/MetaCubeX/mihomo/releases",
+  },
+  zashboard: {
+    label: "Zephyruso/zashboard/releases/latest",
+    url: "https://github.com/Zephyruso/zashboard/releases/latest",
+  },
+};
 
 function toDate(value?: string) {
   if (!value) return null;
@@ -245,9 +268,9 @@ function shortDigest(value?: string) {
 }
 
 function componentVerificationLabel(item?: ComponentUpdateState) {
+  if (item?.installed_verified_at) return `上次核心校验: ${formatDateTime(item.installed_verified_at)}`;
+  if (item?.installed_verification_source === "local-upload" || item?.verification_source === "local-upload") return "本地上传，未项目校验";
   if (item?.verified) return `已校验 ${shortDigest(item.verified_digest || item.download_digest)}`;
-  if (item?.verification_source === "local-upload") return "本地上传，未项目校验";
-  if (item?.download_digest) return `待安装校验 ${shortDigest(item.download_digest)}`;
   return "未校验";
 }
 
@@ -282,6 +305,12 @@ const defaultInitConfig: InitConfigState = {
   nodeMode: "share",
   shareNodes: [],
   yamlNodes: "",
+  githubProxyEnabled: false,
+  githubHttpsProxy: "",
+  githubHttpProxy: "",
+  githubSocks5Proxy: "",
+  githubAcceleratorEnabled: false,
+  githubAcceleratorUrl: "",
 };
 
 const defaultUpdateConfig: UpdateConfigState = {
@@ -365,6 +394,12 @@ function setupToInitConfig(raw: any): InitConfigState {
     nodeMode: mihomoProxies.trim().startsWith("proxies:") ? "yaml" : "share",
     shareNodes,
     yamlNodes: mihomoProxies.trim().startsWith("proxies:") ? mihomoProxies : "",
+    githubProxyEnabled: Boolean(data.github_proxy_enabled ?? data.githubProxyEnabled),
+    githubHttpsProxy: String(data.github_https_proxy || data.githubHTTPSProxy || ""),
+    githubHttpProxy: String(data.github_http_proxy || data.githubHTTPProxy || ""),
+    githubSocks5Proxy: String(data.github_socks5_proxy || data.githubSocks5Proxy || ""),
+    githubAcceleratorEnabled: Boolean(data.github_accelerator_enabled ?? data.githubAcceleratorEnabled),
+    githubAcceleratorUrl: String(data.github_accelerator_url || data.githubAcceleratorURL || ""),
   };
 }
 
@@ -379,6 +414,12 @@ function initConfigToSetupPayload(config: InitConfigState) {
     enable_ipv6: config.ipv6,
     subscription_urls: serializeSubscriptions(config.subscriptions),
     mihomo_proxies: config.nodeMode === "yaml" ? config.yamlNodes : config.shareNodes.filter(Boolean).join("\n"),
+    github_proxy_enabled: config.githubProxyEnabled,
+    github_https_proxy: config.githubHttpsProxy.trim(),
+    github_http_proxy: config.githubHttpProxy.trim(),
+    github_socks5_proxy: config.githubSocks5Proxy.trim(),
+    github_accelerator_enabled: config.githubAcceleratorEnabled,
+    github_accelerator_url: config.githubAcceleratorUrl.trim(),
   };
 }
 
@@ -673,7 +714,8 @@ function InitConfigSummary({
         <PlainInfo label="DNS 启用地址" value={config.dnsEnable} />
         <PlainInfo label="DNS 禁用地址" value={config.dnsDisable} />
         <PlainInfo label="启用 IPv6" value={config.ipv6 ? "已启用" : "DNS自动设置"} />
-        <PlainInfo label="运行时DNS" value="" />
+        <PlainInfo label="代理服务器" value={config.githubProxyEnabled ? "已启用" : "已禁用"} />
+        <PlainInfo label="GitHub 加速源" value={config.githubAcceleratorEnabled ? "已启用" : "已禁用"} />
       </div>
       <div className="mt-5 grid gap-3 md:grid-cols-2">
         {config.subscriptions.map((item) => (
@@ -839,6 +881,101 @@ function InitConfigEditor({
         <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
           开启后代理核心将支持 IPv6 流量处理，关闭则仅处理 IPv4 流量。如果您的网络不支持 IPv6，请务必关闭此选项
         </p>
+      </SectionBox>
+
+      <SectionBox>
+        <div className="mb-4">
+          <h3 className="text-lg font-semibold text-foreground">加速设置</h3>
+          <p className="mt-1 text-sm text-muted-foreground">用于组件下载和版本更新，可分别配置代理服务器与 GitHub 加速源</p>
+        </div>
+        <div className="grid gap-4 xl:grid-cols-2">
+          <div className="rounded-lg border border-border/60 bg-card/50 p-4">
+            <label className="flex items-start gap-3 text-base font-semibold text-foreground">
+              <input
+                type="checkbox"
+                checked={draft.githubProxyEnabled}
+                onChange={(event) => setDraft((current) => ({ ...current, githubProxyEnabled: event.target.checked }))}
+                className="mt-0.5 h-5 w-5 accent-primary"
+              />
+              <span>
+                代理服务器
+                <span className="mt-1 block text-xs font-normal text-muted-foreground">使用 HTTP / HTTPS / SOCKS5 代理下载组件</span>
+              </span>
+            </label>
+            <div className="mt-4 space-y-3">
+              <Field label="HTTPS 代理服务器">
+                <input
+                  value={draft.githubHttpsProxy}
+                  onChange={(event) => setDraft((current) => ({ ...current, githubHttpsProxy: event.target.value }))}
+                  placeholder="例如: http://127.0.0.1:7890"
+                  className={`${inputClass} h-11 text-sm`}
+                />
+              </Field>
+              <Field label="HTTP 代理服务器">
+                <input
+                  value={draft.githubHttpProxy}
+                  onChange={(event) => setDraft((current) => ({ ...current, githubHttpProxy: event.target.value }))}
+                  placeholder="例如: http://127.0.0.1:7890"
+                  className={`${inputClass} h-11 text-sm`}
+                />
+              </Field>
+              <Field label="SOCKS5 代理服务器">
+                <input
+                  value={draft.githubSocks5Proxy}
+                  onChange={(event) => setDraft((current) => ({ ...current, githubSocks5Proxy: event.target.value }))}
+                  placeholder="例如: socks5://127.0.0.1:7891"
+                  className={`${inputClass} h-11 text-sm`}
+                />
+              </Field>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-border/60 bg-card/50 p-4">
+            <label className="flex items-start gap-3 text-base font-semibold text-foreground">
+              <input
+                type="checkbox"
+                checked={draft.githubAcceleratorEnabled}
+                onChange={(event) => setDraft((current) => ({ ...current, githubAcceleratorEnabled: event.target.checked }))}
+                className="mt-0.5 h-5 w-5 accent-primary"
+              />
+              <span>
+                GitHub 加速源
+                <span className="mt-1 block text-xs font-normal text-muted-foreground">使用 GitHub 加速镜像下载组件</span>
+              </span>
+            </label>
+            <div className="mt-4 space-y-3">
+              <Field label="加速前缀">
+                <input
+                  value={draft.githubAcceleratorUrl}
+                  onChange={(event) => setDraft((current) => ({ ...current, githubAcceleratorUrl: event.target.value }))}
+                  placeholder="例如: https://gh-proxy.com"
+                  className={`${inputClass} h-11 text-sm`}
+                />
+              </Field>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  ["Cloudflare", "https://gh-proxy.com"],
+                  ["Fastly CDN", "https://cdn.gh-proxy.com"],
+                  ["EdgeOne", "https://edgeone.gh-proxy.com"],
+                ].map(([label, value]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setDraft((current) => ({ ...current, githubAcceleratorUrl: value }))}
+                    className={cn(
+                      "rounded-md border px-3 py-1.5 text-xs font-medium transition",
+                      draft.githubAcceleratorUrl === value
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-border bg-background text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
       </SectionBox>
 
       <SectionBox>
@@ -1262,8 +1399,11 @@ function ComponentUpdateCard({
   const isBusy = busy === component;
   const progress = typeof item?.progress === "number" ? item.progress : 0;
   const effectiveConfig = config || { component, auto_check: true, check_interval: 43200, auto_update: false };
-  const VerificationIcon = item?.verified ? Check : ShieldAlert;
-  const verificationTone = item?.verified ? "text-green-600" : item?.verification_source === "local-upload" ? "text-amber-600" : "text-muted-foreground";
+  const installedVerified = Boolean(item?.installed_verified_at || item?.verified);
+  const localUploaded = item?.installed_verification_source === "local-upload" || item?.verification_source === "local-upload";
+  const VerificationIcon = installedVerified ? Check : ShieldAlert;
+  const verificationTone = installedVerified ? "text-green-600" : localUploaded ? "text-amber-600" : "text-muted-foreground";
+  const releaseLink = COMPONENT_RELEASE_LINKS[component];
 
   return (
     <div className="rounded-xl border border-border/50 p-4">
@@ -1281,9 +1421,20 @@ function ComponentUpdateCard({
             <VerificationIcon className="h-3.5 w-3.5" />
             <span>{componentVerificationLabel(item)}</span>
           </div>
+          {releaseLink ? (
+            <a
+              href={releaseLink.url}
+              target="_blank"
+              rel="noreferrer"
+              title={releaseLink.url}
+              className="mt-1 block max-w-full truncate text-xs text-primary hover:underline"
+            >
+              发布页: {releaseLink.label}
+            </a>
+          ) : null}
           {item?.error_message ? <div className="mt-1 text-xs text-destructive">{item.error_message}</div> : null}
         </div>
-        <div className="flex shrink-0 items-center gap-2 sm:pt-0.5">
+        <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end sm:pt-0.5">
           <input
             ref={fileRef}
             type="file"
@@ -1620,6 +1771,19 @@ function UpdateTab({ showToast }: { showToast: (message: string) => void }) {
     setComponentUpdates(apiList<ComponentUpdateState>(payload, ["data", "items", "components"]));
   };
 
+  const refreshComponentAfterUpdate = async (component: string) => {
+    try {
+      const payload = await api<any>(`/api/v1/component-updates/${component}/check`, { method: "POST" });
+      if (payload.success === false) {
+        showToast(`${component} 状态刷新失败: ${payload.error || "未知错误"}`);
+      }
+    } catch (err) {
+      showToast(`${component} 状态刷新失败: ${errorMessage(err)}`);
+    } finally {
+      await reloadComponents();
+    }
+  };
+
   const checkComponent = async (component: string) => {
     setComponentBusy(component);
     try {
@@ -1639,10 +1803,11 @@ function UpdateTab({ showToast }: { showToast: (message: string) => void }) {
           return;
         }
         showToast(`${component} 检测到更新，已自动执行更新任务`);
+        await refreshComponentAfterUpdate(component);
       } else {
         showToast(`${component} 已检查更新`);
+        await reloadComponents();
       }
-      await reloadComponents();
     } catch (err) {
       showToast(`${component} 检查更新失败: ${errorMessage(err)}`);
     } finally {
@@ -1659,8 +1824,8 @@ function UpdateTab({ showToast }: { showToast: (message: string) => void }) {
         await reloadComponents();
         return;
       }
-      showToast(`${component} 更新任务已执行`);
-      await reloadComponents();
+      showToast(`${component} 更新任务已执行，正在刷新状态`);
+      await refreshComponentAfterUpdate(component);
     } catch (err) {
       showToast(`${component} 更新失败: ${errorMessage(err)}`);
     } finally {

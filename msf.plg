@@ -1,22 +1,23 @@
 <!DOCTYPE PLUGIN [
 <!ENTITY name "msf">
 <!ENTITY author "luochuhan">
-<!ENTITY version "0.3.2">
+<!ENTITY version "0.3.3">
 <!ENTITY githubRepo "scoltzero/msf">
-<!ENTITY releaseTag "v0.3.2">
-<!ENTITY packageName "msf-0.3.2-x86_64-1">
+<!ENTITY releaseTag "v0.3.3">
+<!ENTITY packageName "msf-0.3.3-x86_64-1">
 <!ENTITY packageFile "&packageName;.txz">
 <!ENTITY packageURL "https://github.com/&githubRepo;/releases/download/&releaseTag;/&packageFile;">
-<!ENTITY packageSHA256 "60143d2fcb1571a3bccbab93d0a018586a2f3c8f3555e9a826da82585c1c34c3">
+<!ENTITY packageSHA256 "ac237da34af976a2f94e688494124c13fa5ce841139c4f5b649196e03ddb8c71">
 ]>
 <PLUGIN name="&name;" author="&author;" version="&version;" pluginURL="https://raw.githubusercontent.com/&githubRepo;/main/msf.plg" launch="Settings/&name;" support="https://github.com/&githubRepo;/issues" icon="network-wired" min="6.12.0">
   <CHANGES>
     <![CDATA[
-### msf 0.3.2
-- 修复 MosDNS、Mihomo、Zashboard 在线安装校验成功后，后续检查可能回到“待安装校验”的状态显示问题。
-- 组件无更新且 GitHub asset digest 未变化时，会保留 verified digest、verified 状态和 verification source。
-- 初始化向导提交校验改为弹窗提示并跳转到需要修改的步骤。
-- 初始化管理员密码不再强制最少 8 位，只要求非空且两次输入一致。
+### msf 0.3.3
+- 新增 Cloudflare Redirect CLI 测试插件：`msf cloudflare-redirect` / `msf cf-redirect`。
+- 支持 start、stop、scan、apply、status，用于扫描 Cloudflare CDN IPv4/IPv6、注入 MosDNS 直连客户端分支和回滚配置。
+- 默认创建 `configs/cloudflare-redirect/cfyouxuan.yaml`，插件默认关闭，用户可编辑手动域名名单或订阅后启用。
+- status 增加 best IP、域名数量、最近扫描/应用时间、下一次扫描时间、MosDNS 注入状态和 hints 诊断提示。
+- README 补充完整使用方式、配置字段说明、不同部署方式下的 YAML 路径和常见问题。
     ]]>
   </CHANGES>
 
@@ -56,8 +57,8 @@ set +e
 if [ -x /etc/rc.d/rc.msf ]; then
   /etc/rc.d/rc.msf stop
 fi
-removepkg msf-0.3.2-x86_64-1
-rm -f /boot/config/plugins/msf/msf-0.3.2-x86_64-1.txz
+removepkg msf-0.3.3-x86_64-1
+rm -f /boot/config/plugins/msf/msf-0.3.3-x86_64-1.txz
 echo "msf plugin removed. Persistent data remains under /mnt/user/appdata/msf unless you delete it manually."
       ]]>
     </INLINE>

@@ -13,10 +13,11 @@
   <CHANGES>
     <![CDATA[
 ### msf __PLUGIN_VERSION__
-- 修复 MosDNS、Mihomo、Zashboard 在线安装校验成功后，后续检查可能回到“待安装校验”的状态显示问题。
-- 组件无更新且 GitHub asset digest 未变化时，会保留 verified digest、verified 状态和 verification source。
-- 初始化向导提交校验改为弹窗提示并跳转到需要修改的步骤。
-- 初始化管理员密码不再强制最少 8 位，只要求非空且两次输入一致。
+- 新增 Cloudflare Redirect CLI 测试插件：`msf cloudflare-redirect` / `msf cf-redirect`。
+- 支持 start、stop、scan、apply、status，用于扫描 Cloudflare CDN IPv4/IPv6、注入 MosDNS 直连客户端分支和回滚配置。
+- 默认创建 `configs/cloudflare-redirect/cfyouxuan.yaml`，插件默认关闭，用户可编辑手动域名名单或订阅后启用。
+- status 增加 best IP、域名数量、最近扫描/应用时间、下一次扫描时间、MosDNS 注入状态和 hints 诊断提示。
+- README 补充完整使用方式、配置字段说明、不同部署方式下的 YAML 路径和常见问题。
     ]]>
   </CHANGES>
 

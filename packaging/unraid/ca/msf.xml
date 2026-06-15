@@ -13,12 +13,13 @@ Update and remove msf from the Unraid Plugins page (not via the in-app updater).
 <Project>https://github.com/scoltzero/msf</Project>
 <Category>Network:Management Tools:System Plugins:</Category>
 <Beta>False</Beta>
-<Date>2026-06-12</Date>
+<Date>2026-06-15</Date>
 <Changes>
-### msf 0.3.2
-- Fixed MosDNS / Mihomo / Zashboard status checks resetting same-digest verified installs back to pending verification.
-- Preserved verified digest, verified state, and verification source when no update is available and the asset digest is unchanged.
-- Improved setup wizard validation with a modal that jumps to the step requiring changes.
-- Setup administrator passwords now require only a non-empty value and matching confirmation; no minimum length is enforced.
+### msf 0.3.3
+- Added the experimental Cloudflare Redirect CLI plugin: `msf cloudflare-redirect` / `msf cf-redirect`.
+- Added start, stop, scan, apply, and status actions for Cloudflare CDN IPv4/IPv6 scanning, MosDNS direct-client injection, and rollback.
+- Added the default `configs/cloudflare-redirect/cfyouxuan.yaml` file. The plugin remains disabled by default and can be enabled after editing manual domains or subscriptions.
+- Added status diagnostics for best IPs, domain count, last scan/apply time, next scan time, MosDNS injection state, and hints.
+- Expanded README documentation with usage, config fields, deployment-specific YAML paths, and troubleshooting notes.
 </Changes>
 </Plugin>

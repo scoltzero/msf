@@ -1353,6 +1353,8 @@ func mosDNSRuleCategoryFile(category string) string {
 		category = "whitelist"
 	case "ddns":
 		category = "ddnslist"
+	case "redirect", "rewrite":
+		category = "rewrite"
 	case "":
 		category = "whitelist"
 	}

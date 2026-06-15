@@ -1,5 +1,59 @@
 # 更新日志
 
+## v0.3.3 - 2026-06-15
+
+### 中文
+
+#### 说明
+
+- 这是一次 Cloudflare Redirect CLI 测试功能发布，面向“不走代理的局域网客户端”访问用户指定 Cloudflare 盾站的直连解析优化场景。
+- 本功能依赖 msf 所在机器的本机网络、运营商路由、Cloudflare Anycast、IPv4/IPv6 可达性、域名名单质量和 MosDNS 当前配置，不保证所有环境都更快或更稳定；如遇访问变慢、IPv6 不通或规则未命中，请先停用插件并反馈扫描结果与日志。
+- 本版本发布资产继续与 v0.3.2 保持一致：Linux amd64/arm64 tarball、Unraid `.txz`/`.plg`，以及从同步后的 `fnos-fpk` 分支构建的 fnOS x86/arm `.fpk` 包。
+
+#### 新增
+
+- 新增 `msf cloudflare-redirect` 命令行插件，并提供短别名 `msf cf-redirect`。
+- 新增 `start`、`stop`、`scan`、`apply`、`status` 子命令：支持守护进程启停、手动扫描、手动应用、状态查询和 MosDNS 注入回滚。
+- 新增 Cloudflare CDN IPv4/IPv6 扫描能力：支持候选 CIDR 抽样、TCP 延迟探测、HTTPS 测试域名校验、`CF-RAY` colo 提取、机房白名单和最快结果排序。
+- 新增独立配置文件 `configs/cloudflare-redirect/cfyouxuan.yaml`，默认关闭插件，但内置一组可编辑的初始手动域名名单，便于用户直接修改后启用。
+- 新增手动域名和订阅域名合并逻辑，支持 `domain:`、`full:`、`keyword:`、`regexp:`、裸域名和常见 `DOMAIN-SUFFIX,...` 规则格式。
+- 新增 MosDNS 专用生成文件和子配置：插件只把 Cloudflare Redirect 注入到“指定客户端直连”分支，不写入全局 `rewrite.txt`，也不影响代理客户端的 FakeIP / 代理分流。
+- 新增状态文件、PID 文件和日志文件，`status` 会返回运行状态、PID、IPv4/IPv6 最优 IP、域名数量、最近扫描/应用时间、下一次扫描时间、MosDNS 注入状态和 `hints` 诊断提示。
+- 新增数据目录自动发现：命令会优先读取 `MSF_DATA_DIR` / `MSM_FREE_DATA_DIR`，并兼容 Unraid 配置、systemd 服务配置、`.msf` 兼容目录和常见安装目录。
+
+#### 变更
+
+- `msf init`、安装脚本和 WebUI 基础布局准备流程现在会确保默认 `cfyouxuan.yaml` 存在，但不会默认启用 Cloudflare Redirect。
+- `start` 在 `enabled: true` 时会立即执行一次重新扫描和应用；守护进程运行中再次执行 `start` 也会同步触发一次 `scan + apply`，减少用户手动操作。
+- `apply` 在 `enabled: false` 时会清理插件注入并提示原因，避免用户误以为 MosDNS 拒绝注入。
+- README 和 README.en 增加 Cloudflare Redirect 的测试功能提示、完整使用方式、配置字段说明、不同部署方式下的 YAML 路径、命令说明、自动扫描时机和常见问题。
+
+### English
+
+#### Notes
+
+- This release adds the experimental Cloudflare Redirect CLI plugin for direct LAN clients that do not use the proxy and need selected Cloudflare-protected domains resolved to locally tested Cloudflare CDN IPs.
+- Results depend on the msf host's own network path, ISP routing, Cloudflare Anycast behavior, IPv4/IPv6 reachability, domain-list quality, and the active MosDNS configuration. It is not guaranteed to improve every environment; if access becomes slower, IPv6 fails, or rules do not match, stop the plugin and report scan results and logs.
+- Release assets remain aligned with v0.3.2: Linux amd64/arm64 tarballs, Unraid `.txz`/`.plg`, and fnOS x86/arm `.fpk` packages built from the synced `fnos-fpk` branch.
+
+#### Added
+
+- Added the `msf cloudflare-redirect` CLI plugin, with `msf cf-redirect` as a short alias.
+- Added `start`, `stop`, `scan`, `apply`, and `status` subcommands for daemon control, manual scanning, manual application, status inspection, and MosDNS injection rollback.
+- Added Cloudflare CDN IPv4/IPv6 scanning with candidate CIDR sampling, TCP latency probing, HTTPS test-domain validation, `CF-RAY` colo extraction, colo allowlists, and fastest-result ranking.
+- Added the dedicated `configs/cloudflare-redirect/cfyouxuan.yaml` config file. The plugin remains disabled by default, while the file includes an editable initial manual domain list for easier testing.
+- Added manual and subscription domain merging with support for `domain:`, `full:`, `keyword:`, `regexp:`, bare domains, and common `DOMAIN-SUFFIX,...` rule formats.
+- Added generated MosDNS rule files and sub-config injection scoped only to the existing direct-client branch. The plugin does not write global `rewrite.txt` and does not affect proxy clients using FakeIP/proxy routing.
+- Added state, PID, and log files. `status` now reports running state, PID, best IPv4/IPv6 IPs, domain count, last scan/apply time, next scan time, MosDNS injection state, and diagnostic `hints`.
+- Added data-directory auto-discovery from `MSF_DATA_DIR` / `MSM_FREE_DATA_DIR`, Unraid config, systemd service config, `.msf` compatibility paths, and common install directories.
+
+#### Changed
+
+- `msf init`, installer setup, and WebUI base layout preparation now ensure the default `cfyouxuan.yaml` exists, without enabling Cloudflare Redirect by default.
+- `start` now runs an immediate scan and apply when `enabled: true`; running `start` again while the daemon is already active also triggers one synchronous `scan + apply`.
+- `apply` now removes plugin injection and explains the disabled state when `enabled: false`, instead of looking like MosDNS rejected the configuration.
+- README and README.en now document the experimental status, full usage flow, configuration fields, YAML paths for each deployment mode, command behavior, automatic scan timing, and common troubleshooting cases.
+
 ## v0.3.2 - 2026-06-12
 
 ### 中文

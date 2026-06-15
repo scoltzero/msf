@@ -24,6 +24,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/scoltzero/msf/internal/cloudflareredirect"
 	"github.com/scoltzero/msf/internal/server"
 )
 
@@ -40,6 +41,10 @@ func run(args []string) error {
 	if len(args) > 0 && args[0] != "-h" && args[0] != "--help" && args[0] != "-v" && args[0] != "--version" {
 		command = args[0]
 		args = args[1:]
+	}
+
+	if command == "cloudflare-redirect" || command == "cf-redirect" {
+		return runCloudflareRedirectCLI(args)
 	}
 
 	fs := flag.NewFlagSet(command, flag.ExitOnError)
@@ -153,6 +158,7 @@ func printUsage() {
   msf stop [--config /opt/msf] [--timeout 15s] [--force]
   msf logs [--lines 100] [msf|mosdns|mihomo]
   msf doctor [--config /opt/msf]
+  msf cloudflare-redirect start|stop|scan|apply|status [--config PATH]
   msf update [--repo scoltzero/msf] [--url https://.../msf-linux-amd64.tar.gz]
   msf uninstall [--config /opt/msf] [--prefix /usr/local] [--service-name msf] [--purge]
   msf migrate [--config /opt/msf]
@@ -244,6 +250,154 @@ func defaultDataDir() string {
 		return "/opt/msf"
 	}
 	return "./data"
+}
+
+func runCloudflareRedirectCLI(args []string) error {
+	dataDir := defaultCloudflareRedirectDataDir()
+	action := "status"
+	actionSet := false
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "-h" || arg == "--help":
+			printCloudflareRedirectUsage()
+			return nil
+		case arg == "-c" || arg == "--config":
+			if i+1 >= len(args) {
+				return fmt.Errorf("%s requires a value", arg)
+			}
+			dataDir = args[i+1]
+			i++
+		case strings.HasPrefix(arg, "--config="):
+			dataDir = strings.TrimPrefix(arg, "--config=")
+		case strings.HasPrefix(arg, "-c="):
+			dataDir = strings.TrimPrefix(arg, "-c=")
+		case strings.HasPrefix(arg, "-"):
+			return fmt.Errorf("unknown cloudflare-redirect option %q", arg)
+		default:
+			if actionSet {
+				return fmt.Errorf("unexpected cloudflare-redirect argument %q", arg)
+			}
+			action = arg
+			actionSet = true
+		}
+	}
+	return cloudflareredirect.Command(context.Background(), dataDir, action, nil)
+}
+
+func printCloudflareRedirectUsage() {
+	fmt.Print(`Usage:
+  msf cloudflare-redirect start
+  msf cloudflare-redirect stop
+  msf cloudflare-redirect scan
+  msf cloudflare-redirect apply
+  msf cloudflare-redirect status
+
+Options:
+  -c, --config PATH   Override the MSF data directory when auto-discovery is not enough.
+
+Notes:
+  The command auto-discovers the MSF data directory from MSF_DATA_DIR, Unraid config,
+  systemd service config, and common install paths.
+`)
+}
+
+func defaultCloudflareRedirectDataDir() string {
+	if v := os.Getenv("MSF_DATA_DIR"); strings.TrimSpace(v) != "" {
+		return v
+	}
+	if v := os.Getenv("MSM_FREE_DATA_DIR"); strings.TrimSpace(v) != "" {
+		return v
+	}
+	candidates := []string{
+		dataDirFromUnraidConfig(),
+		dataDirFromSystemdService("msf"),
+		dataDirFromSystemdService("msm-free"),
+		"/mnt/user/appdata/msf",
+		"/opt/msf",
+		"/opt/msm-free",
+		"/.msf",
+	}
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		candidates = append(candidates, filepath.Join(home, ".msf"))
+	}
+	if cwd, err := os.Getwd(); err == nil && cwd != "" {
+		candidates = append(candidates,
+			filepath.Join(cwd, ".msf"),
+			filepath.Join(cwd, "msf-data"),
+			filepath.Join(cwd, "data"),
+		)
+	}
+	candidates = append(candidates, defaultDataDir())
+	seen := map[string]bool{}
+	for _, candidate := range candidates {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" {
+			continue
+		}
+		clean := filepath.Clean(candidate)
+		if seen[clean] {
+			continue
+		}
+		seen[clean] = true
+		if looksLikeMSFDataDir(clean) {
+			return clean
+		}
+	}
+	return defaultDataDir()
+}
+
+func looksLikeMSFDataDir(path string) bool {
+	for _, rel := range []string{
+		"configs/cloudflare-redirect/cfyouxuan.yaml",
+		"configs/mosdns/config.yaml",
+		"configs/app.yaml",
+		"database/msf.db",
+		"msf.pid",
+	} {
+		if fileExists(filepath.Join(path, rel)) {
+			return true
+		}
+	}
+	return false
+}
+
+func dataDirFromUnraidConfig() string {
+	b, err := os.ReadFile("/boot/config/plugins/msf/msf.cfg")
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		key, value, ok := strings.Cut(strings.TrimSpace(line), "=")
+		if !ok || key != "DATA_DIR" {
+			continue
+		}
+		return strings.Trim(strings.TrimSpace(value), `"'`)
+	}
+	return ""
+}
+
+func dataDirFromSystemdService(service string) string {
+	path := filepath.Join("/etc/systemd/system", service+".service")
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "Environment=MSF_DATA_DIR=") {
+			return strings.Trim(strings.TrimPrefix(line, "Environment=MSF_DATA_DIR="), `"'`)
+		}
+		if strings.HasPrefix(line, "ExecStart=") {
+			fields := strings.Fields(line)
+			for i := 0; i < len(fields)-1; i++ {
+				if fields[i] == "--config" || fields[i] == "-c" {
+					return strings.Trim(fields[i+1], `"'`)
+				}
+			}
+		}
+	}
+	return ""
 }
 
 func runtimePIDFile(dataDir string) string {

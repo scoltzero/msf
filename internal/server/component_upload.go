@@ -80,8 +80,8 @@ func (a *App) handleComponentUpdateUpload(w http.ResponseWriter, r *http.Request
 			restarted = true
 		}
 	}
-	_, _ = a.DB.Exec(`update component_update_info set current_version=?,latest_version=?,has_update=false,download_url=?,download_digest='',verified_digest='',verified=false,verification_source=?,status='completed',progress=100,error_message='',last_check_time=?,updated_at=? where component=?`,
-		version, version, downloadURL, componentVerificationSourceLocalUpload, now, now, component)
+	_, _ = a.DB.Exec(`update component_update_info set current_version=?,latest_version=?,has_update=false,download_url=?,download_digest='',verified_digest='',verified=false,verification_source=?,installed_verified_digest='',installed_verification_source=?,installed_verified_at=NULL,status='completed',progress=100,error_message='',last_check_time=?,updated_at=? where component=?`,
+		version, version, downloadURL, componentVerificationSourceLocalUpload, componentVerificationSourceLocalUpload, now, now, component)
 	state := a.componentUpdateState(component)
 	state["restarted"] = restarted
 	writeJSON(w, http.StatusOK, map[string]any{"success": true, "data": state})

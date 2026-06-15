@@ -8,6 +8,38 @@ import { cn } from "@/lib/utils";
 import { navItems } from "@/lib/dashboard-data";
 import type { NavItem } from "@/types";
 
+const GROUP_STATE_STORAGE_KEY = "msf-sidebar-group-open";
+
+function defaultGroupState() {
+  return Object.fromEntries(navItems.filter((item) => item.children?.length).map((item) => [item.href, true]));
+}
+
+function readGroupState() {
+  const defaults = defaultGroupState();
+  if (typeof window === "undefined") return defaults;
+
+  try {
+    const raw = window.sessionStorage.getItem(GROUP_STATE_STORAGE_KEY);
+    if (!raw) return defaults;
+
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    return Object.fromEntries(
+      Object.entries(defaults).map(([key, fallback]) => [key, typeof parsed[key] === "boolean" ? parsed[key] : fallback])
+    );
+  } catch {
+    return defaults;
+  }
+}
+
+function writeGroupState(state: Record<string, boolean>) {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.setItem(GROUP_STATE_STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    // Ignore storage failures; the current in-memory state still works.
+  }
+}
+
 /**
  * A single nav row. The element is identical in both states — only the layout
  * classes change (centered icon + no padding when collapsed) and the label span
@@ -60,13 +92,16 @@ function NavGroup({
   item,
   pathname,
   collapsed,
+  open,
+  onToggle,
 }: {
   item: NavItem;
   pathname: string;
   collapsed: boolean;
+  open: boolean;
+  onToggle: () => void;
 }) {
   const hasActiveChild = item.children?.some((child) => itemMatchesPath(child, pathname));
-  const [open, setOpen] = useState(true);
   const parentActive = pathname === item.href;
   const active = parentActive || Boolean(hasActiveChild);
 
@@ -85,7 +120,7 @@ function NavGroup({
       <div className="group relative flex items-center">
         <NavRow item={item} active={active} collapsed={false} flex1 />
         <button
-          onClick={() => setOpen((v) => !v)}
+          onClick={onToggle}
           className="p-1 rounded hover:bg-accent/70 transition-colors flex items-center justify-center flex-shrink-0"
           aria-label={open ? "收起" : "展开"}
         >
@@ -112,6 +147,15 @@ function NavGroup({
 export function Sidebar({ collapsed = false }: { collapsed?: boolean }) {
   const pathname = usePathname();
   const navRef = useRef<HTMLElement | null>(null);
+  const [groupOpen, setGroupOpen] = useState<Record<string, boolean>>(readGroupState);
+
+  const toggleGroup = (key: string) => {
+    setGroupOpen((current) => {
+      const next = { ...defaultGroupState(), ...current, [key]: !current[key] };
+      writeGroupState(next);
+      return next;
+    });
+  };
 
   useEffect(() => {
     const nav = navRef.current;
@@ -140,7 +184,14 @@ export function Sidebar({ collapsed = false }: { collapsed?: boolean }) {
           {navItems.map((item) => {
             const active = itemMatchesPath(item, pathname);
             return item.children ? (
-              <NavGroup key={item.href} item={item} pathname={pathname} collapsed={collapsed} />
+              <NavGroup
+                key={item.href}
+                item={item}
+                pathname={pathname}
+                collapsed={collapsed}
+                open={groupOpen[item.href] ?? true}
+                onToggle={() => toggleGroup(item.href)}
+              />
             ) : (
               <div key={item.href} className="group relative">
                 <NavRow item={item} active={active} collapsed={collapsed} />

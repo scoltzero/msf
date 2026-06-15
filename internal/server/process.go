@@ -89,6 +89,12 @@ func (sm *ServiceManager) Start(ctx context.Context, name string) (ServiceStatus
 	if _, err := os.Stat(spec.Binary); err != nil {
 		return sm.Status(name), fmt.Errorf("%s binary not installed at %s", name, spec.Binary)
 	}
+	if name == "mosdns" {
+		dns53 := setupDNS53Preflight(ctx, collectSetupPortListeners(ctx, []int{53}), true)
+		if dns53.Status == "blocked" {
+			return sm.Status(name), fmt.Errorf("mosdns cannot bind 53: %s", dns53.Message)
+		}
+	}
 	if err := os.MkdirAll(filepath.Dir(spec.Stdout), 0755); err != nil {
 		return sm.Status(name), err
 	}
@@ -130,8 +136,12 @@ func (sm *ServiceManager) Start(ctx context.Context, name string) (ServiceStatus
 	st := sm.Status(name)
 	if st.Running {
 		sm.setDesired(name, true)
+		return st, nil
 	}
-	return st, nil
+	if lines, err := tailFile(spec.Stderr, 8); err == nil && len(lines) > 0 {
+		return st, fmt.Errorf("%s exited after start: %s", name, strings.Join(lines, "\n"))
+	}
+	return st, fmt.Errorf("%s exited after start", name)
 }
 
 func (sm *ServiceManager) Stop(ctx context.Context, name string) (ServiceStatus, error) {

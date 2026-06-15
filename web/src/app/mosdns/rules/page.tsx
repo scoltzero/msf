@@ -21,11 +21,14 @@ import { cn } from "@/lib/utils";
 import type { Rule, RuleCategory } from "@/lib/mosdns-rules-data";
 import {
   AddRuleModal,
+  AddRuleSetModal,
   EditRuleModal,
   ImportRulesModal,
   ClearConfirmModal,
   ToastStack,
   type ToastItem,
+  type RuleSetFormValues,
+  type RuleSetTypeOption,
 } from "@/components/rules/RuleDialogs";
 import { AdblockView, RoutingView, type RuleSetRow } from "@/components/rules/RuleViews";
 import { api, apiData, apiList, getToken } from "@/lib/api";
@@ -56,6 +59,12 @@ const views: { id: string; label: string; icon: LucideIcon }[] = [
   { id: "routing", label: "在线分流", icon: GitBranch },
 ];
 
+function initialViewFromUrl() {
+  if (typeof window === "undefined") return "personlist";
+  const tab = new URLSearchParams(window.location.search).get("tab");
+  return views.some((view) => view.id === tab) ? tab || "personlist" : "personlist";
+}
+
 const GRID = "grid-cols-[60px_100px_120px_1fr_120px]";
 const typeLabels: Record<string, { label: string; color: string }> = {
   geositecn: { label: "中国域名 (geositecn)", color: "blue" },
@@ -64,6 +73,18 @@ const typeLabels: Record<string, { label: string; color: string }> = {
   cuscn: { label: "国内加速域名 (!cn@cn)", color: "orange" },
   cusnocn: { label: "国外专属域名 (cn@!cn)", color: "pink" },
 };
+
+const routingRuleSetTypes: RuleSetTypeOption[] = [
+  { value: "geositecn", label: "中国域名 (geositecn)" },
+  { value: "geositenocn", label: "非中国域名 (geositenocn)" },
+  { value: "geoipcn", label: "中国IP (geoipcn)" },
+  { value: "cuscn", label: "国内加速域名 (!cn@cn)" },
+  { value: "cusnocn", label: "国外专属域名 (cn@!cn)" },
+];
+
+const adguardRuleSetTypes: RuleSetTypeOption[] = [
+  { value: "adguard", label: "广告拦截 (adguard)" },
+];
 
 function categoryFromPayload(item: any): RuleCategory {
   return {
@@ -131,13 +152,14 @@ function normalizeRuleSet(item: RuleSetPayload): RuleSetRow {
 }
 
 export default function MosdnsRulesPage() {
-  const [activeView, setActiveView] = useState("personlist");
+  const [activeView, setActiveView] = useState(initialViewFromUrl);
   const [categories, setCategories] = useState<RuleCategory[]>([]);
   const [activeCat, setActiveCat] = useState("");
   const [currentRules, setCurrentRules] = useState<PageRule[]>([]);
   const [ruleSets, setRuleSets] = useState<RuleSetRow[]>([]);
   const [query, setQuery] = useState("");
   const [modal, setModal] = useState<null | "add" | "import" | "clear">(null);
+  const [ruleSetModal, setRuleSetModal] = useState<null | "adguard" | "srs">(null);
   const [editingRule, setEditingRule] = useState<PageRule | null>(null);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -158,6 +180,17 @@ export default function MosdnsRulesPage() {
     setToasts((current) => [...current, { id, message }]);
     window.setTimeout(() => setToasts((current) => current.filter((item) => item.id !== id)), 2500);
   }, []);
+
+  const switchView = (viewId: string) => {
+    setActiveView(viewId);
+    const url = new URL(window.location.href);
+    if (viewId === "personlist") {
+      url.searchParams.delete("tab");
+    } else {
+      url.searchParams.set("tab", viewId);
+    }
+    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+  };
 
   const loadCategories = useCallback(async () => {
     try {
@@ -212,12 +245,12 @@ export default function MosdnsRulesPage() {
     await Promise.all([loadCategories(), loadRuleSets(), activeCat ? loadRules(activeCat) : Promise.resolve()]);
   };
 
-  const handleAdd = async (mode: string, value: string) => {
+  const handleAdd = async (pattern: string) => {
     if (!activeCat) return;
     try {
       await api(`/api/v1/mosdns/rules/${encodeURIComponent(activeCat)}`, {
         method: "POST",
-        body: JSON.stringify({ pattern: patternFor(mode, value) }),
+        body: JSON.stringify({ pattern }),
       });
       setModal(null);
       showToast("添加成功");
@@ -294,19 +327,25 @@ export default function MosdnsRulesPage() {
     }
   };
 
-  const addRuleSet = async (sourceType: "adguard" | "srs") => {
-    const name = window.prompt("规则源名称");
-    if (!name) return;
-    const url = window.prompt("规则源 URL");
-    if (!url) return;
-    const type = sourceType === "adguard" ? "adguard" : window.prompt("规则类型", "geositecn");
-    if (!type) return;
-    const files = sourceType === "srs" ? window.prompt("本地文件名", `${name}.srs`) || `${name}.srs` : undefined;
+  const addRuleSet = (sourceType: "adguard" | "srs") => {
+    setRuleSetModal(sourceType);
+  };
+
+  const createRuleSet = async (sourceType: "adguard" | "srs", values: RuleSetFormValues) => {
     try {
       await api(`/api/v1/mosdns/rule-sets?source_type=${sourceType}`, {
         method: "POST",
-        body: JSON.stringify({ name, url, type, files, enabled: true, auto_update: false, update_interval_hours: 24 }),
+        body: JSON.stringify({
+          name: values.name,
+          url: values.url,
+          type: sourceType === "adguard" ? "adguard" : values.type,
+          files: sourceType === "srs" ? values.files : undefined,
+          enabled: true,
+          auto_update: values.autoUpdate,
+          update_interval_hours: values.updateIntervalHours,
+        }),
       });
+      setRuleSetModal(null);
       showToast("规则源已添加");
       await loadRuleSets();
       await loadCategories();
@@ -434,7 +473,7 @@ export default function MosdnsRulesPage() {
               return (
                 <button
                   key={view.id}
-                  onClick={() => setActiveView(view.id)}
+                  onClick={() => switchView(view.id)}
                   className={cn(
                     "relative px-3 md:px-4 py-1.5 rounded-lg border transition-all duration-200 text-sm font-semibold whitespace-nowrap flex items-center gap-2",
                     active
@@ -655,7 +694,7 @@ export default function MosdnsRulesPage() {
       </div>
 
       {modal === "add" && category && (
-        <AddRuleModal categoryLabel={category.label} onClose={() => setModal(null)} onAdd={handleAdd} />
+        <AddRuleModal categoryId={category.id} categoryLabel={category.label} onClose={() => setModal(null)} onAdd={handleAdd} />
       )}
       {modal === "import" && category && (
         <ImportRulesModal categoryLabel={category.label} onClose={() => setModal(null)} onImport={handleImport} />
@@ -668,6 +707,14 @@ export default function MosdnsRulesPage() {
           rule={editingRule}
           onClose={() => setEditingRule(null)}
           onSave={(mode, value) => void editRule(editingRule, mode, value)}
+        />
+      )}
+      {ruleSetModal && (
+        <AddRuleSetModal
+          sourceType={ruleSetModal}
+          typeOptions={ruleSetModal === "srs" ? routingRuleSetTypes : adguardRuleSetTypes}
+          onClose={() => setRuleSetModal(null)}
+          onAdd={(values) => void createRuleSet(ruleSetModal, values)}
         />
       )}
       <ToastStack toasts={toasts} />
