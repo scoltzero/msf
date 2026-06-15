@@ -16,8 +16,11 @@
 - 新增 Cloudflare Redirect CLI 测试插件：`msf cloudflare-redirect` / `msf cf-redirect`。
 - 支持 start、stop、scan、apply、status，用于扫描 Cloudflare CDN IPv4/IPv6、注入 MosDNS 直连客户端分支和回滚配置。
 - 默认创建 `configs/cloudflare-redirect/cfyouxuan.yaml`，插件默认关闭，用户可编辑手动域名名单或订阅后启用。
-- status 增加 best IP、域名数量、最近扫描/应用时间、下一次扫描时间、MosDNS 注入状态和 hints 诊断提示。
-- README 补充完整使用方式、配置字段说明、不同部署方式下的 YAML 路径和常见问题。
+- 新增初始化预检，检查 root 权限、时区、53 端口和运行端口占用，并可自动修复 systemd-resolved DNS stub 占用 53 端口的问题。
+- 改进组件更新校验状态，保留已安装核心的 digest、校验来源和校验时间，并优化本地上传来源展示。
+- 改进 MosDNS 规则源添加弹窗、在线分流/广告拦截规则源交互和 rewrite 分类映射。
+- 修复 systemd 环境下 WebUI 自更新安装器可能被当前服务生命周期影响的问题。
+- 侧边栏分组展开状态改为会话内持久化，README 补充 Cloudflare Redirect 完整使用文档。
     ]]>
   </CHANGES>
 

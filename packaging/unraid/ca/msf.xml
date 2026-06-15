@@ -19,7 +19,10 @@ Update and remove msf from the Unraid Plugins page (not via the in-app updater).
 - Added the experimental Cloudflare Redirect CLI plugin: `msf cloudflare-redirect` / `msf cf-redirect`.
 - Added start, stop, scan, apply, and status actions for Cloudflare CDN IPv4/IPv6 scanning, MosDNS direct-client injection, and rollback.
 - Added the default `configs/cloudflare-redirect/cfyouxuan.yaml` file. The plugin remains disabled by default and can be enabled after editing manual domains or subscriptions.
-- Added status diagnostics for best IPs, domain count, last scan/apply time, next scan time, MosDNS injection state, and hints.
-- Expanded README documentation with usage, config fields, deployment-specific YAML paths, and troubleshooting notes.
+- Added setup preflight checks for root permission, timezone, port 53, and runtime port occupancy, with automatic systemd-resolved DNS stub remediation when supported.
+- Improved component update verification state by preserving installed digest, verification source, and verification time, with clearer local-upload provenance.
+- Improved MosDNS rule-source dialogs, adblock/online-routing source interactions, and rewrite category mapping.
+- Fixed self-update installation under systemd so the installer is detached from the current service lifecycle.
+- Persisted sidebar group open state within the session and expanded README documentation for Cloudflare Redirect usage and troubleshooting.
 </Changes>
 </Plugin>
