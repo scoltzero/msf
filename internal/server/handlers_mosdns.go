@@ -505,6 +505,8 @@ func (a *App) handleMosDNSClientScan(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) handleMosDNSClientScanReset(w http.ResponseWriter, r *http.Request) {
 	_, _ = a.DB.Exec(`delete from mosdns_clients`)
+	_, _ = a.DB.Exec(`delete from mosdns_client_ips`)
+	_ = a.rewriteMosDNSClientIPFile()
 	a.handleMosDNSClientScan(w, r)
 }
 

@@ -5,6 +5,7 @@ import { AppShell } from "@/components/AppShell";
 import { SystemHeader } from "@/components/mosdns/SystemHeader";
 import { GlobalSettingsCard } from "@/components/mosdns/GlobalSettingsCard";
 import { UpstreamDNSSection } from "@/components/mosdns/UpstreamDNSSection";
+import { UpstreamServerDialog, type UpstreamServerFormValues } from "@/components/mosdns/UpstreamServerDialog";
 import { RequestFilterSection } from "@/components/mosdns/RequestFilterSection";
 import { ResolutionPolicySection } from "@/components/mosdns/ResolutionPolicySection";
 import { CacheSystemSection } from "@/components/mosdns/CacheSystemSection";
@@ -25,6 +26,9 @@ import {
 
 type RawRecord = Record<string, any>;
 type EditableServer = UpstreamServer & { raw?: RawRecord };
+type UpstreamDialogState =
+  | { mode: "add"; groupId: string }
+  | { mode: "edit"; groupId: string; serverId: string };
 
 const defaultGlobalSettings: GlobalSettings = {
   socks5: "",
@@ -72,23 +76,29 @@ const defaultCacheData: CacheSystemData = {
 };
 
 const SWITCH = {
-  adBlock: "switch5",
-  requestBlock: "switch6",
-  typeBlock: "switch1",
-  ipv6Block: "switch7",
+  requestBlock: "switch1",
+  typeBlock: "switch5",
+  ipv6Block: "switch6",
+  adBlock: "switch7",
   ipv4First: "switch8",
   ipv6First: "switch10",
   runMode: "switch3",
-  expiredCache1: "switch13",
-  expiredCache2: "switch14",
+  expiredCache1: "switch4",
+  expiredCache2: "switch13",
 } as const;
 
 const GROUP_META: Record<string, { name: string; subtitle: string; defaultExpanded: boolean; fake?: boolean }> = {
   domestic: { name: "国内", subtitle: "国内直连上游", defaultExpanded: true },
   foreign: { name: "国外", subtitle: "国外代理上游", defaultExpanded: false },
   foreignecs: { name: "国外 ECS", subtitle: "国外 ECS 上游", defaultExpanded: false },
-  cnfake: { name: "国内 FakeIP", subtitle: "cn-fakeip", defaultExpanded: false, fake: true },
-  nocnfake: { name: "代理 FakeIP", subtitle: "foreign-fakeip", defaultExpanded: false, fake: true },
+  nocnfake: { name: "代理 FakeIP", subtitle: "foreign-fakeip", defaultExpanded: true, fake: true },
+  cnfake: { name: "国内 FakeIP", subtitle: "cn-fakeip", defaultExpanded: true, fake: true },
+};
+
+const GROUP_ORDER = ["domestic", "foreign", "foreignecs", "nocnfake", "cnfake"];
+const FAKE_SERVER_TAGS: Record<string, { canonical: string; legacy: string[] }> = {
+  nocnfake: { canonical: "nocnfake", legacy: ["sing-box", "singbox", "foreign-fakeip", "foreign_fakeip"] },
+  cnfake: { canonical: "cnfake", legacy: ["mihomo", "clash", "cn-fakeip", "cn_fakeip"] },
 };
 
 function asBool(value: unknown) {
@@ -100,6 +110,27 @@ function asBool(value: unknown) {
 function numberValue(value: unknown) {
   const next = Number(value);
   return Number.isFinite(next) ? next : 0;
+}
+
+function sortUpstreamGroups(nextGroups: UpstreamGroup[]) {
+  return [...nextGroups].sort((a, b) => {
+    const aIndex = GROUP_ORDER.indexOf(a.id);
+    const bIndex = GROUP_ORDER.indexOf(b.id);
+    const aRank = aIndex === -1 ? GROUP_ORDER.length : aIndex;
+    const bRank = bIndex === -1 ? GROUP_ORDER.length : bIndex;
+    if (aRank !== bRank) return aRank - bRank;
+    return a.id.localeCompare(b.id);
+  });
+}
+
+function normalizeFakeServerName(groupId: string, value: unknown) {
+  const name = String(value || "").trim();
+  const fakeMeta = FAKE_SERVER_TAGS[groupId];
+  if (!fakeMeta) return name;
+  if (!name) return fakeMeta.canonical;
+  const lower = name.toLowerCase();
+  if (lower === fakeMeta.canonical || fakeMeta.legacy.includes(lower)) return fakeMeta.canonical;
+  return name;
 }
 
 function cacheStatFromRecord(value: unknown): CacheStats | null {
@@ -151,7 +182,7 @@ function switchMap(...payloads: unknown[]) {
 
 function normalizeUpstreamGroups(payload: unknown): UpstreamGroup[] {
   const data = apiData<RawRecord>(payload as any, payload as RawRecord) || {};
-  return Object.entries(data).map(([key, value]) => {
+  return sortUpstreamGroups(Object.entries(data).map(([key, value]) => {
     const meta = GROUP_META[key] || { name: key, subtitle: key, defaultExpanded: false };
     const servers = Array.isArray(value) ? value : [];
     return {
@@ -162,10 +193,12 @@ function normalizeUpstreamGroups(payload: unknown): UpstreamGroup[] {
       servers: servers.map((server, index) => {
         const raw = server && typeof server === "object" ? { ...(server as RawRecord) } : {};
         const address = String(raw.addr || raw.server_addr || raw.address || "");
+        const name = normalizeFakeServerName(key, raw.tag || raw.name || `上游 ${index + 1}`);
+        if (GROUP_META[key]?.fake) raw.tag = name;
         const noteParts = [raw.note, raw.socks5 ? `SOCKS5 ${raw.socks5}` : "", raw.dial_addr ? `拨号 ${raw.dial_addr}` : ""].filter(Boolean);
         return {
-          id: `${key}:${index}:${raw.tag || raw.name || address}`,
-          name: String(raw.tag || raw.name || `上游 ${index + 1}`),
+          id: `${key}:${index}:${name || address}`,
+          name,
           note: noteParts.join(" · ") || undefined,
           protocol: String(raw.protocol || "udp"),
           address,
@@ -174,17 +207,17 @@ function normalizeUpstreamGroups(payload: unknown): UpstreamGroup[] {
         } satisfies EditableServer;
       }),
     };
-  });
+  }));
 }
 
 function groupsToPayload(groups: UpstreamGroup[], socks5?: string) {
   const payload: Record<string, RawRecord[]> = {};
-  groups.forEach((group) => {
+  sortUpstreamGroups(groups).forEach((group) => {
     payload[group.id] = group.servers.map((server) => {
       const editable = server as EditableServer;
       const raw = { ...(editable.raw || {}) };
       const addressKey = raw.server_addr !== undefined && raw.addr === undefined ? "server_addr" : "addr";
-      raw.tag = server.name;
+      raw.tag = normalizeFakeServerName(group.id, server.name);
       raw.protocol = server.protocol;
       raw.enabled = server.enabled;
       raw[addressKey] = server.address;
@@ -329,10 +362,20 @@ export default function MosdnsSystemPage() {
   const [cacheDomains, setCacheDomains] = useState<Partial<Record<"realIp" | "fakeIp" | "noV4" | "noV6", CacheDomainRow[]>>>({});
   const [taskEvents, setTaskEvents] = useState<string[]>([]);
   const [groups, setGroups] = useState<UpstreamGroup[]>([]);
+  const [upstreamDialog, setUpstreamDialog] = useState<UpstreamDialogState | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const regularGroups = useMemo(() => groups.filter((group) => !GROUP_META[group.id]?.fake), [groups]);
-  const fakeIPGroups = useMemo(() => groups.filter((group) => GROUP_META[group.id]?.fake), [groups]);
+  const regularGroups = useMemo(() => sortUpstreamGroups(groups.filter((group) => !GROUP_META[group.id]?.fake)), [groups]);
+  const fakeIPGroups = useMemo(() => sortUpstreamGroups(groups.filter((group) => GROUP_META[group.id]?.fake)), [groups]);
+  const activeUpstreamDialog = useMemo(() => {
+    if (!upstreamDialog) return null;
+    const group = groups.find((item) => item.id === upstreamDialog.groupId);
+    if (!group) return null;
+    if (upstreamDialog.mode === "add") return { mode: upstreamDialog.mode, group, server: undefined };
+    const server = group.servers.find((item) => item.id === upstreamDialog.serverId);
+    if (!server) return null;
+    return { mode: upstreamDialog.mode, group, server };
+  }, [groups, upstreamDialog]);
 
   const loadSystem = useCallback(async () => {
     try {
@@ -395,7 +438,7 @@ export default function MosdnsSystemPage() {
   };
 
   const persistGroups = async (nextGroups: UpstreamGroup[], message = "上游 DNS 已保存") => {
-    setGroups(nextGroups);
+    setGroups(sortUpstreamGroups(nextGroups));
     try {
       await api("/api/v1/mosdns/system/upstream-overrides", {
         method: "POST",
@@ -408,63 +451,108 @@ export default function MosdnsSystemPage() {
     }
   };
 
-  const handleToggleServer = (serverId: string) => {
+  const handleToggleGroup = (groupId: string, enabled: boolean) => {
     const nextGroups = groups.map((group) => ({
       ...group,
-      servers: group.servers.map((server) => (server.id === serverId ? { ...server, enabled: !server.enabled } : server)),
+      servers: group.id === groupId ? group.servers.map((server) => ({ ...server, enabled })) : group.servers,
     }));
     void persistGroups(nextGroups);
   };
 
-  const handleEditServer = (server: UpstreamServer) => {
-    const name = window.prompt("上游名称", server.name);
-    if (name === null) return;
-    const protocol = window.prompt("协议", server.protocol);
-    if (protocol === null) return;
-    const address = window.prompt("地址", server.address);
-    if (address === null) return;
+  const handleToggleServer = (groupId: string, serverId: string) => {
     const nextGroups = groups.map((group) => ({
       ...group,
-      servers: group.servers.map((item) => (item.id === server.id ? { ...item, name, protocol, address } : item)),
+      servers: group.id === groupId ? group.servers.map((server) => (server.id === serverId ? { ...server, enabled: !server.enabled } : server)) : group.servers,
     }));
     void persistGroups(nextGroups);
   };
 
-  const handleDeleteServer = (serverId: string) => {
-    if (!window.confirm("确认删除这个上游 DNS？")) return;
+  const handleEditServer = (groupId: string, server: UpstreamServer) => {
+    setUpstreamDialog({ mode: "edit", groupId, serverId: server.id });
+  };
+
+  const removeServer = (groupId: string, serverId: string) => {
     const nextGroups = groups.map((group) => ({
       ...group,
-      servers: group.servers.filter((server) => server.id !== serverId),
+      servers: group.id === groupId ? group.servers.filter((server) => server.id !== serverId) : group.servers,
     }));
     void persistGroups(nextGroups, "上游 DNS 已删除");
   };
 
+  const handleDeleteServer = (groupId: string, serverId: string) => {
+    if (!window.confirm("确认删除这个上游 DNS？")) return;
+    removeServer(groupId, serverId);
+  };
+
   const handleAddServer = (groupId: string) => {
-    const name = window.prompt("上游名称");
-    if (!name) return;
-    const protocol = window.prompt("协议", "udp");
-    if (!protocol) return;
-    const address = window.prompt("地址");
-    if (!address) return;
+    setUpstreamDialog({ mode: "add", groupId });
+  };
+
+  const rawForServer = (groupId: string, server: UpstreamServer | undefined, values: UpstreamServerFormValues) => {
+    const editable = server as EditableServer | undefined;
+    const raw = { ...(editable?.raw || {}) };
+    const addressKey = raw.server_addr !== undefined && raw.addr === undefined ? "server_addr" : "addr";
+    raw.tag = normalizeFakeServerName(groupId, values.name);
+    raw.protocol = values.protocol;
+    raw.enabled = values.enabled;
+    raw[addressKey] = values.address;
+    return raw;
+  };
+
+  const saveUpstreamDialog = (values: UpstreamServerFormValues) => {
+    if (!upstreamDialog) return;
+    const canonicalName = normalizeFakeServerName(upstreamDialog.groupId, values.name);
+    if (upstreamDialog.mode === "edit") {
+      const nextGroups = groups.map((group) => ({
+        ...group,
+        servers:
+          group.id === upstreamDialog.groupId
+            ? group.servers.map((server) =>
+                server.id === upstreamDialog.serverId
+                  ? ({
+                      ...server,
+                      name: canonicalName,
+                      protocol: values.protocol,
+                      address: values.address,
+                      enabled: values.enabled,
+                      raw: rawForServer(group.id, server, { ...values, name: canonicalName }),
+                    } satisfies EditableServer)
+                  : server
+              )
+            : group.servers,
+      }));
+      setUpstreamDialog(null);
+      void persistGroups(nextGroups);
+      return;
+    }
     const nextGroups = groups.map((group) =>
-      group.id === groupId
+      group.id === upstreamDialog.groupId
         ? {
             ...group,
             servers: [
               ...group.servers,
               {
-                id: `${groupId}:${Date.now()}:${name}`,
-                name,
-                protocol,
-                address,
-                enabled: true,
-                raw: { tag: name, protocol, addr: address, enabled: true },
+                id: `${group.id}:${Date.now()}:${canonicalName}`,
+                name: canonicalName,
+                protocol: values.protocol,
+                address: values.address,
+                enabled: values.enabled,
+                raw: rawForServer(group.id, undefined, { ...values, name: canonicalName }),
               } satisfies EditableServer,
             ],
           }
         : group
     );
+    setUpstreamDialog(null);
     void persistGroups(nextGroups, "上游 DNS 已添加");
+  };
+
+  const deleteUpstreamDialogServer = () => {
+    if (!upstreamDialog || upstreamDialog.mode !== "edit") return;
+    if (!window.confirm("确认删除这个上游 DNS？")) return;
+    const { groupId, serverId } = upstreamDialog;
+    setUpstreamDialog(null);
+    removeServer(groupId, serverId);
   };
 
   const updateGlobalSettings = (patch: Partial<GlobalSettings>) => {
@@ -596,6 +684,7 @@ export default function MosdnsSystemPage() {
         <UpstreamDNSSection
           regularGroups={regularGroups}
           fakeIPGroups={fakeIPGroups}
+          onToggleGroup={handleToggleGroup}
           onToggleServer={handleToggleServer}
           onEditServer={handleEditServer}
           onDeleteServer={handleDeleteServer}
@@ -637,6 +726,16 @@ export default function MosdnsSystemPage() {
           onClearBackup={() => void runRoutingAction("clear", "备份已清空")}
         />
       </div>
+      {activeUpstreamDialog && (
+        <UpstreamServerDialog
+          mode={activeUpstreamDialog.mode}
+          group={activeUpstreamDialog.group}
+          server={activeUpstreamDialog.server}
+          onClose={() => setUpstreamDialog(null)}
+          onSave={saveUpstreamDialog}
+          onDelete={activeUpstreamDialog.mode === "edit" ? deleteUpstreamDialogServer : undefined}
+        />
+      )}
       <ToastStack toasts={toasts} />
     </AppShell>
   );

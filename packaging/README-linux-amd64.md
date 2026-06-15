@@ -73,17 +73,19 @@ sudo ./install.sh
 sudo msf uninstall
 ```
 
+`msf uninstall` 只面向 Linux tarball/systemd 安装。Docker、Unraid、fnOS FPK 请使用对应平台的容器、插件或应用管理器卸载。
+
 也可以使用压缩包内的卸载脚本：
 
 ```sh
 sudo ./uninstall.sh
 ```
 
-默认卸载只删除 systemd 服务和 `/usr/local/bin/msf`，保留 `/opt/msf`。如需彻底删除数据目录：
+交互式终端会询问是否删除 `/opt/msf` 数据目录；非交互环境默认保留数据。如需彻底删除数据目录、配置、数据库、日志、组件二进制和 zashboard：
 
 ```sh
-sudo msf uninstall --purge
-sudo ./uninstall.sh --purge
+sudo msf uninstall --purge --yes
+sudo ./uninstall.sh --purge --yes
 ```
 
 ## 校验

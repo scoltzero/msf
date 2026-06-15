@@ -2,6 +2,7 @@ package main
 
 import (
 	"archive/tar"
+	"bufio"
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
@@ -30,6 +31,15 @@ import (
 
 var version = "0.1.0-dev"
 
+var (
+	currentEUID                        = os.Geteuid
+	systemdServiceDir                  = "/etc/systemd/system"
+	uninstallStdin           io.Reader = os.Stdin
+	uninstallStdout          io.Writer = os.Stdout
+	uninstallInputIsTerminal           = defaultInputIsTerminal
+	procRoot                           = "/proc"
+)
+
 func main() {
 	if err := run(os.Args[1:]); err != nil {
 		log.Fatal(err)
@@ -57,6 +67,8 @@ func run(args []string) error {
 	serviceName := fs.String("service-name", "msf", "systemd service name")
 	aliasName := fs.String("alias-name", "msm", "optional extra CLI alias to register under PATH/bin")
 	purge := fs.Bool("purge", false, "remove data directory during uninstall")
+	yes := fs.Bool("yes", false, "confirm destructive uninstall actions")
+	keepData := fs.Bool("keep-data", false, "keep the data directory during uninstall without prompting")
 	wait := fs.Bool("wait", true, "wait for stop to complete")
 	force := fs.Bool("force", false, "force kill process if graceful stop times out")
 	timeout := fs.Duration("timeout", 15*time.Second, "stop/uninstall timeout")
@@ -69,6 +81,12 @@ func run(args []string) error {
 	fs.BoolVar(versionFlag, "version", false, "print version")
 	helpAll := fs.Bool("help-all", false, "print full help")
 	_ = fs.Parse(args)
+	configExplicit := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "c" || f.Name == "config" {
+			configExplicit = true
+		}
+	})
 
 	if *versionFlag || command == "version" {
 		fmt.Printf("msf %s\n", version)
@@ -137,12 +155,15 @@ func run(args []string) error {
 		return licenseCommand(action)
 	case "uninstall":
 		return uninstallRuntime(uninstallOptions{
-			Prefix:      *prefix,
-			DataDir:     *configDir,
-			ServiceName: *serviceName,
-			AliasName:   *aliasName,
-			Purge:       *purge,
-			Timeout:     *timeout,
+			Prefix:          *prefix,
+			DataDir:         *configDir,
+			ServiceName:     *serviceName,
+			AliasName:       *aliasName,
+			Purge:           *purge,
+			Yes:             *yes,
+			KeepData:        *keepData,
+			Timeout:         *timeout,
+			DataDirExplicit: configExplicit,
 		})
 	default:
 		return fmt.Errorf("unknown command %q", command)
@@ -160,7 +181,7 @@ func printUsage() {
   msf doctor [--config /opt/msf]
   msf cloudflare-redirect start|stop|scan|apply|status [--config PATH]
   msf update [--repo scoltzero/msf] [--url https://.../msf-linux-amd64.tar.gz]
-  msf uninstall [--config /opt/msf] [--prefix /usr/local] [--service-name msf] [--purge]
+  msf uninstall [--config /opt/msf] [--prefix /usr/local] [--service-name msf] [--purge --yes|--keep-data]
   msf migrate [--config /opt/msf]
   msf reset-password [--config /opt/msf] [password]
   msf service install|uninstall [--config /opt/msf]
@@ -169,7 +190,8 @@ func printUsage() {
 
 Notes:
   stop sends SIGTERM to the running msf process and waits for MosDNS/Mihomo child services to exit.
-  uninstall removes the systemd unit and binary. It keeps the data directory unless --purge is provided.
+  uninstall is for Linux tarball/systemd installs. Docker, Unraid, and fnOS FPK installs must be removed from their platform manager.
+  uninstall asks whether to remove the data directory on interactive terminals. In automation, pass --purge --yes to remove it or --keep-data to retain it.
 `)
 }
 
@@ -378,7 +400,7 @@ func dataDirFromUnraidConfig() string {
 }
 
 func dataDirFromSystemdService(service string) string {
-	path := filepath.Join("/etc/systemd/system", service+".service")
+	path := filepath.Join(systemdServiceDir, service+".service")
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return ""
@@ -602,38 +624,48 @@ func runDoctor(dataDir, serviceName string) error {
 }
 
 type uninstallOptions struct {
-	Prefix      string
-	DataDir     string
-	ServiceName string
-	AliasName   string
-	Purge       bool
-	Timeout     time.Duration
+	Prefix          string
+	DataDir         string
+	DataDirExplicit bool
+	ServiceName     string
+	AliasName       string
+	Purge           bool
+	Yes             bool
+	KeepData        bool
+	Timeout         time.Duration
 }
 
 func uninstallRuntime(opts uninstallOptions) error {
 	if server.IsDockerRuntime() {
-		return errors.New("Docker containers should be removed by stopping/removing the container; application data is kept in the mounted volume")
-	}
-	if os.Geteuid() != 0 {
-		return errors.New("uninstall must be run as root")
+		return errors.New("Docker / Compose installs must be removed from Docker, Compose, or your container manager; remove the container and its volume there")
 	}
 	if isUnraidRuntime() {
 		return errors.New("on Unraid, remove msf from the WebGUI plugin page; application data is kept under /mnt/user/appdata/msf")
 	}
+	if isFnOSFPKRuntime() {
+		return errors.New("fnOS FPK installs must be removed from fnOS / 飞牛应用中心 or the FPK package manager")
+	}
+	if currentEUID() != 0 {
+		return errors.New("uninstall must be run as root")
+	}
 	if opts.Prefix == "" {
 		opts.Prefix = "/usr/local"
-	}
-	if opts.DataDir == "" {
-		opts.DataDir = defaultDataDir()
 	}
 	if opts.ServiceName == "" {
 		opts.ServiceName = "msf"
 	}
+	opts.DataDir = resolveUninstallDataDir(opts)
 	if opts.Timeout <= 0 {
 		opts.Timeout = 15 * time.Second
 	}
+	purge, err := resolveUninstallPurge(opts)
+	if err != nil {
+		return err
+	}
 
-	servicePath := filepath.Join("/etc/systemd/system", opts.ServiceName+".service")
+	_ = stopOwnedRuntimeProcesses(opts.DataDir, opts.Timeout)
+	_ = stopRuntime(opts.DataDir, true, opts.Timeout, true)
+	servicePath := filepath.Join(systemdServiceDir, opts.ServiceName+".service")
 	if commandExists("systemctl") && fileExists(servicePath) {
 		_ = runQuiet("systemctl", "stop", opts.ServiceName)
 		_ = runQuiet("systemctl", "disable", opts.ServiceName)
@@ -645,6 +677,7 @@ func uninstallRuntime(opts uninstallOptions) error {
 	} else {
 		_ = stopRuntime(opts.DataDir, true, opts.Timeout, true)
 	}
+	_ = stopOwnedRuntimeProcesses(opts.DataDir, opts.Timeout)
 
 	binDest := filepath.Join(opts.Prefix, "bin", "msf")
 	if err := os.Remove(binDest); err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -654,7 +687,7 @@ func uninstallRuntime(opts uninstallOptions) error {
 		removeAliasIfOwned(filepath.Join(opts.Prefix, "bin", opts.AliasName), binDest)
 	}
 
-	if opts.Purge {
+	if purge {
 		if err := safeRemoveAll(opts.DataDir); err != nil {
 			return err
 		}
@@ -664,6 +697,207 @@ func uninstallRuntime(opts uninstallOptions) error {
 	fmt.Printf("removed msf binary and service\n")
 	fmt.Printf("kept data directory: %s\n", opts.DataDir)
 	return nil
+}
+
+func resolveUninstallDataDir(opts uninstallOptions) string {
+	if opts.DataDirExplicit && strings.TrimSpace(opts.DataDir) != "" {
+		return opts.DataDir
+	}
+	if opts.ServiceName == "" {
+		opts.ServiceName = "msf"
+	}
+	if dataDir := dataDirFromSystemdService(opts.ServiceName); strings.TrimSpace(dataDir) != "" {
+		return dataDir
+	}
+	if strings.TrimSpace(opts.DataDir) != "" {
+		return opts.DataDir
+	}
+	return defaultDataDir()
+}
+
+func resolveUninstallPurge(opts uninstallOptions) (bool, error) {
+	if opts.Purge && opts.KeepData {
+		return false, errors.New("--purge and --keep-data cannot be used together")
+	}
+	if opts.KeepData {
+		return false, nil
+	}
+	if opts.Purge {
+		if opts.Yes {
+			return true, nil
+		}
+		if !uninstallInputIsTerminal() {
+			return false, errors.New("refusing to purge data directory in non-interactive mode without --yes")
+		}
+		return confirmRemoveDataDir(opts.DataDir)
+	}
+	if !uninstallInputIsTerminal() {
+		fmt.Fprintf(uninstallStdout, "non-interactive uninstall: keeping data directory %s; pass --purge --yes to remove it\n", opts.DataDir)
+		return false, nil
+	}
+	return confirmRemoveDataDir(opts.DataDir)
+}
+
+func confirmRemoveDataDir(dataDir string) (bool, error) {
+	fmt.Fprintf(uninstallStdout, "Remove MSF data directory %s? This deletes configs, database, logs, components, and zashboard. [y/N]: ", dataDir)
+	line, err := bufio.NewReader(uninstallStdin).ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return false, err
+	}
+	switch strings.ToLower(strings.TrimSpace(line)) {
+	case "y", "yes":
+		return true, nil
+	default:
+		return false, nil
+	}
+}
+
+func defaultInputIsTerminal() bool {
+	info, err := os.Stdin.Stat()
+	return err == nil && (info.Mode()&os.ModeCharDevice) != 0
+}
+
+func stopOwnedRuntimeProcesses(dataDir string, timeout time.Duration) error {
+	if timeout <= 0 {
+		timeout = 15 * time.Second
+	}
+	var errs []string
+	for _, spec := range ownedRuntimeSpecs(dataDir) {
+		if err := stopPIDFileProcess(spec.Name, spec.PIDFile, timeout); err != nil {
+			errs = append(errs, err.Error())
+		}
+	}
+	for _, proc := range ownedComponentProcesses(dataDir) {
+		if err := terminateProcess(proc.PID, timeout); err != nil {
+			errs = append(errs, fmt.Sprintf("%s pid=%d: %v", proc.Name, proc.PID, err))
+		}
+	}
+	if len(errs) > 0 {
+		return errors.New(strings.Join(errs, "; "))
+	}
+	return nil
+}
+
+type ownedRuntimeSpec struct {
+	Name    string
+	PIDFile string
+}
+
+func ownedRuntimeSpecs(dataDir string) []ownedRuntimeSpec {
+	return []ownedRuntimeSpec{
+		{Name: "mihomo", PIDFile: filepath.Join(dataDir, "data", "mihomo.pid")},
+		{Name: "mosdns", PIDFile: filepath.Join(dataDir, "data", "mosdns.pid")},
+	}
+}
+
+func stopPIDFileProcess(name, pidFile string, timeout time.Duration) error {
+	pid := readIntFile(pidFile)
+	if pid <= 0 {
+		_ = os.Remove(pidFile)
+		return nil
+	}
+	if !processAlive(pid) {
+		_ = os.Remove(pidFile)
+		return nil
+	}
+	if err := terminateProcess(pid, timeout); err != nil {
+		return fmt.Errorf("%s pid=%d: %w", name, pid, err)
+	}
+	_ = os.Remove(pidFile)
+	return nil
+}
+
+type ownedProcess struct {
+	Name string
+	PID  int
+	Exe  string
+}
+
+func ownedComponentProcesses(dataDir string) []ownedProcess {
+	if runtime.GOOS != "linux" {
+		return nil
+	}
+	entries, err := os.ReadDir(procRoot)
+	if err != nil {
+		return nil
+	}
+	roots := []struct {
+		Name string
+		Dir  string
+	}{
+		{Name: "mihomo", Dir: filepath.Join(dataDir, "data", "binaries", "mihomo")},
+		{Name: "mosdns", Dir: filepath.Join(dataDir, "data", "binaries", "mosdns")},
+	}
+	var out []ownedProcess
+	currentPID := os.Getpid()
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		pid, err := strconv.Atoi(entry.Name())
+		if err != nil || pid <= 0 || pid == currentPID {
+			continue
+		}
+		exe, err := os.Readlink(filepath.Join(procRoot, entry.Name(), "exe"))
+		if err != nil {
+			continue
+		}
+		exe = strings.TrimSuffix(exe, " (deleted)")
+		for _, root := range roots {
+			if pathWithin(exe, root.Dir) {
+				out = append(out, ownedProcess{Name: root.Name, PID: pid, Exe: exe})
+				break
+			}
+		}
+	}
+	return out
+}
+
+func terminateProcess(pid int, timeout time.Duration) error {
+	if pid <= 0 || !processAlive(pid) {
+		return nil
+	}
+	_ = syscall.Kill(-pid, syscall.SIGTERM)
+	_ = syscall.Kill(pid, syscall.SIGTERM)
+	deadline := time.Now().Add(timeout)
+	for processAlive(pid) {
+		if time.Now().After(deadline) {
+			_ = syscall.Kill(-pid, syscall.SIGKILL)
+			_ = syscall.Kill(pid, syscall.SIGKILL)
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if processAlive(pid) {
+		return fmt.Errorf("process did not exit")
+	}
+	return nil
+}
+
+func readIntFile(path string) int {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return 0
+	}
+	n, _ := strconv.Atoi(stringTrim(string(b)))
+	return n
+}
+
+func pathWithin(path, root string) bool {
+	if strings.TrimSpace(path) == "" || strings.TrimSpace(root) == "" {
+		return false
+	}
+	pathAbs, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+	rootAbs, err := filepath.Abs(root)
+	if err != nil {
+		return false
+	}
+	pathClean := filepath.Clean(pathAbs)
+	rootClean := filepath.Clean(rootAbs)
+	return pathClean == rootClean || strings.HasPrefix(pathClean, rootClean+string(filepath.Separator))
 }
 
 type updateOptions struct {
@@ -752,6 +986,9 @@ func serviceCommand(action string, opts serviceOptions) error {
 	if server.IsDockerRuntime() && (action == "install" || action == "uninstall" || action == "remove") {
 		return errors.New("Docker containers do not use systemd service install/uninstall; update or remove the container instead")
 	}
+	if isFnOSFPKRuntime() && (action == "install" || action == "uninstall" || action == "remove") {
+		return errors.New("fnOS FPK installs must be managed from fnOS / 飞牛应用中心 or the FPK package manager")
+	}
 	switch action {
 	case "install":
 		return installSystemdService(opts)
@@ -771,11 +1008,14 @@ func serviceCommand(action string, opts serviceOptions) error {
 }
 
 func installSystemdService(opts serviceOptions) error {
-	if os.Geteuid() != 0 {
+	if currentEUID() != 0 {
 		return errors.New("service install must be run as root")
 	}
 	if isUnraidRuntime() {
 		return errors.New("on Unraid, use /etc/rc.d/rc.msf and the WebGUI plugin page instead of systemd service install")
+	}
+	if isFnOSFPKRuntime() {
+		return errors.New("on fnOS FPK installs, manage msf from fnOS / 飞牛应用中心 or the FPK package manager")
 	}
 	if opts.ServiceName == "" {
 		opts.ServiceName = "msf"
@@ -789,7 +1029,7 @@ func installSystemdService(opts serviceOptions) error {
 	if err := os.MkdirAll(opts.DataDir, 0755); err != nil {
 		return err
 	}
-	servicePath := filepath.Join("/etc/systemd/system", opts.ServiceName+".service")
+	servicePath := filepath.Join(systemdServiceDir, opts.ServiceName+".service")
 	body := fmt.Sprintf(`[Unit]
 Description=msf service
 After=network-online.target
@@ -833,13 +1073,16 @@ func selfUpdateArchiveName(goos, goarch string) string {
 }
 
 func removeSystemdService(serviceName string) error {
-	if os.Geteuid() != 0 {
+	if currentEUID() != 0 {
 		return errors.New("service uninstall must be run as root")
 	}
 	if isUnraidRuntime() {
 		return errors.New("on Unraid, remove msf from the WebGUI plugin page instead of systemd service uninstall")
 	}
-	servicePath := filepath.Join("/etc/systemd/system", serviceName+".service")
+	if isFnOSFPKRuntime() {
+		return errors.New("on fnOS FPK installs, remove msf from fnOS / 飞牛应用中心 or the FPK package manager")
+	}
+	servicePath := filepath.Join(systemdServiceDir, serviceName+".service")
 	_ = runQuiet("systemctl", "stop", serviceName)
 	_ = runQuiet("systemctl", "disable", serviceName)
 	if err := os.Remove(servicePath); err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -918,7 +1161,7 @@ func runtimePID(dataDir string) int {
 }
 
 func systemdUnitExists(serviceName string) bool {
-	return commandExists("systemctl") && fileExists(filepath.Join("/etc/systemd/system", serviceName+".service"))
+	return commandExists("systemctl") && fileExists(filepath.Join(systemdServiceDir, serviceName+".service"))
 }
 
 func commandOutput(name string, args ...string) string {
@@ -1101,12 +1344,41 @@ func isUnraidRuntime() bool {
 	return false
 }
 
+func isFnOSFPKRuntime() bool {
+	for _, key := range []string{"MSF_RUNTIME", "MSF_PACKAGE_RUNTIME", "MSF_PACKAGE_TYPE", "FNOS_RUNTIME", "FNOS_PACKAGE_TYPE"} {
+		value := strings.ToLower(strings.TrimSpace(os.Getenv(key)))
+		if value == "fnos" || value == "fpk" || value == "fnos-fpk" || strings.Contains(value, "fnos") || strings.Contains(value, "fpk") {
+			return true
+		}
+	}
+	return fileExists("/etc/fnos-release") ||
+		fileExists("/etc/feiniu-release") ||
+		fileExists("/etc/fnOS-release") ||
+		fileExists("/usr/local/fnos") ||
+		fileExists("/var/packages/msf")
+}
+
 func processAlive(pid int) bool {
 	proc, err := os.FindProcess(pid)
 	if err != nil {
 		return false
 	}
-	return proc.Signal(syscall.Signal(0)) == nil
+	if proc.Signal(syscall.Signal(0)) != nil {
+		return false
+	}
+	if runtime.GOOS == "linux" && processZombie(pid) {
+		return false
+	}
+	return true
+}
+
+func processZombie(pid int) bool {
+	b, err := os.ReadFile(filepath.Join(procRoot, strconv.Itoa(pid), "stat"))
+	if err != nil {
+		return false
+	}
+	fields := strings.Fields(string(b))
+	return len(fields) > 2 && fields[2] == "Z"
 }
 
 func stringTrim(s string) string {

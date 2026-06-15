@@ -4,9 +4,9 @@
 
 `msf` 是一个面向 MosDNS + Mihomo 工作流的 MSM 风格管理面板重构版。项目目标是提供可自部署、可审计的 DNS 分流、透明代理、Mihomo 管理和 Unraid 插件体验。
 
-当前发布版本：`v0.3.3`
+当前发布版本：`v0.3.4`
 
-> **Tips：Cloudflare Redirect CLI 插件为测试功能。** 当前版本新增 `msf cloudflare-redirect`，用于让“不走代理的客户端”访问用户指定的 Cloudflare 盾站时，返回本机网络实测较快的 Cloudflare CDN IPv4/IPv6。该功能依赖本机网络、运营商路由、Cloudflare Anycast、域名名单质量和 MosDNS 当前配置，不保证一定比原解析更快或更稳定；如遇到解析异常、访问变慢、IPv6 不通、规则未生效等问题，请及时反馈。
+> **Tips：Cloudflare Redirect CLI 插件为测试功能。** `msf cloudflare-redirect` 用于让“不走代理的客户端”访问用户指定的 Cloudflare 盾站时，返回本机网络实测较快的 Cloudflare CDN IPv4/IPv6。该功能依赖本机网络、运营商路由、Cloudflare Anycast、域名名单质量和 MosDNS 当前配置，不保证一定比原解析更快或更稳定；如遇到解析异常、访问变慢、IPv6 不通、规则未生效等问题，请及时反馈。
 
 ## 功能概览
 
@@ -34,25 +34,25 @@
 GitHub Release：
 
 ```text
-https://github.com/scoltzero/msf/releases/tag/v0.3.3
+https://github.com/scoltzero/msf/releases/tag/v0.3.4
 ```
 
 Linux x86_64 安装包：
 
 ```text
-https://github.com/scoltzero/msf/releases/download/v0.3.3/msf-linux-amd64.tar.gz
+https://github.com/scoltzero/msf/releases/download/v0.3.4/msf-linux-amd64.tar.gz
 ```
 
 Linux ARM64 安装包：
 
 ```text
-https://github.com/scoltzero/msf/releases/download/v0.3.3/msf-linux-arm64.tar.gz
+https://github.com/scoltzero/msf/releases/download/v0.3.4/msf-linux-arm64.tar.gz
 ```
 
 Unraid 插件文件：
 
 ```text
-https://github.com/scoltzero/msf/releases/download/v0.3.3/msf.plg
+https://github.com/scoltzero/msf/releases/download/v0.3.4/msf.plg
 ```
 
 ## Linux 安装
@@ -61,20 +61,20 @@ https://github.com/scoltzero/msf/releases/download/v0.3.3/msf.plg
 
 ```bash
 curl -L -o msf-linux-amd64.tar.gz \
-  https://github.com/scoltzero/msf/releases/download/v0.3.3/msf-linux-amd64.tar.gz
+  https://github.com/scoltzero/msf/releases/download/v0.3.4/msf-linux-amd64.tar.gz
 
 tar -xzf msf-linux-amd64.tar.gz -C /tmp
-sudo /tmp/msf-0.3.3-linux-amd64/install.sh
+sudo /tmp/msf-0.3.4-linux-amd64/install.sh
 ```
 
 ARM64 / aarch64 使用：
 
 ```bash
 curl -L -o msf-linux-arm64.tar.gz \
-  https://github.com/scoltzero/msf/releases/download/v0.3.3/msf-linux-arm64.tar.gz
+  https://github.com/scoltzero/msf/releases/download/v0.3.4/msf-linux-arm64.tar.gz
 
 tar -xzf msf-linux-arm64.tar.gz -C /tmp
-sudo /tmp/msf-0.3.3-linux-arm64/install.sh
+sudo /tmp/msf-0.3.4-linux-arm64/install.sh
 ```
 
 安装脚本会完成这些操作：
@@ -130,17 +130,19 @@ sudo msf stop --timeout 20s --force
 sudo msf uninstall
 ```
 
-默认卸载只删除 systemd 服务和 `/usr/local/bin/msf`，会保留 `/opt/msf` 数据目录。需要连配置、数据库、日志、组件二进制一起删除时再显式执行：
+`msf uninstall` 只面向 Linux tarball/systemd 安装。Docker、Unraid、fnOS FPK 请使用对应平台的容器、插件或应用管理器卸载。
+
+交互式终端会询问是否删除 `/opt/msf` 数据目录；非交互环境默认保留数据。需要连配置、数据库、日志、组件二进制和 zashboard 一起删除时，显式执行：
 
 ```bash
-sudo msf uninstall --purge
+sudo msf uninstall --purge --yes
 ```
 
 如果还保留着解压后的发布包，也可以在包目录内运行：
 
 ```bash
 sudo ./uninstall.sh
-sudo ./uninstall.sh --purge
+sudo ./uninstall.sh --purge --yes
 ```
 
 ## Unraid 插件安装
@@ -148,7 +150,7 @@ sudo ./uninstall.sh --purge
 在 Unraid WebGUI 中打开 **Plugins / Install Plugin**，填入插件地址：
 
 ```text
-https://github.com/scoltzero/msf/releases/download/v0.3.3/msf.plg
+https://github.com/scoltzero/msf/releases/download/v0.3.4/msf.plg
 ```
 
 安装完成后打开 **Settings / MSF Free**，进入轻量插件控制页，再点击打开 WebUI。完整管理界面运行在独立 WebUI 中，不嵌入 Unraid Settings 页面。
@@ -547,26 +549,26 @@ go run ./cmd/msf serve -c ./data -p 7777
 构建 Linux x86_64 压缩包：
 
 ```bash
-make package VERSION=0.3.3 GOOS=linux GOARCH=amd64
+make package VERSION=0.3.4 GOOS=linux GOARCH=amd64
 ```
 
 构建 Linux ARM64 压缩包：
 
 ```bash
-make package VERSION=0.3.3 GOOS=linux GOARCH=arm64
+make package VERSION=0.3.4 GOOS=linux GOARCH=arm64
 ```
 
 构建 Unraid 插件产物：
 
 ```bash
-make unraid VERSION=0.3.3 UNRAID_VERSION=0.3.3 GITHUB_REPO=scoltzero/msf RELEASE_TAG=v0.3.3
+make unraid VERSION=0.3.4 UNRAID_VERSION=0.3.4 GITHUB_REPO=scoltzero/msf RELEASE_TAG=v0.3.4
 ```
 
 构建产物：
 
 - `dist/msf-linux-amd64.tar.gz`
 - `dist/msf-linux-arm64.tar.gz`
-- `dist/unraid/msf-0.3.3-x86_64-1.txz`
+- `dist/unraid/msf-0.3.4-x86_64-1.txz`
 - `dist/unraid/msf.plg`
 - `msf.plg`
 

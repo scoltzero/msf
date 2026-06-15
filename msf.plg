@@ -1,26 +1,26 @@
 <!DOCTYPE PLUGIN [
 <!ENTITY name "msf">
 <!ENTITY author "luochuhan">
-<!ENTITY version "0.3.3">
+<!ENTITY version "0.3.4">
 <!ENTITY githubRepo "scoltzero/msf">
-<!ENTITY releaseTag "v0.3.3">
-<!ENTITY packageName "msf-0.3.3-x86_64-1">
+<!ENTITY releaseTag "v0.3.4">
+<!ENTITY packageName "msf-0.3.4-x86_64-1">
 <!ENTITY packageFile "&packageName;.txz">
 <!ENTITY packageURL "https://github.com/&githubRepo;/releases/download/&releaseTag;/&packageFile;">
-<!ENTITY packageSHA256 "ac237da34af976a2f94e688494124c13fa5ce841139c4f5b649196e03ddb8c71">
+<!ENTITY packageSHA256 "193b8b298362d89c0c60e33bdf5e2e9747703ccf63f03f75e02f07912ecbecb7">
 ]>
 <PLUGIN name="&name;" author="&author;" version="&version;" pluginURL="https://raw.githubusercontent.com/&githubRepo;/main/msf.plg" launch="Settings/&name;" support="https://github.com/&githubRepo;/issues" icon="network-wired" min="6.12.0">
   <CHANGES>
     <![CDATA[
-### msf 0.3.3
-- 新增 Cloudflare Redirect CLI 测试插件：`msf cloudflare-redirect` / `msf cf-redirect`。
-- 支持 start、stop、scan、apply、status，用于扫描 Cloudflare CDN IPv4/IPv6、注入 MosDNS 直连客户端分支和回滚配置。
-- 默认创建 `configs/cloudflare-redirect/cfyouxuan.yaml`，插件默认关闭，用户可编辑手动域名名单或订阅后启用。
-- 新增初始化预检，检查 root 权限、时区、53 端口和运行端口占用，并可自动修复 systemd-resolved DNS stub 占用 53 端口的问题。
-- 改进组件更新校验状态，保留已安装核心的 digest、校验来源和校验时间，并优化本地上传来源展示。
-- 改进 MosDNS 规则源添加弹窗、在线分流/广告拦截规则源交互和 rewrite 分类映射。
-- 修复 systemd 环境下 WebUI 自更新安装器可能被当前服务生命周期影响的问题。
-- 侧边栏分组展开状态改为会话内持久化，README 补充 Cloudflare Redirect 完整使用文档。
+### msf 0.3.4
+- 改进 Linux 卸载流程：交互式终端会询问是否删除数据目录，自动化场景需要 `--purge --yes` 才会清理数据，也可用 `--keep-data` 明确保留。
+- 卸载时会根据 PID 文件和数据目录下的组件二进制路径清理 Mihomo/MosDNS 残留进程，并更安全地拒绝高风险数据目录路径。
+- 阻止 Docker、Unraid、fnOS FPK 环境误走 Linux tarball/systemd 卸载或 service install/uninstall 流程。
+- 改进 Mihomo 默认配置：启用 sniffing，补充 IPv6 FakeIP、Google/AI/PT/Microsoft/GameDownload/Private 规则源与路由，并移除示例机场订阅占位。
+- 改进 MosDNS FakeIP 上游默认值和 tag 规范化，修正 `nocnfake` / `cnfake` 语义反置问题。
+- 新增 MosDNS 上游 DNS 添加/编辑弹窗和分组级启用开关，编辑时保留原始 server 字段结构。
+- 修复 MosDNS 系统设置页开关映射错误。
+- 修复 MosDNS 客户端扫描重置后未清空 `mosdns_client_ips` 和 `client_ip.txt` 的问题。
     ]]>
   </CHANGES>
 
@@ -60,8 +60,8 @@ set +e
 if [ -x /etc/rc.d/rc.msf ]; then
   /etc/rc.d/rc.msf stop
 fi
-removepkg msf-0.3.3-x86_64-1
-rm -f /boot/config/plugins/msf/msf-0.3.3-x86_64-1.txz
+removepkg msf-0.3.4-x86_64-1
+rm -f /boot/config/plugins/msf/msf-0.3.4-x86_64-1.txz
 echo "msf plugin removed. Persistent data remains under /mnt/user/appdata/msf unless you delete it manually."
       ]]>
     </INLINE>

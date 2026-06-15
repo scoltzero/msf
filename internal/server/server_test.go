@@ -70,7 +70,7 @@ func TestSetupInitializeLoginAndGeneratedConfigs(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(cfg)
-	for _, want := range []string{"proxy-providers:", "msf_manual:", "https://example.com/a.yaml", "机场A", "机场1", "tproxy-port: 7896", "listen: 0.0.0.0:6666", "fake-ip-range: 28.0.0.1/8", "UrlTest: &UrlTest", "DOMAIN-SUFFIX,sssaicode.com,DIRECT", "DOMAIN-SUFFIX,huggingface.co,美国节点", "proxies: [DIRECT], include-all: true, include-all-proxies: true, include-all-providers: true", "name: 机场节点, type: select, proxies: [DIRECT], include-all: true, include-all-proxies: true, include-all-providers: true"} {
+	for _, want := range []string{"proxy-providers:", "msf_manual:", "https://example.com/a.yaml", "机场A", "机场1", "tproxy-port: 7896", "listen: 0.0.0.0:6666", "fake-ip-range: 28.0.0.1/8", "UrlTest: &UrlTest", "global-client-fingerprint: chrome", "sniffer:", "enable: true", "name: 谷歌服务", "Private-Domain:", "Private-IP:", "RULE-SET,Google,谷歌服务", "RULE-SET,Microsoft-CN,全球直连", "name: 机场节点, type: select, include-all: true, include-all-proxies: true, include-all-providers: true"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("mihomo config missing %q:\n%s", want, text)
 		}
@@ -1403,6 +1403,44 @@ func TestMosDNSClientMoveSyncsWhitelistFile(t *testing.T) {
 	}
 }
 
+func TestMosDNSClientScanResetClearsClientIPList(t *testing.T) {
+	app := newTestApp(t)
+	token := tokenForRole(t, app, "admin")
+	create := requestJSON(t, app, http.MethodPost, "/api/v1/mosdns/clients", token, map[string]any{
+		"ip": "192.168.10.91", "hostname": "reset-listed-client",
+	})
+	if create.Code != http.StatusOK {
+		t.Fatalf("create client status=%d body=%s", create.Code, create.Body.String())
+	}
+	move := requestJSON(t, app, http.MethodPost, "/api/v1/mosdns/clients/192.168.10.91/move", token, map[string]string{"status": "allow"})
+	if move.Code != http.StatusOK {
+		t.Fatalf("move status=%d body=%s", move.Code, move.Body.String())
+	}
+	listFile, err := os.ReadFile(filepath.Join(app.DataDir, "configs/mosdns/client_ip.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(listFile), "192.168.10.91") {
+		t.Fatalf("client_ip.txt missing moved client before reset: %s", string(listFile))
+	}
+
+	reset := requestJSON(t, app, http.MethodPost, "/api/v1/mosdns/clients/scan/reset", token, nil)
+	if reset.Code != http.StatusOK {
+		t.Fatalf("reset scan status=%d body=%s", reset.Code, reset.Body.String())
+	}
+	clientIPs := requestJSON(t, app, http.MethodGet, "/api/v1/mosdns/system/client-ip-list", token, nil)
+	if clientIPs.Code != http.StatusOK || strings.Contains(clientIPs.Body.String(), "192.168.10.91") || !strings.Contains(clientIPs.Body.String(), `"ips":[]`) {
+		t.Fatalf("reset should clear persisted client list: status=%d body=%s", clientIPs.Code, clientIPs.Body.String())
+	}
+	listFile, err = os.ReadFile(filepath.Join(app.DataDir, "configs/mosdns/client_ip.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(listFile), "192.168.10.91") {
+		t.Fatalf("client_ip.txt should be cleared by scan reset: %s", string(listFile))
+	}
+}
+
 func TestMosDNSClientProxyModeKeepsSingleClientIPList(t *testing.T) {
 	app := newTestApp(t)
 	token := tokenForRole(t, app, "admin")
@@ -1841,7 +1879,7 @@ func TestMihomoConfigAndLogPanelCompatibility(t *testing.T) {
 		t.Fatalf("mihomo logs filtering mismatch: status=%d body=%s", logs.Code, logs.Body.String())
 	}
 	config := requestJSON(t, app, http.MethodGet, "/api/v1/mihomo/config", token, nil)
-	if config.Code != http.StatusOK || !strings.Contains(config.Body.String(), "proxy-providers:") || !strings.Contains(config.Body.String(), "DOMAIN-SUFFIX,sssaicode.com,DIRECT") {
+	if config.Code != http.StatusOK || !strings.Contains(config.Body.String(), "proxy-providers:") || !strings.Contains(config.Body.String(), "RULE-SET,Google,谷歌服务") {
 		t.Fatalf("mihomo raw config should expose complete config.yaml: status=%d body=%s", config.Code, config.Body.String())
 	}
 	put := requestJSON(t, app, http.MethodPut, "/api/v1/mihomo/config/config.yaml", token, map[string]any{"content": "mode: rule\nmixed-port: 7892\n"})

@@ -15,14 +15,14 @@ Update and remove msf from the Unraid Plugins page (not via the in-app updater).
 <Beta>False</Beta>
 <Date>2026-06-15</Date>
 <Changes>
-### msf 0.3.3
-- Added the experimental Cloudflare Redirect CLI plugin: `msf cloudflare-redirect` / `msf cf-redirect`.
-- Added start, stop, scan, apply, and status actions for Cloudflare CDN IPv4/IPv6 scanning, MosDNS direct-client injection, and rollback.
-- Added the default `configs/cloudflare-redirect/cfyouxuan.yaml` file. The plugin remains disabled by default and can be enabled after editing manual domains or subscriptions.
-- Added setup preflight checks for root permission, timezone, port 53, and runtime port occupancy, with automatic systemd-resolved DNS stub remediation when supported.
-- Improved component update verification state by preserving installed digest, verification source, and verification time, with clearer local-upload provenance.
-- Improved MosDNS rule-source dialogs, adblock/online-routing source interactions, and rewrite category mapping.
-- Fixed self-update installation under systemd so the installer is detached from the current service lifecycle.
-- Persisted sidebar group open state within the session and expanded README documentation for Cloudflare Redirect usage and troubleshooting.
+### msf 0.3.4
+- Improved Linux uninstall behavior: interactive terminals ask whether to remove the data directory, automation must pass `--purge --yes` to delete data, and `--keep-data` explicitly retains it.
+- Uninstall now stops Mihomo/MosDNS leftovers using PID files and component binary paths under the data directory, with stronger protection against broad purge paths.
+- Docker, Unraid, and fnOS FPK installs are now blocked from the Linux tarball/systemd uninstall and service install/uninstall paths.
+- Improved the default Mihomo config with sniffing, IPv6 FakeIP, Google/AI/PT/Microsoft/GameDownload/Private rule providers and routes, and removed the sample airport subscription placeholder.
+- Corrected MosDNS FakeIP upstream defaults and tag normalization for `nocnfake` / `cnfake`.
+- Added a MosDNS upstream DNS add/edit dialog and group-level enable toggles while preserving raw upstream server fields on save.
+- Fixed MosDNS system setting switch mappings.
+- Fixed MosDNS client scan reset so `mosdns_client_ips` and `client_ip.txt` are cleared together.
 </Changes>
 </Plugin>

@@ -1,5 +1,81 @@
 # 更新日志
 
+## v0.3.4 - 2026-06-15
+
+### 中文
+
+#### 说明
+
+- 这是一次修复与体验发布，重点覆盖 Linux 卸载清理、平台卸载边界、Mihomo 默认配置、MosDNS FakeIP 上游编辑、MosDNS 系统开关映射和客户端扫描重置。
+- 本版本发布资产数量与 v0.3.3 保持一致：Linux amd64/arm64 tarball、Unraid `.txz`/`.plg`，以及从同步后的 `fnos-fpk` 分支构建的 fnOS x86/arm `.fpk` 包，共 12 个 release assets。
+
+#### 新增
+
+- 新增 MosDNS 上游 DNS 添加/编辑弹窗，替代浏览器 `prompt`，支持名称、协议、地址和启用状态的结构化编辑，并在编辑弹窗内提供删除入口。
+- 新增 MosDNS 上游分组级启用/禁用开关，可一次切换同一分组下全部上游服务器。
+- 新增 FakeIP 上游 tag 规范化逻辑：`nocnfake`、`cnfake` 会兼容旧的 `sing-box`、`mihomo`、`foreign-fakeip`、`cn-fakeip` 等历史名称并保存为规范 tag。
+- 新增 Linux 卸载交互确认与自动化参数：`msf uninstall` 会在交互式终端询问是否删除数据目录，自动化场景可使用 `--purge --yes` 明确清理，或使用 `--keep-data` 明确保留数据。
+- 新增卸载时从 systemd service 自动识别数据目录的能力；只有显式传入 `--config` 时才强制使用用户给定目录。
+- 新增卸载时清理托管组件进程的能力：会根据 Mihomo/MosDNS PID 文件和数据目录下的组件二进制路径终止残留进程，并处理僵尸进程状态判断。
+- 新增 fnOS FPK 运行环境识别，阻止在 fnOS FPK 安装中执行 Linux systemd service install/uninstall 或 Linux tarball uninstall。
+- 新增 Mihomo 默认配置中的 sniffing 配置、IPv6 FakeIP 网段、DNS nameserver、Google 专用策略组、私有域名/IP 规则源、AI 域名规则源、PT 非中国规则源、Microsoft 中国规则源和游戏下载中国规则源。
+
+#### 变更
+
+- 调整 MosDNS FakeIP 上游默认配置：`nocnfake` 默认指向 `udp://127.0.0.1:6666` 且启用，`cnfake` 默认指向 `udp://127.0.0.1:1053` 且关闭，避免国内/代理 FakeIP 上游语义反置。
+- MosDNS 上游页面现在按固定顺序展示 `domestic`、`foreign`、`foreignecs`、`nocnfake`、`cnfake`，FakeIP 分组默认展开。
+- MosDNS 上游保存会保留原始 server 字段结构，并根据原始配置选择 `addr` 或 `server_addr` 写回，减少编辑后丢失额外字段的风险。
+- Mihomo 默认 GEO 数据地址改为 MetaCubeX GitHub release 直链，默认 `proxy-providers` 改为空对象，移除旧的示例机场订阅占位。
+- Mihomo 默认路由补充局域网网段直连、私有域名/IP 直连、`gh-proxy.com` 直连、`8.8.4.4` / `1.0.0.1` 代理规则、Google 独立策略、AI 域名、Microsoft-CN、GameDownload-CN 和 PT-!CN 规则。
+- Mihomo 默认美国节点筛选增加 `UWest` / `UEast` 关键字，`机场节点` 分组保留 include-all/provider 逻辑但不再额外硬编码 `DIRECT`。
+- README 和 Linux tarball README 更新卸载说明，明确 `msf uninstall` 只面向 Linux tarball/systemd 安装，Docker、Unraid、fnOS FPK 需要使用对应平台管理器卸载。
+
+#### 修复
+
+- 修复 MosDNS 系统设置页开关映射错误，`requestBlock`、`typeBlock`、`ipv6Block`、`adBlock`、过期缓存开关现在对应正确的 `switch` 配置。
+- 修复 MosDNS 客户端扫描重置只清空 `mosdns_clients`、未清空 `mosdns_client_ips` 和 `client_ip.txt` 的问题，重置后客户端 IP 白名单文件会同步刷新。
+- 修复 Linux 卸载默认行为过于激进或不清晰的问题：非交互环境默认保留数据，`--purge` 在非交互场景必须搭配 `--yes`。
+- 修复卸载脚本在 Docker、Unraid、fnOS FPK 环境中可能误走 Linux systemd/tarball 卸载流程的问题。
+- 修复卸载过程中可能只停止 `msf` 主进程、未可靠终止 Mihomo/MosDNS 子进程或残留组件进程的问题。
+- 修复 `safeRemoveAll` 宽路径保护不足的问题，进一步拒绝 `/opt/`、`/usr`、`/mnt`、`/mnt/cache` 等高风险路径。
+
+### English
+
+#### Notes
+
+- This is a fix and usability release focused on Linux uninstall cleanup, platform uninstall boundaries, the default Mihomo config, MosDNS FakeIP upstream editing, MosDNS system switch mapping, and client scan reset behavior.
+- Release asset count remains aligned with v0.3.3: Linux amd64/arm64 tarballs, Unraid `.txz`/`.plg`, and fnOS x86/arm `.fpk` packages built from the synced `fnos-fpk` branch, for 12 release assets total.
+
+#### Added
+
+- Added a structured MosDNS upstream DNS add/edit dialog to replace browser `prompt`, covering name, protocol, address, enabled state, and deletion from the edit dialog.
+- Added group-level enable/disable switches for MosDNS upstream groups, allowing all servers in a group to be toggled together.
+- Added FakeIP upstream tag normalization: `nocnfake` and `cnfake` now accept legacy names such as `sing-box`, `mihomo`, `foreign-fakeip`, and `cn-fakeip`, then save canonical tags.
+- Added interactive Linux uninstall confirmation and automation flags: `msf uninstall` asks whether to remove the data directory on an interactive terminal, while automation can pass `--purge --yes` to remove it or `--keep-data` to retain it.
+- Added uninstall data-directory discovery from the systemd service. A user-provided directory is forced only when `--config` is explicitly passed.
+- Added cleanup of managed component processes during uninstall: Mihomo/MosDNS PID files and component binary paths under the data directory are used to terminate leftovers, with zombie-process detection handled correctly.
+- Added fnOS FPK runtime detection to block Linux systemd service install/uninstall and Linux tarball uninstall inside fnOS FPK installs.
+- Added default Mihomo config coverage for sniffing, IPv6 FakeIP range, DNS nameserver, a dedicated Google policy group, private domain/IP providers, AI domain provider, PT non-China provider, Microsoft China provider, and game-download China provider.
+
+#### Changed
+
+- Adjusted the default MosDNS FakeIP upstream config: `nocnfake` now points to `udp://127.0.0.1:6666` and is enabled, while `cnfake` points to `udp://127.0.0.1:1053` and is disabled, fixing the reversed domestic/proxy FakeIP semantics.
+- MosDNS upstream groups now render in a fixed order: `domestic`, `foreign`, `foreignecs`, `nocnfake`, and `cnfake`; FakeIP groups are expanded by default.
+- MosDNS upstream saves now preserve the original server field structure and write back through either `addr` or `server_addr` based on the source record, reducing the chance of dropping extra fields during edits.
+- The default Mihomo GEO data URLs now use MetaCubeX GitHub release download links. The default `proxy-providers` value is now an empty object, removing the old sample airport subscription placeholder.
+- Default Mihomo routing now includes LAN direct routes, private domain/IP direct rules, direct routing for `gh-proxy.com`, proxy rules for `8.8.4.4` / `1.0.0.1`, an independent Google policy, AI domain routing, Microsoft-CN, GameDownload-CN, and PT-!CN rules.
+- The default Mihomo US node filter now includes `UWest` / `UEast`; the airport group keeps include-all/provider behavior without hard-coding `DIRECT`.
+- README and the Linux tarball README now clarify that `msf uninstall` is only for Linux tarball/systemd installs; Docker, Unraid, and fnOS FPK installs must be removed through their platform managers.
+
+#### Fixed
+
+- Fixed incorrect MosDNS system setting switch mappings. `requestBlock`, `typeBlock`, `ipv6Block`, `adBlock`, and expired-cache toggles now target the correct `switch` configs.
+- Fixed MosDNS client scan reset clearing only `mosdns_clients` while leaving `mosdns_client_ips` and `client_ip.txt` intact. The client IP allowlist file is now refreshed after reset.
+- Fixed ambiguous or overly destructive Linux uninstall behavior: non-interactive uninstall keeps data by default, and non-interactive `--purge` must be paired with `--yes`.
+- Fixed uninstall scripts potentially running the Linux systemd/tarball uninstall path inside Docker, Unraid, or fnOS FPK environments.
+- Fixed uninstall cleanup so Mihomo/MosDNS child processes and leftover component processes are reliably terminated instead of only stopping the `msf` main process.
+- Fixed broad-path protection in `safeRemoveAll` by rejecting additional high-risk paths such as `/opt/`, `/usr`, `/mnt`, and `/mnt/cache`.
+
 ## v0.3.3 - 2026-06-15
 
 ### 中文

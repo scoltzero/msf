@@ -3,7 +3,7 @@ FilterHK: &FilterHK "^(?=.*(?<!深)(港|HK|(?i)Hong))(?!(.*(台|本|坡|美))).*
 FilterSG: &FilterSG '^(?=.*(?i)(坡|🇸🇬|SG|Sing|SIN|XSP)).*$'
 FilterJP: &FilterJP '^(?=.*(?i)(日|🇯🇵|JP|Japan|NRT|HND|KIX|CTS|FUK)).*$'
 FilterKR: &FilterKR '^(?=.*(?i)(韩|🇰🇷|韓|首尔|南朝鲜|KR|KOR|Korea|South)).*$'
-FilterUS: &FilterUS '^(?=.*(?i)(美|🇺🇸|US|USA|JFK|LAX|ORD|ATL|DFW|SFO|MIA|SEA|IAD)).*$'
+FilterUS: &FilterUS '^(?=.*(?i)(美|UWest|UEast|🇺🇸|US|USA|JFK|LAX|ORD|ATL|DFW|SFO|MIA|SEA|IAD)).*$'
 FilterTW: &FilterTW '^(?=.*(?i)(台|🇼🇸|🇹🇼|TW|tai|TPE|TSA|KHH)).*$'
 FilterEU: &FilterEU '^(?=.*(?i)(奥|比|保|克罗地亚|塞|捷|丹|爱沙|芬|法|德|希|匈|爱尔|意|拉|立|卢|马其它|荷|波|葡|罗|斯洛伐|斯洛文|西|瑞|英|🇧🇪|🇨🇿|🇩🇰|🇫🇮|🇫🇷|🇩🇪|🇮🇪|🇮🇹|🇱🇹|🇱🇺|🇳🇱|🇵🇱|🇸🇪|🇬🇧|CDG|FRA|AMS|MAD|BCN|FCO|MUC|BRU)).*$'
 FilterOther: &FilterOther '^(?!.*(DIRECT|美|港|坡|台|新|日|韩|奥|比|保|克罗地亚|塞|捷|丹|爱沙|芬|法|德|希|匈|爱尔|意|拉|立|卢|马其它|荷|波|葡|罗|斯洛伐|斯洛文|西|瑞|英|🇭🇰|🇼🇸|🇹🇼|🇸🇬|🇯🇵|🇰🇷|🇺🇸|🇬🇧|🇦🇹|🇧🇪|🇨🇿|🇩🇰|🇫🇮|🇫🇷|🇩🇪|🇮🇪|🇮🇹|🇱🇹|🇱🇺|🇳🇱|🇵🇱|🇸🇪|HK|TW|SG|JP|KR|US|GB|CDG|FRA|AMS|MAD|BCN|FCO|MUC|BRU|HKG|TPE|TSA|KHH|SIN|XSP|NRT|HND|KIX|CTS|FUK|JFK|LAX|ORD|ATL|DFW|SFO|MIA|SEA|IAD|LHR|LGW))'
@@ -20,7 +20,7 @@ IPcidrText: &IPcidrText {type: http, interval: 86400, behavior: ipcidr, format: 
 ClassicalText: &ClassicalText {type: http, interval: 86400, behavior: classical, format: text}
 ClassicalYaml: &ClassicalYaml {type: http, interval: 86400, behavior: classical, format: yaml}
 # 锚点 - 时延优选参数 [每 30 秒一次惰性健康检查，容差 20ms，时延超过 2 秒判定为失败，失败 3 次则自动触发健康检查]
-UrlTest: &UrlTest {type: url-test, interval: 30, tolerance: 20, lazy: true, url: 'http://detectportal.firefox.com/success.txt', disable-udp: false, timeout: 2000, max-failed-times: 3, hidden: true, proxies: [DIRECT], include-all: true, include-all-proxies: true, include-all-providers: true}
+UrlTest: &UrlTest {type: url-test, interval: 30, tolerance: 20, lazy: true, url: 'http://detectportal.firefox.com/success.txt', disable-udp: false, timeout: 2000, max-failed-times: 3, hidden: true, include-all: true, include-all-proxies: true, include-all-providers: true}
 
 ## ----全局配置------
 
@@ -80,19 +80,41 @@ external-controller: :9090
 external-ui: /mssb/mihomo/ui
 external-ui-url: 'https://github.com/Zephyruso/zashboard/releases/latest/download/dist.zip'
 geox-url:
-  geoip: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.dat"
-  geosite: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geosite.dat"
+  geoip: "https://github.com/MetaCubeX/meta-rules-dat/releases/latest/download/geoip.dat"
+  geosite: "https://github.com/MetaCubeX/meta-rules-dat/releases/latest/download/geosite.dat"
   mmdb: 'https://gitlab.com/Masaiki/GeoIP2-CN/-/raw/release/Country.mmdb'
   asn: 'https://gitlab.com/Loon0x00/loon_data/-/raw/main/geo/GeoLite2-ASN.mmdb'
 profile:
   store-selected: true
   store-fake-ip: true
-sniffer:
-  # 搭配mosdns要关闭不能打开不然转发失败
-  enable: false
 tun:
-  # 搭配mosdns要关闭不能打开不然转发失败
+  # Linux 默认使用 nftables 转发（TProxy + Redirect），也可切换为 TUN；macOS 默认启用 TUN
   enable: false
+# 嗅探
+sniffer:
+  enable: true
+  # 强制 DNS 映射 把 sniff 出来的域名 强行映射回 DNS 记录 解决「域名和 IP 不一致」导致规则不命中的问题
+  force-dns-mapping: true
+  # 纯 IP 解析 即使客户端 直接访问 IP 也尝试从流量中解析域名
+  parse-pure-ip: true
+  # 是否用 sniff 到的域名 替换原始连接目标
+  override-destination: true
+  sniff:
+    # 从 HTTP Host 头解析域名 并 直接覆盖目标地址 对网页 / API 流量非常有效
+    HTTP:
+      ports: [80, 8080-8880]
+      override-destination: true
+    TLS:
+      ports: [443, 8443]
+    QUIC:
+      ports: [443, 8443]
+  # 强制 sniff 的域名
+  force-domain:
+    - "+.*"
+  # 不对这些域名 sniff 常用于： IoT/米家 / 华为 / 智能家居 防止设备异常
+  skip-domain:
+    - Mijia Cloud
+    - "+.push.apple.com"
 dns:
   enable: true
   # 默认端口也不能修改
@@ -101,10 +123,13 @@ dns:
   enhanced-mode: fake-ip
   # 这个也不能修改和mosdns联动的
   fake-ip-range: 28.0.0.1/8
+  fake-ip-range6: f2b0::/18
   fake-ip-filter:
     - "*"
     - +.lan
   default-nameserver:
+    - 127.0.0.1:8888
+  nameserver:
     - 127.0.0.1:8888
 
 proxy-groups:
@@ -112,6 +137,7 @@ proxy-groups:
   - {name: 手动切换, type: select, icon: 'https://raw.githubusercontent.com/Koolson/Qure/refs/heads/master/IconSet/Color/Clubhouse.png', proxies: [ 台湾节点, 香港节点, 全球直连, 日本节点, 新加坡节点, 美国节点, 韩国节点, 省流节点, 高级节点, 游戏节点, 机场节点]}
   - {name: 漏网之鱼, type: select, icon: 'https://raw.githubusercontent.com/Koolson/Qure/refs/heads/master/IconSet/Color/Unlock.png', proxies: [节点选择, 全球直连, 香港节点, 新加坡节点, 韩国节点, 台湾节点, 日本节点, 美国节点, 省流节点, 高级节点, 手动切换, 机场节点]}
   - {name: 网络测试, type: select, icon: 'https://raw.githubusercontent.com/Koolson/Qure/refs/heads/master/IconSet/Color/Speedtest.png', proxies: [ 全球直连, 节点选择, 香港节点, 新加坡节点, 韩国节点, 台湾节点, 日本节点, 美国节点, 省流节点, 高级节点, 手动切换, 机场节点]}
+  - {name: 谷歌服务, type: select, icon: 'https://raw.githubusercontent.com/Koolson/Qure/refs/heads/master/IconSet/Color/Google_Search.png', proxies: [节点选择, 香港节点, 新加坡节点, 韩国节点, 台湾节点, 日本节点, 美国节点, 手动切换]}
   - {name: 人工智能, type: select, icon: 'https://raw.githubusercontent.com/Koolson/Qure/refs/heads/master/IconSet/Color/AI.png', proxies: [美国节点, 新加坡节点, 韩国节点, 台湾节点, 日本节点, 香港节点, 省流节点, 高级节点, 手动切换, 全球直连, 机场节点]}
   - {name: 游戏平台, type: select, icon: 'https://raw.githubusercontent.com/Koolson/Qure/refs/heads/master/IconSet/Color/Game.png', proxies: [ 节点选择, 全球直连, 高级节点, 游戏节点]}
   - {name: Netflix, type: select, icon: 'https://raw.githubusercontent.com/Koolson/Qure/refs/heads/master/IconSet/Color/Netflix.png', proxies: [节点选择, 香港节点, 新加坡节点, 韩国节点, 台湾节点, 日本节点, 美国节点, 省流节点, 高级节点, 手动切换, 机场节点]}
@@ -130,16 +156,18 @@ proxy-groups:
   - {name: 日本节点, !!merge <<: *UrlTest, filter: *FilterJP, icon: 'https://raw.githubusercontent.com/Koolson/Qure/refs/heads/master/IconSet/Color/JP.png'}
   - {name: 美国节点, !!merge <<: *UrlTest, filter: *FilterUS, icon: 'https://raw.githubusercontent.com/Koolson/Qure/refs/heads/master/IconSet/Color/United_States.png'}
   - {name: 省流节点, !!merge <<: *UrlTest, filter: *FilterBIG, icon: 'https://raw.githubusercontent.com/Koolson/Qure/refs/heads/master/IconSet/Color/Proxy.png' }
-  - {name: 机场节点, type: select, proxies: [DIRECT], include-all: true, include-all-proxies: true, include-all-providers: true, filter: *FilterAll, icon: 'https://raw.githubusercontent.com/Koolson/Qure/refs/heads/master/IconSet/Color/Airport.png' }
+  - {name: 机场节点, type: select, include-all: true, include-all-proxies: true, include-all-providers: true, filter: *FilterAll, icon: 'https://raw.githubusercontent.com/Koolson/Qure/refs/heads/master/IconSet/Color/Airport.png' }
   - {name: 全球直连, type: select, proxies: [DIRECT], icon: 'https://raw.githubusercontent.com/Koolson/Qure/refs/heads/master/IconSet/Color/Direct.png'}
 
 rule-providers:
   # 域名规则
+  Private-Domain: { <<: *DomainMrs, url: 'https://gh-proxy.com/raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/private.mrs' }
   Spotify: {<<: *DomainMrs, path: ./rules/spotify.mrs, url: https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/spotify.mrs}
   Docker: {<<: *DomainMrs, path: ./rules/docker.mrs, url: https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/docker.mrs}
   Telegram: {<<: *DomainMrs, path: ./rules/telegram.mrs, url: https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/telegram.mrs}
   OpenAI: {<<: *DomainMrs, path: ./rules/openai.mrs, url: https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/openai.mrs}
   Gemini: {<<: *DomainMrs, path: ./rules/google-deepmind.mrs, url: https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/google-deepmind.mrs}
+  AIDomain: { <<: *DomainMrs, url: 'https://gh-proxy.com/raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/category-ai-!cn.mrs' }
   AIChat: { <<: *DomainMrs, path: ./rules/category-ai-chat-!cn.mrs, url: https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/category-ai-chat-!cn.mrs}
   AIChatCN: { <<: *DomainMrs, path: ./rules/category-ai-cn.mrs, url: https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/category-ai-cn.mrs}
   YouTube: {<<: *DomainMrs, path: ./rules/youtube.mrs, url: https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/youtube.mrs}
@@ -152,33 +180,33 @@ rule-providers:
 #  China: {<<: *DomainMrs, path: ./rules/cn.mrs, url: https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/cn.mrs}
 #  Foreign: {<<: *DomainMrs, path: ./rules/geolocation-!cn.mrs, url: https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/geolocation-!cn.mrs}
   PT: {<<: *DomainMrs, path: ./rules/category-pt.mrs, url: https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/category-pt.mrs}
+  PT-!CN: { <<: *DomainMrs, url: 'https://gh-proxy.com/raw.githubusercontent.com/metacubex/meta-rules-dat/meta/geo/geosite/category-pt@!cn.mrs' }
   ChinaSpeedtest: {<<: *DomainMrs, path: ./rules/category-speedtest@cn.mrs, url: https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/category-speedtest@cn.mrs}
 #  ForeignSpeedtest: {<<: *DomainMrs, path: ./rules/category-speedtest.mrs, url: https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/category-speedtest.mrs}
 #替换新的speedtest规则.
-  ForeignSpeedtest: {<<: *DomainMrs, path: ./rules/category-speedtest.mrs, url: https://cdn.jsdelivr.net/gh/666OS/rules@refs/heads/release/mihomo/domain/Speedtest.mrs}  
+  ForeignSpeedtest: {<<: *DomainMrs, path: ./rules/category-speedtest.mrs, url: https://cdn.jsdelivr.net/gh/666OS/rules@refs/heads/release/mihomo/domain/Speedtest.mrs}
   SteamCN: {<<: *DomainMrs, path: ./rules/steam@cn.mrs, url: https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/steam@cn.mrs}
   Steam: {<<: *DomainMrs, path: ./rules/steam.mrs, url: https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/steam.mrs}
   Nintendo: {<<: *DomainMrs, path: ./rules/nintendo.mrs, url: https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/nintendo.mrs}
   Private: {<<: *DomainMrs, path: ./rules/private.mrs, url: https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/private.mrs}
-  Netflix: {<<: *DomainMrs, path: ./rules/Netflix.mrs, url: https://cdn.jsdelivr.net/gh/666OS/rules@refs/heads/release/mihomo/domain/Netflix.mrs}  
+  Netflix: {<<: *DomainMrs, path: ./rules/Netflix.mrs, url: https://cdn.jsdelivr.net/gh/666OS/rules@refs/heads/release/mihomo/domain/Netflix.mrs}
+  Microsoft-CN: { <<: *DomainMrs, url: 'https://gh-proxy.com/raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/microsoft@cn.mrs' }
+  GameDownload-CN: { <<: *DomainMrs, url: 'https://gh-proxy.com/raw.githubusercontent.com/metacubex/meta-rules-dat/meta/geo/geosite/category-game-platforms-download@cn.mrs' }
   # IP规则
+  Private-IP: { <<: *IPcidrMrs, url: 'https://gh-proxy.com/raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geoip/private.mrs' }
   NetflixIP: {<<: *IPcidrMrs, path: ./rules/netflixip.mrs, url: https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geoip/netflix.mrs}
   TelegramIP: {<<: *IPcidrMrs, path: ./rules/telegramip.mrs, url: https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geoip/telegram.mrs}
   ChinaIP: {<<: *IPcidrMrs, path: ./rules/cnip.mrs, url: https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geoip/cn.mrs}
 
 rules:
+  # 回家直连
+  - IP-CIDR,192.168.7.0/24,DIRECT,no-resolve
+  - IP-CIDR,192.168.31.0/24,DIRECT,no-resolve
+  - IP-CIDR,192.168.1.0/24,DIRECT,no-resolve
   # 常用必备
   - DST-PORT,123,DIRECT
-  - DOMAIN-SUFFIX,sssaicode.com,DIRECT
-  - DOMAIN-KEYWORD,docker,香港节点
-  - DOMAIN-SUFFIX,eastmoney.com,DIRECT
-  - DOMAIN-SUFFIX,sina.com.cn,DIRECT
-  - DOMAIN-SUFFIX,sinajs.cn,DIRECT
-  - DOMAIN,cdn.12api.org,DIRECT
-  - DOMAIN,cdn.atk.pro,DIRECT
-  - DOMAIN-SUFFIX,brave.com,美国节点
-  - DOMAIN-SUFFIX,arena.ai,美国节点
-  - DOMAIN-SUFFIX,huggingface.co,美国节点
+  - RULE-SET,Private-IP,DIRECT
+  - RULE-SET,Private-Domain,DIRECT
  
   # 自定义代理
   - DOMAIN-SUFFIX,test-ipv6.com,全球直连
@@ -189,6 +217,7 @@ rules:
   - DOMAIN-SUFFIX,myexternalip.com,全球直连
   - DOMAIN-SUFFIX,api64.ipify.org,全球直连
   - DOMAIN-SUFFIX,u2.dmhy.org,香港节点
+  - DOMAIN-SUFFIX,gh-proxy.com,全球直连
   
   # IPTV
   - DOMAIN-SUFFIX,dnsany.com,全球直连
@@ -200,7 +229,9 @@ rules:
   - DOMAIN-SUFFIX,yangshipin.cn,全球直连
   # 8.8.8.8
   - IP-CIDR,8.8.8.8/32,节点选择
+  - IP-CIDR,8.8.4.4/32,节点选择
   - IP-CIDR,1.1.1.1/32,节点选择
+  - IP-CIDR,1.0.0.1/32,节点选择
   # 域名路由
   - RULE-SET,Spotify,Spotify
   - RULE-SET,Docker,节点选择
@@ -210,10 +241,13 @@ rules:
   - RULE-SET,AIChatCN,全球直连
   - RULE-SET,OpenAI,人工智能
   - RULE-SET,Gemini,人工智能
+  - RULE-SET,AIDomain,人工智能
   - RULE-SET,AIChat,人工智能
   - RULE-SET,YouTube,节点选择
-  - RULE-SET,Google,节点选择
+  - RULE-SET,Google,谷歌服务
   - RULE-SET,AppleCN,全球直连
+  - RULE-SET,GameDownload-CN,全球直连
+  - RULE-SET,Microsoft-CN,全球直连
   - RULE-SET,Apple,苹果服务
   - RULE-SET,TikTok,TikTok
   #  - RULE-SET,China,全球直连
@@ -223,11 +257,12 @@ rules:
   
   #PT站点规则补全
   - RULE-SET,PT,PT站点
-  - DOMAIN-SUFFIX,agsvpt.com,PT站点
+  - DOMAIN-SUFFIX,hhanclub.net,PT站点
   - DOMAIN-SUFFIX,azusa.wiki,PT站点
   - DOMAIN-SUFFIX,discfan.net,PT站点
   - DOMAIN-SUFFIX,playletpt.xyz,PT站点
   - DOMAIN-SUFFIX,hdsky.my,PT站点
+  - RULE-SET,PT-!CN,节点选择
   
   - RULE-SET,SteamCN,全球直连
   - RULE-SET,Steam,游戏平台
@@ -242,13 +277,4 @@ rules:
   - DOMAIN-KEYWORD,tracker,DIRECT
   - MATCH,漏网之鱼
 # 节点订阅
-proxy-providers:
-  机场名称1:
-    url: '机场订阅'
-    type: http
-    interval: 3600
-    health-check:
-      enable: true
-      url: http://detectportal.firefox.com/success.txt
-      interval: 120
-    path: './proxy_providers/sub.yaml'
+proxy-providers: {}

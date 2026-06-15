@@ -27,7 +27,7 @@ Then open `http://localhost:7777`.
 
 ```bash
 curl -L -o msf-linux-amd64.tar.gz \
-  https://github.com/scoltzero/msf/releases/download/v0.3.3/msf-linux-amd64.tar.gz
+  https://github.com/scoltzero/msf/releases/download/v0.3.4/msf-linux-amd64.tar.gz
 tar -xzf msf-linux-amd64.tar.gz -C /tmp
 sudo /tmp/msf-*-linux-amd64/install.sh
 ```
@@ -46,10 +46,12 @@ msf doctor
 msf cloudflare-redirect status
 sudo msf update
 sudo msf uninstall
-sudo msf uninstall --purge
+sudo msf uninstall --purge --yes
 ```
 
-`uninstall` removes the systemd service and `/usr/local/bin/msf`. It keeps `/opt/msf` unless `--purge` is provided.
+`msf uninstall` is only for Linux tarball/systemd installs. Docker, Unraid, and fnOS FPK installs should be removed through their container, plugin, or package manager.
+
+Interactive terminals ask whether to remove the `/opt/msf` data directory. Non-interactive runs keep data by default. Pass `--purge --yes` to remove configs, database, logs, component binaries, and zashboard.
 
 ## Install Unraid Plugin
 
@@ -237,7 +239,7 @@ Use `status.hints` to diagnose common problems such as `enabled=false`, no scann
 
 ```bash
 make build
-make unraid VERSION=0.3.3 UNRAID_VERSION=0.3.3 GITHUB_REPO=scoltzero/msf RELEASE_TAG=v0.3.3
+make unraid VERSION=0.3.4 UNRAID_VERSION=0.3.4 GITHUB_REPO=scoltzero/msf RELEASE_TAG=v0.3.4
 ```
 
 The generated artifacts are:
