@@ -1403,6 +1403,44 @@ func TestMosDNSClientMoveSyncsWhitelistFile(t *testing.T) {
 	}
 }
 
+func TestMosDNSClientScanResetClearsClientIPList(t *testing.T) {
+	app := newTestApp(t)
+	token := tokenForRole(t, app, "admin")
+	create := requestJSON(t, app, http.MethodPost, "/api/v1/mosdns/clients", token, map[string]any{
+		"ip": "192.168.10.91", "hostname": "reset-listed-client",
+	})
+	if create.Code != http.StatusOK {
+		t.Fatalf("create client status=%d body=%s", create.Code, create.Body.String())
+	}
+	move := requestJSON(t, app, http.MethodPost, "/api/v1/mosdns/clients/192.168.10.91/move", token, map[string]string{"status": "allow"})
+	if move.Code != http.StatusOK {
+		t.Fatalf("move status=%d body=%s", move.Code, move.Body.String())
+	}
+	listFile, err := os.ReadFile(filepath.Join(app.DataDir, "configs/mosdns/client_ip.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(listFile), "192.168.10.91") {
+		t.Fatalf("client_ip.txt missing moved client before reset: %s", string(listFile))
+	}
+
+	reset := requestJSON(t, app, http.MethodPost, "/api/v1/mosdns/clients/scan/reset", token, nil)
+	if reset.Code != http.StatusOK {
+		t.Fatalf("reset scan status=%d body=%s", reset.Code, reset.Body.String())
+	}
+	clientIPs := requestJSON(t, app, http.MethodGet, "/api/v1/mosdns/system/client-ip-list", token, nil)
+	if clientIPs.Code != http.StatusOK || strings.Contains(clientIPs.Body.String(), "192.168.10.91") || !strings.Contains(clientIPs.Body.String(), `"ips":[]`) {
+		t.Fatalf("reset should clear persisted client list: status=%d body=%s", clientIPs.Code, clientIPs.Body.String())
+	}
+	listFile, err = os.ReadFile(filepath.Join(app.DataDir, "configs/mosdns/client_ip.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(listFile), "192.168.10.91") {
+		t.Fatalf("client_ip.txt should be cleared by scan reset: %s", string(listFile))
+	}
+}
+
 func TestMosDNSClientProxyModeKeepsSingleClientIPList(t *testing.T) {
 	app := newTestApp(t)
 	token := tokenForRole(t, app, "admin")

@@ -76,15 +76,15 @@ const defaultCacheData: CacheSystemData = {
 };
 
 const SWITCH = {
-  adBlock: "switch5",
-  requestBlock: "switch6",
-  typeBlock: "switch1",
-  ipv6Block: "switch7",
+  requestBlock: "switch1",
+  typeBlock: "switch5",
+  ipv6Block: "switch6",
+  adBlock: "switch7",
   ipv4First: "switch8",
   ipv6First: "switch10",
   runMode: "switch3",
-  expiredCache1: "switch13",
-  expiredCache2: "switch14",
+  expiredCache1: "switch4",
+  expiredCache2: "switch13",
 } as const;
 
 const GROUP_META: Record<string, { name: string; subtitle: string; defaultExpanded: boolean; fake?: boolean }> = {
