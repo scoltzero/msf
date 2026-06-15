@@ -7,15 +7,17 @@ import { cn } from "@/lib/utils";
 
 /* ─── Server row using CSS Grid (matching live site grid-cols layout) ─── */
 function ServerRow({
+  groupId,
   server,
   onToggle,
   onEdit,
   onDelete,
 }: {
+  groupId: string;
   server: UpstreamServer;
-  onToggle: (id: string) => void;
-  onEdit: (s: UpstreamServer) => void;
-  onDelete: (id: string) => void;
+  onToggle: (groupId: string, id: string) => void;
+  onEdit: (groupId: string, s: UpstreamServer) => void;
+  onDelete: (groupId: string, id: string) => void;
 }) {
   return (
     <div className="grid grid-cols-[40px_1fr_80px_1fr_80px] items-center px-2 py-2.5 border-b border-border/20 last:border-0 hover:bg-muted/20 transition-colors">
@@ -24,7 +26,8 @@ function ServerRow({
         <button
           role="switch"
           aria-checked={server.enabled}
-          onClick={() => onToggle(server.id)}
+          aria-label={`${server.enabled ? "禁用" : "启用"} ${server.name}`}
+          onClick={() => onToggle(groupId, server.id)}
           className={cn(
             "peer inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors",
             server.enabled ? "bg-emerald-500" : "bg-muted"
@@ -39,7 +42,7 @@ function ServerRow({
         </button>
       </div>
       {/* Name + note */}
-      <div className="min-w-0 px-2 cursor-pointer" onClick={() => onEdit(server)}>
+      <div className="min-w-0 px-2 cursor-pointer" onClick={() => onEdit(groupId, server)}>
         <div className="text-sm font-semibold text-foreground truncate hover:text-primary transition-colors">
           {server.name}
         </div>
@@ -50,27 +53,27 @@ function ServerRow({
       {/* Protocol */}
       <div
         className="px-2 text-sm text-foreground cursor-pointer hover:text-primary transition-colors truncate"
-        onClick={() => onEdit(server)}
+        onClick={() => onEdit(groupId, server)}
       >
-        {server.protocol}
+        {server.protocol.toUpperCase()}
       </div>
       {/* Address */}
       <div
         className="px-2 font-mono text-xs text-foreground truncate cursor-pointer hover:text-primary transition-colors"
-        onClick={() => onEdit(server)}
+        onClick={() => onEdit(groupId, server)}
       >
         {server.address}
       </div>
       {/* Actions — TEXT buttons, not icons */}
       <div className="flex items-center justify-end gap-1 px-2">
         <button
-          onClick={() => onEdit(server)}
+          onClick={() => onEdit(groupId, server)}
           className="text-xs text-primary hover:text-primary/80 font-medium px-2 py-1 rounded hover:bg-primary/10 transition-colors"
         >
           编辑
         </button>
         <button
-          onClick={() => onDelete(server.id)}
+          onClick={() => onDelete(groupId, server.id)}
           className="text-xs text-destructive hover:text-destructive/80 font-medium px-2 py-1 rounded hover:bg-destructive/10 transition-colors"
         >
           删除
@@ -83,15 +86,17 @@ function ServerRow({
 /* ─── Upstream Group Panel ─── */
 function UpstreamGroupPanel({
   group,
+  onToggleGroup,
   onToggleServer,
   onEditServer,
   onDeleteServer,
   onAddServer,
 }: {
   group: UpstreamGroup;
-  onToggleServer: (serverId: string) => void;
-  onEditServer: (s: UpstreamServer) => void;
-  onDeleteServer: (serverId: string) => void;
+  onToggleGroup: (groupId: string, enabled: boolean) => void;
+  onToggleServer: (groupId: string, serverId: string) => void;
+  onEditServer: (groupId: string, s: UpstreamServer) => void;
+  onDeleteServer: (groupId: string, serverId: string) => void;
   onAddServer: (groupId: string) => void;
 }) {
   const [expanded, setExpanded] = useState(group.defaultExpanded);
@@ -102,10 +107,7 @@ function UpstreamGroupPanel({
   const someEnabled = enabledCount > 0 && !allEnabled;
 
   const toggleAll = () => {
-    const newState = !allEnabled;
-    group.servers.forEach((s) => {
-      if (s.enabled !== newState) onToggleServer(s.id);
-    });
+    onToggleGroup(group.id, !allEnabled);
   };
 
   return (
@@ -133,6 +135,9 @@ function UpstreamGroupPanel({
           </span>
           <button
             onClick={(e) => { e.stopPropagation(); toggleAll(); }}
+            role="switch"
+            aria-checked={allEnabled || someEnabled}
+            aria-label={`${allEnabled || someEnabled ? "禁用" : "启用"} ${group.name}`}
             className={cn(
               "inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors",
               allEnabled ? "bg-emerald-500" : someEnabled ? "bg-amber-400" : "bg-muted"
@@ -169,6 +174,7 @@ function UpstreamGroupPanel({
           {group.servers.map((s) => (
             <ServerRow
               key={s.id}
+              groupId={group.id}
               server={s}
               onToggle={onToggleServer}
               onEdit={onEditServer}
@@ -184,15 +190,17 @@ function UpstreamGroupPanel({
 /* ─── FakeIP Sub-section (purple border-top, 2-col grid children) ─── */
 function FakeIPSubSection({
   groups,
+  onToggleGroup,
   onToggleServer,
   onEditServer,
   onDeleteServer,
   onAddServer,
 }: {
   groups: UpstreamGroup[];
-  onToggleServer: (serverId: string) => void;
-  onEditServer: (s: UpstreamServer) => void;
-  onDeleteServer: (serverId: string) => void;
+  onToggleGroup: (groupId: string, enabled: boolean) => void;
+  onToggleServer: (groupId: string, serverId: string) => void;
+  onEditServer: (groupId: string, s: UpstreamServer) => void;
+  onDeleteServer: (groupId: string, serverId: string) => void;
   onAddServer: (groupId: string) => void;
 }) {
   return (
@@ -213,6 +221,7 @@ function FakeIPSubSection({
           >
             <UpstreamGroupPanel
               group={group}
+              onToggleGroup={onToggleGroup}
               onToggleServer={onToggleServer}
               onEditServer={onEditServer}
               onDeleteServer={onDeleteServer}
@@ -229,15 +238,17 @@ function FakeIPSubSection({
 interface UpstreamDNSSectionProps {
   regularGroups: UpstreamGroup[];
   fakeIPGroups: UpstreamGroup[];
-  onToggleServer: (serverId: string) => void;
-  onEditServer: (s: UpstreamServer) => void;
-  onDeleteServer: (serverId: string) => void;
+  onToggleGroup: (groupId: string, enabled: boolean) => void;
+  onToggleServer: (groupId: string, serverId: string) => void;
+  onEditServer: (groupId: string, s: UpstreamServer) => void;
+  onDeleteServer: (groupId: string, serverId: string) => void;
   onAddServer: (groupId: string) => void;
 }
 
 export function UpstreamDNSSection({
   regularGroups,
   fakeIPGroups,
+  onToggleGroup,
   onToggleServer,
   onEditServer,
   onDeleteServer,
@@ -264,6 +275,7 @@ export function UpstreamDNSSection({
             <UpstreamGroupPanel
               key={group.id}
               group={group}
+              onToggleGroup={onToggleGroup}
               onToggleServer={onToggleServer}
               onEditServer={onEditServer}
               onDeleteServer={onDeleteServer}
@@ -274,6 +286,7 @@ export function UpstreamDNSSection({
           {/* FakeIP subsection with purple separator */}
           <FakeIPSubSection
             groups={fakeIPGroups}
+            onToggleGroup={onToggleGroup}
             onToggleServer={onToggleServer}
             onEditServer={onEditServer}
             onDeleteServer={onDeleteServer}
