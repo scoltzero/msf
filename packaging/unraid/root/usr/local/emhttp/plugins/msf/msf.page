@@ -1,6 +1,6 @@
-Menu="Settings:45"
+Menu="Utilities"
 Title="MSF Free"
-Icon="network-wired"
+Icon="icon-network"
 ---
 <?php
 $cfgPath = "/boot/config/plugins/msf/msf.cfg";
