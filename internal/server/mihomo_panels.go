@@ -62,7 +62,7 @@ func (a *App) mihomoFullSnapshot() map[string]any {
 		"socks":      a.tcpPortOpen("127.0.0.1", ports["socks"]),
 		"mixed":      a.tcpPortOpen("127.0.0.1", ports["mixed"]),
 		"redir":      a.tcpPortOpen("127.0.0.1", ports["redir"]),
-		"tproxy":     a.tcpPortOpen("127.0.0.1", ports["tproxy"]),
+		"tproxy":     mihomoTProxyHealthy(service, ports),
 	}
 	proxyProviders := anyMapSlice(providers["proxy_providers"])
 	proxyProviderCount := len(proxyProviders)
@@ -136,7 +136,7 @@ func (a *App) mihomoOverviewSnapshot() map[string]any {
 		"socks":      a.tcpPortOpen("127.0.0.1", ports["socks"]),
 		"mixed":      a.tcpPortOpen("127.0.0.1", ports["mixed"]),
 		"redir":      a.tcpPortOpen("127.0.0.1", ports["redir"]),
-		"tproxy":     a.tcpPortOpen("127.0.0.1", ports["tproxy"]),
+		"tproxy":     mihomoTProxyHealthy(service, ports),
 	}
 	counts := mihomoLocalConfigCounts(cfg)
 	snapshot := map[string]any{
@@ -1392,16 +1392,24 @@ func portFromListen(listen string, fallback int) int {
 	return fallback
 }
 
-func (a *App) tcpPortOpen(host string, port int) bool {
-	if port <= 0 {
-		return false
-	}
+var mihomoTCPPortOpen = func(host string, port int) bool {
 	conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, strconv.Itoa(port)), 200*time.Millisecond)
 	if err != nil {
 		return false
 	}
 	_ = conn.Close()
 	return true
+}
+
+func mihomoTProxyHealthy(service ServiceStatus, ports map[string]int) bool {
+	return service.Running && ports["tproxy"] > 0
+}
+
+func (a *App) tcpPortOpen(host string, port int) bool {
+	if port <= 0 {
+		return false
+	}
+	return mihomoTCPPortOpen(host, port)
 }
 
 func errString(err error, fallback string) string {

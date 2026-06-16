@@ -57,6 +57,33 @@ func TestDockerRuntimeDisablesSelfUpdateAPI(t *testing.T) {
 	}
 }
 
+func TestFnOSRuntimeDisablesSelfUpdateAPI(t *testing.T) {
+	t.Setenv("MSF_RUNTIME", "fnos")
+	app := newTestApp(t)
+	token := tokenForRole(t, app, "admin")
+
+	status := requestJSON(t, app, http.MethodGet, "/api/v1/update/status", token, nil)
+	for _, want := range []string{`"supported":false`, `"has_update":false`, FnOSUpdateDisabledReason()} {
+		if !strings.Contains(status.Body.String(), want) {
+			t.Fatalf("fnOS update status missing %q: status=%d body=%s", want, status.Code, status.Body.String())
+		}
+	}
+
+	for _, item := range []struct {
+		method string
+		path   string
+	}{
+		{http.MethodPost, "/api/v1/update/check"},
+		{http.MethodPost, "/api/v1/update/download"},
+		{http.MethodPost, "/api/v1/update/install"},
+	} {
+		res := requestJSON(t, app, item.method, item.path, token, nil)
+		if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), `"success":false`) || !strings.Contains(res.Body.String(), FnOSUpdateDisabledReason()) {
+			t.Fatalf("%s %s should reject self-update in fnOS: status=%d body=%s", item.method, item.path, res.Code, res.Body.String())
+		}
+	}
+}
+
 func TestPolicyRouteCommandsAreIdempotent(t *testing.T) {
 	deletes := policyRouteRuleDeleteCommands()
 	if len(deletes) != 32 {

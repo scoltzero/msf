@@ -7,6 +7,7 @@ import (
 )
 
 const dockerUpdateDisabledReason = "Docker containers should be updated by pulling a new image"
+const fnOSUpdateDisabledReason = "fnOS FPK installs should be updated from fnOS / 飞牛应用中心 or the FPK package manager"
 
 func IsDockerRuntime() bool {
 	mode := strings.ToLower(strings.TrimSpace(os.Getenv("MSF_RUNTIME")))
@@ -39,6 +40,25 @@ func DockerCleanupNetworkOnExit() bool {
 
 func DockerUpdateDisabledReason() string {
 	return dockerUpdateDisabledReason
+}
+
+func IsFnOSFPKRuntime() bool {
+	for _, key := range []string{"MSF_RUNTIME", "MSF_PACKAGE_RUNTIME", "MSF_PACKAGE_TYPE", "FNOS_RUNTIME", "FNOS_PACKAGE_TYPE"} {
+		value := strings.ToLower(strings.TrimSpace(os.Getenv(key)))
+		if value == "fnos" || value == "fpk" || value == "fnos-fpk" || strings.Contains(value, "fnos") || strings.Contains(value, "fpk") {
+			return true
+		}
+	}
+	for _, path := range []string{"/etc/fnos-release", "/etc/feiniu-release", "/etc/fnOS-release", "/usr/local/fnos", "/var/packages/msf"} {
+		if fileExists(path) {
+			return true
+		}
+	}
+	return false
+}
+
+func FnOSUpdateDisabledReason() string {
+	return fnOSUpdateDisabledReason
 }
 
 func (a *App) ShutdownRuntime(ctx context.Context) error {

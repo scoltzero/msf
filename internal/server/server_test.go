@@ -70,10 +70,13 @@ func TestSetupInitializeLoginAndGeneratedConfigs(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(cfg)
-	for _, want := range []string{"proxy-providers:", "msf_manual:", "https://example.com/a.yaml", "机场A", "机场1", "tproxy-port: 7896", "listen: 0.0.0.0:6666", "fake-ip-range: 28.0.0.1/8", "UrlTest: &UrlTest", "global-client-fingerprint: chrome", "sniffer:", "enable: true", "name: 谷歌服务", "Private-Domain:", "Private-IP:", "RULE-SET,Google,谷歌服务", "RULE-SET,Microsoft-CN,全球直连", "name: 机场节点, type: select, include-all: true, include-all-proxies: true, include-all-providers: true"} {
+	for _, want := range []string{"proxy-providers:", "msf_manual:", "https://example.com/a.yaml", "机场A", "机场1", "tproxy-port: 7896", "geox-url:", "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geosite.dat", "listen: 0.0.0.0:6666", "fake-ip-range: 28.0.0.1/8", "UrlTest: &UrlTest", "sniffer:", "enable: true", "name: 谷歌服务", "Private-Domain:", "Private-IP:", "RULE-SET,Google,谷歌服务", "RULE-SET,Microsoft-CN,全球直连", "name: 机场节点, type: select, include-all: true, include-all-proxies: true, include-all-providers: true"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("mihomo config missing %q:\n%s", want, text)
 		}
+	}
+	if strings.Contains(text, "global-client-fingerprint") {
+		t.Fatalf("mihomo config should not contain removed global-client-fingerprint:\n%s", text)
 	}
 	manualProvider, err := os.ReadFile(filepath.Join(app.DataDir, "configs/mihomo/proxy_providers/msf_manual.yaml"))
 	if err != nil {
@@ -609,11 +612,74 @@ func TestSelfUpdateStateExposesInstallAndAcceleratedDownloadURL(t *testing.T) {
 	status := requestJSON(t, app, http.MethodGet, "/api/v1/update/status", token, nil)
 	for _, want := range []string{
 		`"status":"downloaded"`,
+		`"phase":"downloaded"`,
+		`"message":"更新包已下载"`,
 		`"can_install":true`,
 		`"effective_download_url":"https://gh-proxy.example/https://github.com/scoltzero/msf/releases/download/v9.9.9/msf-linux-amd64.tar.gz"`,
 	} {
 		if !strings.Contains(status.Body.String(), want) {
 			t.Fatalf("self update status missing %q: status=%d body=%s", want, status.Code, status.Body.String())
+		}
+	}
+}
+
+func TestSelfUpdateDownloadFailurePersistsStatusEvents(t *testing.T) {
+	app := newTestApp(t)
+	token := tokenForRole(t, app, "admin")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	rawURL := server.URL + "/msf-linux-amd64.tar.gz"
+	server.Close()
+	now := time.Now()
+	if _, err := app.DB.Exec(`insert into update_info(component,current_version,latest_version,has_update,status,progress,error_message,download_url,release_notes,last_check_time,created_at,updated_at)
+		values('msf',?,?,?,?,?,?,?,?,?,?,?)`, app.Version, "v9.9.9", true, "checked", 0, "", rawURL, "", now, now, now); err != nil {
+		t.Fatal(err)
+	}
+	download := requestJSON(t, app, http.MethodPost, "/api/v1/update/download", token, nil)
+	body := download.Body.String()
+	for _, want := range []string{
+		`"success":false`,
+		`"status":"failed"`,
+		`"phase":"failed"`,
+		`"message":"下载更新失败"`,
+		`"开始连接下载地址"`,
+		`"下载更新失败:`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("download failure status missing %q: status=%d body=%s", want, download.Code, body)
+		}
+	}
+}
+
+func TestSelfUpdateDownloadSuccessPersistsProgressAndEvents(t *testing.T) {
+	app := newTestApp(t)
+	token := tokenForRole(t, app, "admin")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "12")
+		_, _ = w.Write([]byte("hello update"))
+	}))
+	defer server.Close()
+	rawURL := server.URL + "/msf-linux-amd64.tar.gz"
+	now := time.Now()
+	if _, err := app.DB.Exec(`insert into update_info(component,current_version,latest_version,has_update,status,progress,error_message,download_url,release_notes,last_check_time,created_at,updated_at)
+		values('msf',?,?,?,?,?,?,?,?,?,?,?)`, app.Version, "v9.9.9", true, "checked", 0, "", rawURL, "", now, now, now); err != nil {
+		t.Fatal(err)
+	}
+	download := requestJSON(t, app, http.MethodPost, "/api/v1/update/download", token, nil)
+	if download.Code != http.StatusOK {
+		t.Fatalf("download status=%d body=%s", download.Code, download.Body.String())
+	}
+	status := requestJSON(t, app, http.MethodGet, "/api/v1/update/status", token, nil)
+	body := status.Body.String()
+	for _, want := range []string{
+		`"status":"downloaded"`,
+		`"phase":"downloaded"`,
+		`"progress":100`,
+		`"message":"更新包已下载"`,
+		`"已连接下载地址"`,
+		`"更新包下载完成"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("download success status missing %q: status=%d body=%s", want, status.Code, body)
 		}
 	}
 }

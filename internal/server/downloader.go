@@ -264,6 +264,9 @@ func (a *App) downloadFile(rawURL, dest string, emit func(DownloadEvent)) error 
 	if resp.StatusCode >= 300 {
 		return fmt.Errorf("download failed: %s", resp.Status)
 	}
+	if emit != nil {
+		emit(DownloadEvent{Status: "running", Progress: 8, Message: "connected"})
+	}
 	out, err := os.Create(dest)
 	if err != nil {
 		return err
@@ -285,6 +288,8 @@ func (a *App) downloadFile(rawURL, dest string, emit func(DownloadEvent)) error 
 					progress = 55
 				}
 				emit(DownloadEvent{Status: "running", Progress: progress, Message: fmt.Sprintf("downloaded %d/%d bytes", written, total)})
+			} else if emit != nil {
+				emit(DownloadEvent{Status: "running", Progress: 15, Message: fmt.Sprintf("downloaded %d bytes", written)})
 			}
 		}
 		if readErr == io.EOF {

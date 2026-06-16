@@ -3,12 +3,14 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode, type SelectHTMLAttributes } from "react";
 import {
   Check,
+  CheckCircle2,
   Code2,
   Download,
   Eye,
   EyeOff,
   FileText,
   Languages,
+  Loader2,
   Menu,
   Monitor,
   Moon,
@@ -26,6 +28,7 @@ import {
   Upload,
   User,
   X,
+  XCircle,
   type LucideIcon,
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
@@ -76,12 +79,21 @@ interface UpdateStatus {
   has_update?: boolean;
   can_install?: boolean;
   status?: string;
+  phase?: string;
   progress?: number;
+  message?: string;
+  events?: UpdateEvent[];
   error_message?: string;
   download_url?: string;
   effective_download_url?: string;
   release_notes?: string;
   last_check_time?: string;
+}
+
+interface UpdateEvent {
+  time?: string;
+  level?: string;
+  message?: string;
 }
 
 interface ReleaseAsset {
@@ -239,6 +251,8 @@ function releaseTitle(release?: ReleaseItem) {
 
 function statusLabel(status?: string) {
   switch (status) {
+    case "checking":
+      return "检查中";
     case "checked":
       return "已检查";
     case "downloading":
@@ -247,6 +261,8 @@ function statusLabel(status?: string) {
       return "已下载";
     case "installing":
       return "安装中";
+    case "restarting":
+      return "重启中";
     case "failed":
       return "失败";
     case "running":
@@ -258,6 +274,89 @@ function statusLabel(status?: string) {
       return "空闲";
   }
 }
+
+function updatePhase(item?: UpdateStatus) {
+  if (item?.phase) return item.phase;
+  switch (item?.status) {
+    case "checking":
+      return "checking";
+    case "checked":
+      return item?.has_update ? "ready" : "idle";
+    case "downloading":
+      return "downloading";
+    case "downloaded":
+      return "downloaded";
+    case "installing":
+      return "installing";
+    case "restarting":
+      return "restarting";
+    case "completed":
+      return "completed";
+    case "failed":
+      return "failed";
+    default:
+      return "idle";
+  }
+}
+
+function updatePhaseLabel(item?: UpdateStatus) {
+  switch (updatePhase(item)) {
+    case "checking":
+      return "检查中";
+    case "ready":
+      return "可下载";
+    case "connecting":
+      return "连接中";
+    case "downloading":
+      return "下载中";
+    case "downloaded":
+      return "已下载";
+    case "installing":
+      return "安装中";
+    case "restarting":
+      return "重启中";
+    case "completed":
+      return "更新成功";
+    case "failed":
+      return "失败";
+    default:
+      return statusLabel(item?.status);
+  }
+}
+
+function isActiveUpdatePhase(phase?: string) {
+  return phase === "checking" || phase === "connecting" || phase === "downloading" || phase === "installing" || phase === "restarting";
+}
+
+function updateStepIndex(item?: UpdateStatus) {
+  const phase = updatePhase(item);
+  if (phase === "failed") {
+    const progress = typeof item?.progress === "number" ? item.progress : 0;
+    if (progress >= 90) return 4;
+    if (progress >= 8) return 2;
+    if (progress >= 3) return 1;
+    return 0;
+  }
+  switch (phase) {
+    case "connecting":
+      return 1;
+    case "downloading":
+      return 2;
+    case "downloaded":
+      return 3;
+    case "installing":
+    case "restarting":
+      return 4;
+    case "completed":
+      return 5;
+    case "checking":
+    case "ready":
+    default:
+      return 0;
+  }
+}
+
+const updateFlowSteps = ["检查版本", "连接下载", "下载更新", "已下载", "安装重启", "完成"];
 
 function shortDigest(value?: string) {
   const digest = String(value || "").trim();
@@ -428,11 +527,13 @@ function Card({
   Icon = FileText,
   children,
   className,
+  iconClassName,
 }: {
   title: string;
   Icon?: LucideIcon;
   children: ReactNode;
   className?: string;
+  iconClassName?: string;
 }) {
   return (
     <section
@@ -444,7 +545,7 @@ function Card({
       <div className="flex flex-col p-6 pb-3">
         <div className="flex items-center gap-2">
           <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground">
-            <Icon className="h-4 w-4" />
+            <Icon className={cn("h-4 w-4", iconClassName)} />
           </span>
           <h3 className="text-sm font-semibold leading-5 tracking-tight text-foreground">{title}</h3>
         </div>
@@ -1506,6 +1607,7 @@ function ComponentUpdateCard({
 
 function UpdateTab({ showToast }: { showToast: (message: string) => void }) {
   const [checking, setChecking] = useState(false);
+  const [updateAction, setUpdateAction] = useState<"" | "downloading" | "installing">("");
   const [loadingReleases, setLoadingReleases] = useState(false);
   const [updateConfig, setUpdateConfig] = useState<UpdateConfigState>(defaultUpdateConfig);
   const [releaseModal, setReleaseModal] = useState<string | null>(null);
@@ -1524,16 +1626,21 @@ function UpdateTab({ showToast }: { showToast: (message: string) => void }) {
   const displayUpdateStatus = restartPending
     ? {
         ...updateStatus,
-        status: "installing",
+        status: "restarting",
+        phase: "restarting",
         progress: Math.max(typeof updateStatus.progress === "number" ? updateStatus.progress : 0, 95),
+        message: "服务正在重启，页面短暂断开属于正常现象。",
         error_message: "",
       }
     : updateStatus;
+  const activeUpdatePhase = updatePhase(displayUpdateStatus);
+  const updateBusy = checking || updateAction !== "" || restartPending || isActiveUpdatePhase(activeUpdatePhase);
+  const downloadingUpdate = updateAction === "downloading" || activeUpdatePhase === "connecting" || activeUpdatePhase === "downloading";
   const currentVersion = versionInfo.version || "";
   const latestVersion = latestRelease ? releaseTitle(latestRelease) : "";
   const hasUpdate = Boolean(latestVersion) && Boolean(displayUpdateStatus.has_update);
   const canInstallUpdate = !restartPending && Boolean(displayUpdateStatus.can_install || displayUpdateStatus.status === "downloaded");
-  const installingUpdate = restartPending || displayUpdateStatus.status === "installing";
+  const installingUpdate = restartPending || updateAction === "installing" || activeUpdatePhase === "installing" || activeUpdatePhase === "restarting";
   const selectedRelease = useMemo(
     () =>
       releases.find((release, index) => {
@@ -1543,15 +1650,33 @@ function UpdateTab({ showToast }: { showToast: (message: string) => void }) {
     [releaseModal, releases]
   );
 
+  function setOptimisticUpdate(patch: UpdateStatus, eventMessage?: string, eventLevel = "info") {
+    setUpdateStatus((current) => {
+      const events = [...(current.events || [])];
+      if (eventMessage) {
+        events.push({ time: new Date().toISOString(), level: eventLevel, message: eventMessage });
+      }
+      return {
+        ...current,
+        ...patch,
+        events: events.slice(-20),
+      };
+    });
+  }
+
   function markSelfUpdateRestarting() {
     setRestartPending(true);
     setRepoError("");
-    setUpdateStatus((status) => ({
-      ...status,
-      status: "installing",
-      progress: Math.max(typeof status.progress === "number" ? status.progress : 0, 95),
-      error_message: "",
-    }));
+    setOptimisticUpdate(
+      {
+        status: "restarting",
+        phase: "restarting",
+        progress: Math.max(typeof updateStatus.progress === "number" ? updateStatus.progress : 0, 95),
+        message: "服务正在重启，页面短暂断开属于正常现象。",
+        error_message: "",
+      },
+      "服务正在重启"
+    );
   }
 
   function scheduleRestartRefresh(delayMs = 2500) {
@@ -1566,7 +1691,10 @@ function UpdateTab({ showToast }: { showToast: (message: string) => void }) {
 
   const loadUpdateData = async (checkRemote = false, suppressRestartErrors = false) => {
     setChecking(checkRemote);
-    if (checkRemote) setLoadingReleases(true);
+    if (checkRemote) {
+      setLoadingReleases(true);
+      setOptimisticUpdate({ status: "checking", phase: "checking", progress: 1, message: "正在检查最新版本", error_message: "" }, "开始检查最新版本");
+    }
     setRepoError("");
     const failures: string[] = [];
     let checkedStatus: UpdateStatus | null = null;
@@ -1579,12 +1707,28 @@ function UpdateTab({ showToast }: { showToast: (message: string) => void }) {
         const data = apiData<UpdateStatus>(payload, {});
         checkedStatus = data;
         setUpdateStatus(data);
-        if (data.has_update && updateConfig.auto_update) {
-          await api("/api/v1/update/download", { method: "POST" });
-          autoDownloadStarted = true;
+        if (payload?.success === false) {
+          failures.push(payload.error || data.error_message || "检查更新失败");
+        }
+        if (payload?.success !== false && data.has_update && updateConfig.auto_update) {
+          setUpdateAction("downloading");
+          setOptimisticUpdate(
+            { status: "downloading", phase: "connecting", progress: Math.max(typeof data.progress === "number" ? data.progress : 0, 3), message: "正在连接下载地址", error_message: "" },
+            "开始连接下载地址"
+          );
+          const downloadPayload = await api<any>("/api/v1/update/download", { method: "POST" });
+          if (downloadPayload?.success === false) {
+            const failedStatus = apiData<UpdateStatus>(downloadPayload, data);
+            setUpdateStatus(failedStatus);
+            failures.push(downloadPayload.error || failedStatus.error_message || "自动下载更新失败");
+          } else {
+            autoDownloadStarted = true;
+          }
         }
       } catch (err) {
         failures.push(errorMessage(err));
+      } finally {
+        setUpdateAction("");
       }
     }
 
@@ -1683,6 +1827,34 @@ function UpdateTab({ showToast }: { showToast: (message: string) => void }) {
   }, []);
 
   useEffect(() => {
+    if (!updateBusy) return;
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const payload = await api<any>("/api/v1/update/status");
+        const data = apiData<UpdateStatus>(payload, {});
+        if (cancelled) return;
+        setUpdateStatus(data);
+        if (!isActiveUpdatePhase(updatePhase(data)) && data.status !== "downloading") {
+          setUpdateAction("");
+        }
+      } catch (err) {
+        if (!cancelled && !restartPending && !isTransientRestartError(err)) {
+          setRepoError(errorMessage(err));
+        }
+      }
+    };
+    void tick();
+    const timer = window.setInterval(() => {
+      void tick();
+    }, 1000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [updateBusy, restartPending]);
+
+  useEffect(() => {
     if (!updateConfig.auto_check) return;
     const intervalSeconds = Math.max(60, updateConfig.check_interval || defaultUpdateConfig.check_interval);
     const timer = window.setInterval(() => {
@@ -1729,20 +1901,42 @@ function UpdateTab({ showToast }: { showToast: (message: string) => void }) {
   };
 
   const downloadUpdate = async () => {
+    setUpdateAction("downloading");
+    setOptimisticUpdate(
+      { status: "downloading", phase: "connecting", progress: Math.max(typeof updateStatus.progress === "number" ? updateStatus.progress : 0, 3), message: "正在连接下载地址", error_message: "" },
+      "开始连接下载地址"
+    );
+    showToast("更新包已开始下载");
     try {
-      await api("/api/v1/update/download", { method: "POST" });
-      showToast("更新包已开始下载");
+      const payload = await api<any>("/api/v1/update/download", { method: "POST" });
+      if (payload?.success === false) {
+        const data = apiData<UpdateStatus>(payload, {});
+        setUpdateStatus(data);
+        showToast(`下载更新失败: ${payload.error || data.error_message || "未知错误"}`);
+        return;
+      }
+      showToast("更新包已下载");
       void loadUpdateData();
     } catch (err) {
+      setOptimisticUpdate({ status: "failed", phase: "failed", message: "下载更新失败", error_message: errorMessage(err) }, `下载更新失败: ${errorMessage(err)}`, "error");
       showToast(`下载更新失败: ${errorMessage(err)}`);
+    } finally {
+      setUpdateAction("");
     }
   };
 
   const installUpdate = async () => {
     if (!window.confirm("安装更新会重启 msf 服务，当前 WebUI 会短暂断开。是否继续？")) return;
+    setUpdateAction("installing");
+    setOptimisticUpdate(
+      { status: "installing", phase: "installing", progress: Math.max(typeof updateStatus.progress === "number" ? updateStatus.progress : 0, 90), message: "正在准备安装更新包", error_message: "" },
+      "开始安装更新包"
+    );
     try {
       const payload = await api<any>("/api/v1/update/install", { method: "POST" });
       if (payload.success === false) {
+        const data = apiData<UpdateStatus>(payload, {});
+        setUpdateStatus(data);
         showToast(`安装更新失败: ${payload.error || "未知错误"}`);
         void loadUpdateData();
         return;
@@ -1760,6 +1954,9 @@ function UpdateTab({ showToast }: { showToast: (message: string) => void }) {
         return;
       }
       showToast(`安装更新失败: ${errorMessage(err)}`);
+      setOptimisticUpdate({ status: "failed", phase: "failed", message: "安装更新失败", error_message: errorMessage(err) }, `安装更新失败: ${errorMessage(err)}`, "error");
+    } finally {
+      setUpdateAction("");
     }
   };
 
@@ -1853,6 +2050,12 @@ function UpdateTab({ showToast }: { showToast: (message: string) => void }) {
     }
   };
 
+  const updateProgress = Math.min(100, Math.max(0, typeof displayUpdateStatus.progress === "number" ? displayUpdateStatus.progress : 0));
+  const showUpdateProgress = updateBusy || updateProgress > 0 || activeUpdatePhase === "downloaded" || activeUpdatePhase === "completed" || activeUpdatePhase === "failed";
+  const indeterminateProgress = updateBusy && (activeUpdatePhase === "connecting" || updateProgress <= 3);
+  const updateEvents = (displayUpdateStatus.events || []).filter((event) => event.message).slice(-6);
+  const activeStepIndex = updateStepIndex(displayUpdateStatus);
+
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
@@ -1868,27 +2071,84 @@ function UpdateTab({ showToast }: { showToast: (message: string) => void }) {
           </div>
         </Card>
 
-        <Card title="更新状态" Icon={RefreshCw}>
+        <Card title="更新状态" Icon={RefreshCw} iconClassName={updateBusy ? "animate-spin text-primary" : undefined}>
           <div className="flex items-center justify-between gap-4">
             <span className="text-xs text-muted-foreground">当前状态</span>
             <span className="inline-flex h-6 items-center gap-1.5 rounded-full border border-border bg-background px-2.5 text-xs font-semibold text-foreground">
-              <span className={cn("h-1.5 w-1.5 rounded-full", displayUpdateStatus.status === "failed" ? "bg-destructive" : checking || restartPending ? "bg-primary" : "bg-muted-foreground")} />
-              {statusLabel(displayUpdateStatus.status)}
+              {isActiveUpdatePhase(activeUpdatePhase) ? (
+                <Loader2 className="h-3 w-3 animate-spin text-primary" />
+              ) : activeUpdatePhase === "failed" ? (
+                <XCircle className="h-3 w-3 text-destructive" />
+              ) : activeUpdatePhase === "downloaded" ? (
+                <Download className="h-3 w-3 text-primary" />
+              ) : activeUpdatePhase === "completed" ? (
+                <CheckCircle2 className="h-3 w-3 text-green-600" />
+              ) : (
+                <span className={cn("h-1.5 w-1.5 rounded-full", displayUpdateStatus.status === "failed" ? "bg-destructive" : "bg-muted-foreground")} />
+              )}
+              {updatePhaseLabel(displayUpdateStatus)}
             </span>
           </div>
-          {typeof displayUpdateStatus.progress === "number" && displayUpdateStatus.progress > 0 ? (
+
+          <div className="mt-4">
+            <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
+              <span>总流程</span>
+              <span>{updateFlowSteps[activeStepIndex]}</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              {updateFlowSteps.map((step, index) => {
+                const reached = index <= activeStepIndex;
+                const current = index === activeStepIndex;
+                const failed = activeUpdatePhase === "failed" && current;
+                return (
+                  <div key={step} className="flex min-w-0 flex-1 items-center gap-1.5">
+                    <div
+                      className={cn(
+                        "h-2 w-2 shrink-0 rounded-full transition-colors",
+                        failed ? "bg-destructive" : reached ? "bg-primary" : "bg-muted",
+                        current && updateBusy && "animate-pulse"
+                      )}
+                      title={step}
+                    />
+                    {index < updateFlowSteps.length - 1 ? (
+                      <div className={cn("h-1 min-w-0 flex-1 rounded-full transition-colors", reached && !failed ? "bg-primary/50" : "bg-muted")} />
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {showUpdateProgress ? (
             <div className="mt-4">
               <div className="mb-1 flex justify-between text-xs text-muted-foreground">
                 <span>进度</span>
-                <span>{displayUpdateStatus.progress}%</span>
+                <span>{indeterminateProgress ? "进行中" : `${updateProgress}%`}</span>
               </div>
-              <div className="h-1.5 rounded-full bg-muted">
-                <div className="h-full rounded-full bg-primary" style={{ width: `${Math.min(100, Math.max(0, displayUpdateStatus.progress))}%` }} />
+              <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                {indeterminateProgress ? (
+                  <div className="h-full w-full rounded-full bg-gradient-to-r from-primary/20 via-primary to-primary/20 animate-pulse" />
+                ) : (
+                  <div className="h-full rounded-full bg-primary transition-all duration-300" style={{ width: `${updateProgress}%` }} />
+                )}
               </div>
             </div>
           ) : null}
-          {restartPending ? <div className="mt-3 text-xs text-muted-foreground">服务正在重启，页面短暂断开属于正常现象。</div> : null}
-          {!restartPending && displayUpdateStatus.error_message ? <div className="mt-3 text-xs text-destructive">{displayUpdateStatus.error_message}</div> : null}
+          {displayUpdateStatus.message ? <div className="mt-3 text-xs text-muted-foreground">{displayUpdateStatus.message}</div> : null}
+          {!restartPending && displayUpdateStatus.error_message ? <div className="mt-3 break-words text-xs text-destructive">{displayUpdateStatus.error_message}</div> : null}
+          {updateEvents.length > 0 ? (
+            <div className="mt-4 space-y-1.5 rounded-lg border border-border/50 bg-muted/10 p-3">
+              {updateEvents.map((event, index) => (
+                <div
+                  key={`${event.time || "event"}-${index}`}
+                  className={cn("flex gap-2 text-[11px] leading-4", event.level === "error" ? "text-destructive" : "text-muted-foreground")}
+                >
+                  <span className="shrink-0 font-mono text-foreground/50">{formatDateTime(event.time).split(" ").pop()}</span>
+                  <span className="min-w-0 break-words">{event.message}</span>
+                </div>
+              ))}
+            </div>
+          ) : null}
         </Card>
 
         <Card title="操作" Icon={Download}>
@@ -1898,8 +2158,8 @@ function UpdateTab({ showToast }: { showToast: (message: string) => void }) {
                 <RefreshCw className={cn("h-3.5 w-3.5", checking && "animate-spin")} />
                 检查更新
               </OutlineButton>
-              <PrimaryButton onClick={downloadUpdate} disabled={checking || !hasUpdate || !latestVersion} className="h-8 px-3 text-xs">
-                <Download className="h-3.5 w-3.5" />
+              <PrimaryButton onClick={downloadUpdate} disabled={checking || downloadingUpdate || !hasUpdate || !latestVersion} className="h-8 px-3 text-xs">
+                {downloadingUpdate ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
                 下载更新
               </PrimaryButton>
               <PrimaryButton onClick={installUpdate} disabled={checking || installingUpdate || !canInstallUpdate} className="h-8 px-3 text-xs">

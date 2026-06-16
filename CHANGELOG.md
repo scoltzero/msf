@@ -1,5 +1,83 @@
 # 更新日志
 
+## v0.3.5 - 2026-06-17
+
+### 中文
+
+#### 说明
+
+- 这是一次热更新可靠性、更新状态可视化和 Mihomo 默认运行兼容性修复发布，重点解决 `msf update` 后用户配置丢失或需要重新设置、WebUI 下载更新等待阶段无反馈，以及 Mihomo geodata / TProxy 健康检查在部分环境下启动或测速异常的问题。
+- 本版本发布资产数量与 v0.3.4 保持一致：Linux amd64/arm64 tarball、Unraid `.txz`/`.plg`，以及从同步后的 `fnos-fpk` 分支构建的 fnOS x86/arm `.fpk` 包，共 12 个 release assets。
+
+#### 新增
+
+- 新增自更新状态细分字段：`phase`、`message`、`events`，用于区分检查、连接下载、下载中、已下载、安装中、重启中、完成和失败等阶段。
+- 新增 `update_info` 的 `phase`、`message`、`event_log` 兼容迁移，保留最近 20 条更新事件，便于 WebUI 和管理员排查。
+- 新增 WebUI “更新状态”卡片的动态状态图标、总流程条、持续进度条和最近日志展示，下载/安装/重启期间状态图标会持续旋转。
+- 新增 WebUI 下载和安装的乐观状态更新与 1 秒轮询，点击下载后即显示“正在连接下载地址”，即使网络连接或 GitHub 响应卡住也不会空白。
+- 新增 Mihomo GeoSite/GeoIP 数据文件自动补齐逻辑，在默认非自定义配置下会确保 `configs/mihomo/GeoSite.dat` 和 `GeoIP.dat` 可用，下载失败仅记录警告不阻断初始化。
+- 新增 Mihomo geodata 下载测试覆盖，校验正常下载、HTTP 错误、空文件保护和自动补齐开关。
+
+#### 变更
+
+- `msf update` 现在会优先使用显式 `--config`，否则自动从已安装的 systemd service、`MSF_DATA_DIR`、`ExecStart --config` / `-c` 等信息解析真实用户数据目录，避免热更新后启动到默认目录导致重新初始化。
+- `msf update` 会复用已安装服务的 `--host` 和 `--port`，除非命令行显式传入，确保更新后的服务继续使用原监听地址和端口。
+- `msf update` 只面向 Linux tarball/systemd 安装；Docker、Unraid 和 fnOS FPK 环境会提示通过各自平台管理器升级。
+- 自更新下载流程在真正发起 HTTP 请求前先写入 `connecting` 状态，拿到响应后写入 `downloading`，未知 Content-Length 时也保持活动状态和日志。
+- 自更新安装流程会写入准备安装、解压、交给 `systemd-run` / 执行安装脚本、重启中等状态，让 WebUI 可以持续反馈服务重启前的阶段。
+- Mihomo 默认配置和生成配置改用 MetaCubeX geodata 直链，并在生成配置时补齐 `geox-url`。
+- Mihomo provider 健康检查地址改为 `http://detectportal.firefox.com/success.txt`，降低在国内或受限网络下误判节点不可用的概率。
+- 系统初始化和默认配置生成在非自定义 Mihomo 配置模式下会在写入配置后补齐 geodata 文件；自定义配置模式不自动改写用户 geodata。
+
+#### 修复
+
+- 修复 v0.3.3/v0.3.4 中命令行 `msf update` 可能没有保留用户数据目录，导致更新后 WebUI 看起来被重置、需要重新设置的问题。
+- 修复 `msf update` 在 systemd 服务里使用环境变量或短参数指定数据目录时无法正确继承的问题。
+- 修复 WebUI 点击“下载更新”后，TCP timeout 或连接 GitHub 等待期间“更新状态”卡片没有动画、没有当前状态、没有日志的问题。
+- 修复下载失败只显示最终错误、缺少“开始连接下载地址”等阶段日志的问题。
+- 修复旧数据库中已有 `status=downloaded/failed/installing` 但新增 `phase` 默认 `idle` 时，状态接口可能无法正确推导展示阶段的问题。
+- 修复通用下载器只有在 Content-Length 可用且收到数据后才发出进度事件的问题；现在连接成功和未知大小下载也会触发进度回调。
+- 修复组件更新复用下载器时可能被新连接事件污染为未知状态的问题，连接事件仍保持 `running` 状态，仅通过 message 标识。
+- 修复 Mihomo 缺少 GeoSite/GeoIP 数据文件时可能影响规则解析、启动或运行稳定性的问题。
+
+### English
+
+#### Notes
+
+- This is a reliability and visibility release for self-update, update-progress feedback, and default Mihomo runtime compatibility. It focuses on preserving user configuration after `msf update`, keeping the WebUI informative while downloads are connecting or stuck, and improving Mihomo geodata / TProxy health-check behavior.
+- Release asset count remains aligned with v0.3.4: Linux amd64/arm64 tarballs, Unraid `.txz`/`.plg`, and fnOS x86/arm `.fpk` packages built from the synced `fnos-fpk` branch, for 12 release assets total.
+
+#### Added
+
+- Added finer-grained self-update state fields: `phase`, `message`, and `events`, covering checking, connecting, downloading, downloaded, installing, restarting, completed, and failed phases.
+- Added compatible `update_info` migration columns for `phase`, `message`, and `event_log`, retaining the latest 20 update events for WebUI display and admin troubleshooting.
+- Added dynamic icons, an overall process bar, an always-visible progress indicator, and recent event logs to the WebUI Update Status card.
+- Added optimistic WebUI state and 1-second polling for download/install actions, so clicking download immediately shows “connecting to download URL” even before the HTTP request returns.
+- Added automatic Mihomo GeoSite/GeoIP data-file provisioning for default non-custom Mihomo configs, ensuring `configs/mihomo/GeoSite.dat` and `GeoIP.dat` exist when possible without blocking setup on download failures.
+- Added Mihomo geodata tests covering successful downloads, HTTP errors, empty-file protection, and the auto-provisioning switch.
+
+#### Changed
+
+- `msf update` now prefers explicit `--config`; otherwise it resolves the installed user data directory from the systemd service, `MSF_DATA_DIR`, and `ExecStart --config` / `-c` arguments, preventing updates from restarting into a default empty data directory.
+- `msf update` now preserves the installed service `--host` and `--port` unless the command line explicitly overrides them.
+- `msf update` is limited to Linux tarball/systemd installs; Docker, Unraid, and fnOS FPK environments are directed to their platform managers.
+- Self-update download now persists `connecting` before the HTTP request, switches to `downloading` after a response, and keeps an active state/log even when Content-Length is unknown.
+- Self-update install now records preparation, extraction, `systemd-run` / background installer handoff, and restarting phases so the WebUI can keep reporting progress before service restart.
+- Default and generated Mihomo configs now use MetaCubeX geodata release URLs and include `geox-url`.
+- Mihomo provider health checks now use `http://detectportal.firefox.com/success.txt` instead of Google/Fastly-style endpoints, reducing false negatives in restricted networks.
+- Setup/default generation now provisions Mihomo geodata after writing non-custom Mihomo configs; custom Mihomo configs are left untouched.
+
+#### Fixed
+
+- Fixed `msf update` in v0.3.3/v0.3.4 potentially not preserving the user data directory, making the WebUI appear reset after update.
+- Fixed `msf update` failing to inherit data directories declared through systemd environment variables or short `-c` arguments.
+- Fixed the WebUI Update Status card showing no animation, current state, or logs while a download was waiting on GitHub or eventually timing out.
+- Fixed download failures lacking stage logs such as “started connecting to download URL.”
+- Fixed legacy database rows with `status=downloaded/failed/installing` and default `phase=idle` not being displayed with the correct phase.
+- Fixed the downloader emitting progress only when Content-Length existed and body bytes were received; connection success and unknown-size downloads now emit progress events too.
+- Fixed component updates seeing the new connection event as an unknown status; connection progress remains `running` and is identified through the message.
+- Fixed Mihomo startup/runtime instability caused by missing GeoSite/GeoIP data files in default generated configs.
+
 ## v0.3.4 - 2026-06-15
 
 ### 中文

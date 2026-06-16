@@ -156,7 +156,10 @@ func (a *App) migrate() error {
 			latest_version text,
 			has_update numeric default false,
 			status text default 'idle',
+			phase text default 'idle',
 			progress integer default 0,
+			message text,
+			event_log text,
 			error_message text,
 			download_url text,
 			release_notes text,
@@ -204,6 +207,9 @@ func (a *App) migrate() error {
 	if err := a.ensureAPITokenScopeColumn(); err != nil {
 		return err
 	}
+	if err := a.ensureUpdateInfoStateColumns(); err != nil {
+		return err
+	}
 	if err := a.ensureComponentUpdateInfoComplianceColumns(); err != nil {
 		return err
 	}
@@ -229,6 +235,14 @@ func (a *App) migrateLegacyRows() error {
 func (a *App) ensureAPITokenScopeColumn() error {
 	return a.ensureTableColumns("api_tokens", map[string]string{
 		"scope": "text not null default 'admin'",
+	})
+}
+
+func (a *App) ensureUpdateInfoStateColumns() error {
+	return a.ensureTableColumns("update_info", map[string]string{
+		"phase":     "text default 'idle'",
+		"message":   "text",
+		"event_log": "text",
 	})
 }
 

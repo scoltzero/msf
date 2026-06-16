@@ -151,10 +151,12 @@ func withTestSetupSystemOps(t *testing.T) {
 	oldLookPath := setupLookPath
 	oldGeteuid := setupGeteuid
 	oldProbePort := setupProbePort
+	oldMihomoGeoDataAutoEnsure := mihomoGeoDataAutoEnsure
 	oldLocal := time.Local
 	oldTZ, hadTZ := os.LookupEnv("TZ")
 	setupGeteuid = func() int { return 0 }
 	setupProbePort = func(protocol string, port int) error { return nil }
+	mihomoGeoDataAutoEnsure = false
 	setupLookPath = func(name string) (string, error) {
 		switch name {
 		case "timedatectl", "systemctl":
@@ -179,6 +181,7 @@ func withTestSetupSystemOps(t *testing.T) {
 		setupLookPath = oldLookPath
 		setupGeteuid = oldGeteuid
 		setupProbePort = oldProbePort
+		mihomoGeoDataAutoEnsure = oldMihomoGeoDataAutoEnsure
 		time.Local = oldLocal
 		if hadTZ {
 			_ = os.Setenv("TZ", oldTZ)

@@ -13,14 +13,12 @@
   <CHANGES>
     <![CDATA[
 ### msf __PLUGIN_VERSION__
-- 改进 Linux 卸载流程：交互式终端会询问是否删除数据目录，自动化场景需要 `--purge --yes` 才会清理数据，也可用 `--keep-data` 明确保留。
-- 卸载时会根据 PID 文件和数据目录下的组件二进制路径清理 Mihomo/MosDNS 残留进程，并更安全地拒绝高风险数据目录路径。
-- 阻止 Docker、Unraid、fnOS FPK 环境误走 Linux tarball/systemd 卸载或 service install/uninstall 流程。
-- 改进 Mihomo 默认配置：启用 sniffing，补充 IPv6 FakeIP、Google/AI/PT/Microsoft/GameDownload/Private 规则源与路由，并移除示例机场订阅占位。
-- 改进 MosDNS FakeIP 上游默认值和 tag 规范化，修正 `nocnfake` / `cnfake` 语义反置问题。
-- 新增 MosDNS 上游 DNS 添加/编辑弹窗和分组级启用开关，编辑时保留原始 server 字段结构。
-- 修复 MosDNS 系统设置页开关映射错误。
-- 修复 MosDNS 客户端扫描重置后未清空 `mosdns_client_ips` 和 `client_ip.txt` 的问题。
+- 修复 `msf update` 后可能没有继承原数据目录、导致 WebUI 看起来被重置的问题；更新会从 systemd service / 环境变量 / `--config` 自动解析用户数据目录。
+- `msf update` 会保留已安装服务的监听 host/port，并继续限制 Docker、Unraid、fnOS FPK 通过平台管理器升级。
+- WebUI 系统更新状态新增旋转图标、总流程条、动态进度和最近日志；下载连接等待或 TCP timeout 期间也会显示当前阶段。
+- 自更新 API 新增 `phase`、`message`、`events`，后端会记录连接下载、下载中、安装、重启和失败日志。
+- 默认 Mihomo 配置补齐 MetaCubeX `geox-url`，并自动确保 GeoSite/GeoIP 数据文件存在。
+- Mihomo provider 健康检查改用 `http://detectportal.firefox.com/success.txt`，降低受限网络下的误判。
     ]]>
   </CHANGES>
 

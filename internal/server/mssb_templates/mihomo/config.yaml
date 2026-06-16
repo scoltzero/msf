@@ -67,8 +67,6 @@ geo-auto-update: true
 geo-update-interval: 24
 # 匹配进程 always/strict/off 流量进程识别
 find-process-mode: strict
-# 指纹伪装
-global-client-fingerprint: chrome
 # "*" 表示监听所有网卡 包括外网 IP、局域网 IP
 bind-address: "*"
 # 是否允许 LAN 内其他设备连接代理
@@ -80,10 +78,10 @@ external-controller: :9090
 external-ui: /mssb/mihomo/ui
 external-ui-url: 'https://github.com/Zephyruso/zashboard/releases/latest/download/dist.zip'
 geox-url:
-  geoip: "https://github.com/MetaCubeX/meta-rules-dat/releases/latest/download/geoip.dat"
-  geosite: "https://github.com/MetaCubeX/meta-rules-dat/releases/latest/download/geosite.dat"
-  mmdb: 'https://gitlab.com/Masaiki/GeoIP2-CN/-/raw/release/Country.mmdb'
-  asn: 'https://gitlab.com/Loon0x00/loon_data/-/raw/main/geo/GeoLite2-ASN.mmdb'
+  geoip: "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geoip.dat"
+  geosite: "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geosite.dat"
+  mmdb: "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geoip.metadb"
+  asn: "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/GeoLite2-ASN.mmdb"
 profile:
   store-selected: true
   store-fake-ip: true

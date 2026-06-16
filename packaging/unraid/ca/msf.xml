@@ -13,16 +13,14 @@ Update and remove msf from the Unraid Plugins page (not via the in-app updater).
 <Project>https://github.com/scoltzero/msf</Project>
 <Category>Network:Management Tools:System Plugins:</Category>
 <Beta>False</Beta>
-<Date>2026-06-15</Date>
+<Date>2026-06-17</Date>
 <Changes>
-### msf 0.3.4
-- Improved Linux uninstall behavior: interactive terminals ask whether to remove the data directory, automation must pass `--purge --yes` to delete data, and `--keep-data` explicitly retains it.
-- Uninstall now stops Mihomo/MosDNS leftovers using PID files and component binary paths under the data directory, with stronger protection against broad purge paths.
-- Docker, Unraid, and fnOS FPK installs are now blocked from the Linux tarball/systemd uninstall and service install/uninstall paths.
-- Improved the default Mihomo config with sniffing, IPv6 FakeIP, Google/AI/PT/Microsoft/GameDownload/Private rule providers and routes, and removed the sample airport subscription placeholder.
-- Corrected MosDNS FakeIP upstream defaults and tag normalization for `nocnfake` / `cnfake`.
-- Added a MosDNS upstream DNS add/edit dialog and group-level enable toggles while preserving raw upstream server fields on save.
-- Fixed MosDNS system setting switch mappings.
-- Fixed MosDNS client scan reset so `mosdns_client_ips` and `client_ip.txt` are cleared together.
+### msf 0.3.5
+- Fixed `msf update` so Linux tarball/systemd updates preserve the installed data directory and no longer make the WebUI look reset after update.
+- `msf update` now reuses the installed host/port unless explicitly overridden and continues to direct Docker, Unraid, and fnOS FPK installs to platform managers.
+- The WebUI Update Status card now shows a spinning state icon, process bar, dynamic progress, and recent logs during check/download/install/restart/failure phases.
+- Self-update APIs now expose `phase`, `message`, and `events`, with backend logs for connecting, downloading, installing, restarting, and failed states.
+- Default Mihomo configs now include MetaCubeX `geox-url`, and msf auto-provisions GeoSite/GeoIP data files for generated non-custom configs.
+- Mihomo provider health checks now use `http://detectportal.firefox.com/success.txt` to reduce false negatives on restricted networks.
 </Changes>
 </Plugin>

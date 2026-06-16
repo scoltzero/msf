@@ -27,7 +27,7 @@ Then open `http://localhost:7777`.
 
 ```bash
 curl -L -o msf-linux-amd64.tar.gz \
-  https://github.com/scoltzero/msf/releases/download/v0.3.4/msf-linux-amd64.tar.gz
+  https://github.com/scoltzero/msf/releases/download/v0.3.5/msf-linux-amd64.tar.gz
 tar -xzf msf-linux-amd64.tar.gz -C /tmp
 sudo /tmp/msf-*-linux-amd64/install.sh
 ```
@@ -239,7 +239,7 @@ Use `status.hints` to diagnose common problems such as `enabled=false`, no scann
 
 ```bash
 make build
-make unraid VERSION=0.3.4 UNRAID_VERSION=0.3.4 GITHUB_REPO=scoltzero/msf RELEASE_TAG=v0.3.4
+make unraid VERSION=0.3.5 UNRAID_VERSION=0.3.5 GITHUB_REPO=scoltzero/msf RELEASE_TAG=v0.3.5
 ```
 
 The generated artifacts are:

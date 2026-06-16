@@ -82,9 +82,17 @@ func run(args []string) error {
 	helpAll := fs.Bool("help-all", false, "print full help")
 	_ = fs.Parse(args)
 	configExplicit := false
+	hostExplicit := false
+	portExplicit := false
 	fs.Visit(func(f *flag.Flag) {
 		if f.Name == "c" || f.Name == "config" {
 			configExplicit = true
+		}
+		if f.Name == "host" {
+			hostExplicit = true
+		}
+		if f.Name == "p" || f.Name == "port" {
+			portExplicit = true
 		}
 	})
 
@@ -140,7 +148,7 @@ func run(args []string) error {
 	case "doctor":
 		return runDoctor(*configDir, *serviceName)
 	case "update":
-		return updateRuntime(updateOptions{Repo: *repo, URL: *updateURL, Prefix: *prefix, DataDir: *configDir, ServiceName: *serviceName})
+		return updateRuntime(updateOptions{Repo: *repo, URL: *updateURL, Prefix: *prefix, DataDir: *configDir, DataDirExplicit: configExplicit, Host: *host, HostExplicit: hostExplicit, Port: *port, PortExplicit: portExplicit, ServiceName: *serviceName})
 	case "service":
 		action := ""
 		if fs.NArg() > 0 {
@@ -190,6 +198,8 @@ func printUsage() {
 
 Notes:
   stop sends SIGTERM to the running msf process and waits for MosDNS/Mihomo child services to exit.
+  update is for Linux tarball/systemd installs. Docker, Unraid, and fnOS FPK installs must be updated from their platform manager.
+  update reuses the data directory from --config or the installed systemd service to avoid resetting setup state.
   uninstall is for Linux tarball/systemd installs. Docker, Unraid, and fnOS FPK installs must be removed from their platform manager.
   uninstall asks whether to remove the data directory on interactive terminals. In automation, pass --purge --yes to remove it or --keep-data to retain it.
 `)
@@ -411,11 +421,65 @@ func dataDirFromSystemdService(service string) string {
 			return strings.Trim(strings.TrimPrefix(line, "Environment=MSF_DATA_DIR="), `"'`)
 		}
 		if strings.HasPrefix(line, "ExecStart=") {
-			fields := strings.Fields(line)
-			for i := 0; i < len(fields)-1; i++ {
-				if fields[i] == "--config" || fields[i] == "-c" {
+			if dataDir := dataDirFromExecStart(line); dataDir != "" {
+				return dataDir
+			}
+		}
+	}
+	return ""
+}
+
+func dataDirFromExecStart(line string) string {
+	return argFromExecStart(line, "--config", "-c")
+}
+
+func hostFromSystemdService(service string) string {
+	for _, line := range systemdServiceLines(service) {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "ExecStart=") {
+			return argFromExecStart(line, "--host")
+		}
+	}
+	return ""
+}
+
+func portFromSystemdService(service string) int {
+	for _, line := range systemdServiceLines(service) {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "ExecStart=") {
+			continue
+		}
+		portText := argFromExecStart(line, "--port", "-p")
+		if portText == "" {
+			return 0
+		}
+		port, _ := strconv.Atoi(portText)
+		return port
+	}
+	return 0
+}
+
+func systemdServiceLines(service string) []string {
+	path := filepath.Join(systemdServiceDir, service+".service")
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	return strings.Split(string(b), "\n")
+}
+
+func argFromExecStart(line string, names ...string) string {
+	fields := strings.Fields(strings.TrimPrefix(line, "ExecStart="))
+	for i, field := range fields {
+		for _, name := range names {
+			if field == name {
+				if i+1 < len(fields) {
 					return strings.Trim(fields[i+1], `"'`)
 				}
+				return ""
+			}
+			if strings.HasPrefix(field, name+"=") {
+				return strings.Trim(strings.TrimPrefix(field, name+"="), `"'`)
 			}
 		}
 	}
@@ -901,23 +965,34 @@ func pathWithin(path, root string) bool {
 }
 
 type updateOptions struct {
-	Repo        string
-	URL         string
-	Prefix      string
-	DataDir     string
-	ServiceName string
+	Repo            string
+	URL             string
+	Prefix          string
+	DataDir         string
+	DataDirExplicit bool
+	Host            string
+	HostExplicit    bool
+	Port            int
+	PortExplicit    bool
+	ServiceName     string
 }
 
 func updateRuntime(opts updateOptions) error {
 	if server.IsDockerRuntime() {
 		return errors.New(server.DockerUpdateDisabledReason())
 	}
-	if os.Geteuid() != 0 {
-		return errors.New("update must be run as root")
-	}
 	if isUnraidRuntime() {
 		return errors.New("on Unraid, update msf from the WebGUI plugin page instead of the Linux tarball updater")
 	}
+	if isFnOSFPKRuntime() {
+		return errors.New("fnOS FPK installs must be updated from fnOS / 飞牛应用中心 or the FPK package manager; the Linux tarball updater would create a separate /opt/msf install")
+	}
+	if currentEUID() != 0 {
+		return errors.New("update must be run as root")
+	}
+	opts.DataDir = resolveUpdateDataDir(opts)
+	opts.Host = resolveUpdateHost(opts)
+	opts.Port = resolveUpdatePort(opts)
 	if opts.Repo == "" {
 		opts.Repo = defaultGitHubRepo()
 	}
@@ -966,12 +1041,66 @@ func updateRuntime(opts updateOptions) error {
 		return err
 	}
 	args := []string{installScript, "--prefix", opts.Prefix, "--data-dir", opts.DataDir, "--service-name", opts.ServiceName}
+	if strings.TrimSpace(opts.Host) != "" {
+		args = append(args, "--host", opts.Host)
+	}
+	if opts.Port > 0 {
+		args = append(args, "--port", strconv.Itoa(opts.Port))
+	}
 	cmd := exec.Command("sh", args...)
 	cmd.Dir = filepath.Dir(installScript)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	fmt.Printf("running installer from %s\n", filepath.Dir(installScript))
 	return cmd.Run()
+}
+
+func resolveUpdateDataDir(opts updateOptions) string {
+	if opts.DataDirExplicit && strings.TrimSpace(opts.DataDir) != "" {
+		return opts.DataDir
+	}
+	if opts.ServiceName == "" {
+		opts.ServiceName = "msf"
+	}
+	if dataDir := dataDirFromSystemdService(opts.ServiceName); strings.TrimSpace(dataDir) != "" {
+		return dataDir
+	}
+	if strings.TrimSpace(opts.DataDir) != "" {
+		return opts.DataDir
+	}
+	return defaultDataDir()
+}
+
+func resolveUpdateHost(opts updateOptions) string {
+	if opts.HostExplicit && strings.TrimSpace(opts.Host) != "" {
+		return opts.Host
+	}
+	if opts.ServiceName == "" {
+		opts.ServiceName = "msf"
+	}
+	if host := hostFromSystemdService(opts.ServiceName); strings.TrimSpace(host) != "" {
+		return host
+	}
+	if strings.TrimSpace(opts.Host) != "" {
+		return opts.Host
+	}
+	return "0.0.0.0"
+}
+
+func resolveUpdatePort(opts updateOptions) int {
+	if opts.PortExplicit && opts.Port > 0 {
+		return opts.Port
+	}
+	if opts.ServiceName == "" {
+		opts.ServiceName = "msf"
+	}
+	if port := portFromSystemdService(opts.ServiceName); port > 0 {
+		return port
+	}
+	if opts.Port > 0 {
+		return opts.Port
+	}
+	return 7777
 }
 
 type serviceOptions struct {

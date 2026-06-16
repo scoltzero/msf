@@ -11,7 +11,7 @@ Generated files:
 Build:
 
 ```bash
-make unraid VERSION=0.3.4 UNRAID_VERSION=0.3.4 GITHUB_REPO=scoltzero/msf RELEASE_TAG=v0.3.4
+make unraid VERSION=0.3.5 UNRAID_VERSION=0.3.5 GITHUB_REPO=scoltzero/msf RELEASE_TAG=v0.3.5
 ```
 
 Publish the generated `.txz` package and `.plg` file to the GitHub release named by `RELEASE_TAG`, then commit the generated root `msf.plg` when you want a branch-based install URL.
@@ -19,21 +19,21 @@ Publish the generated `.txz` package and `.plg` file to the GitHub release named
 Example:
 
 ```bash
-gh release create v0.3.4 \
-  dist/unraid/msf-0.3.4-x86_64-1.txz \
+gh release create v0.3.5 \
+  dist/unraid/msf-0.3.5-x86_64-1.txz \
   dist/unraid/msf.plg \
   dist/msf-linux-amd64.tar.gz \
   dist/msf-linux-amd64.tar.gz.sha256 \
   dist/msf-linux-arm64.tar.gz \
   dist/msf-linux-arm64.tar.gz.sha256 \
-  --title "v0.3.4" \
-  --notes-file /tmp/msf-v0.3.4-release-notes.md
+  --title "v0.3.5" \
+  --notes-file /tmp/msf-v0.3.5-release-notes.md
 ```
 
-Recommended install URL for the v0.3.4 release:
+Recommended install URL for the v0.3.5 release:
 
 ```text
-https://github.com/scoltzero/msf/releases/download/v0.3.4/msf.plg
+https://github.com/scoltzero/msf/releases/download/v0.3.5/msf.plg
 ```
 
 Branch install URL, only after the generated root `msf.plg` has been committed to that branch:

@@ -24,7 +24,14 @@ const (
 	updateConfigMosDNSUpgradeModeKey = "update.mosdns_upgrade_mode"
 	updateConfigMihomoUpgradeModeKey = "update.mihomo_upgrade_mode"
 	defaultUpdateCheckInterval       = 12 * 60 * 60
+	maxSelfUpdateEvents              = 20
 )
+
+type selfUpdateEvent struct {
+	Time    string `json:"time"`
+	Level   string `json:"level"`
+	Message string `json:"message"`
+}
 
 func (a *App) registerUpdateRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/update/status", a.handleUpdateStatus)
@@ -46,6 +53,146 @@ func (a *App) registerUpdateRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/v1/component-updates/{component}/config", a.handleComponentUpdateConfigPut)
 }
 
+func (a *App) ensureSelfUpdateInfoRow() error {
+	now := nowString()
+	_, err := a.DB.Exec(`insert into update_info(component,current_version,latest_version,has_update,status,phase,progress,message,event_log,error_message,download_url,release_notes,created_at,updated_at)
+		select 'msf',?,?,?,?,?,?,?,?,?,?,?,?,?
+		where not exists(select 1 from update_info where component='msf')`,
+		a.Version, a.Version, false, "idle", "idle", 0, "", "[]", "", "", "", now, now)
+	return err
+}
+
+func (a *App) readSelfUpdateEvents() []selfUpdateEvent {
+	var raw string
+	if err := a.DB.QueryRow(`select coalesce(event_log,'') from update_info where component='msf' order by id desc limit 1`).Scan(&raw); err != nil {
+		return nil
+	}
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	var events []selfUpdateEvent
+	if err := json.Unmarshal([]byte(raw), &events); err != nil {
+		return nil
+	}
+	if len(events) > maxSelfUpdateEvents {
+		events = events[len(events)-maxSelfUpdateEvents:]
+	}
+	return events
+}
+
+func (a *App) writeSelfUpdateEvents(events []selfUpdateEvent) {
+	if len(events) > maxSelfUpdateEvents {
+		events = events[len(events)-maxSelfUpdateEvents:]
+	}
+	raw, err := json.Marshal(events)
+	if err != nil {
+		raw = []byte("[]")
+	}
+	_, _ = a.DB.Exec(`update update_info set event_log=?,updated_at=? where component='msf'`, string(raw), nowString())
+}
+
+func (a *App) appendSelfUpdateEvent(level, message string) {
+	message = strings.TrimSpace(message)
+	if message == "" {
+		return
+	}
+	if level == "" {
+		level = "info"
+	}
+	_ = a.ensureSelfUpdateInfoRow()
+	events := a.readSelfUpdateEvents()
+	events = append(events, selfUpdateEvent{
+		Time:    nowString(),
+		Level:   level,
+		Message: message,
+	})
+	a.writeSelfUpdateEvents(events)
+}
+
+func (a *App) setSelfUpdateState(status, phase string, progress int, message, errorText, eventLevel, eventMessage string) {
+	if phase == "" {
+		phase = phaseForSelfUpdateStatus(status, false)
+	}
+	if message == "" {
+		message = messageForSelfUpdatePhase(phase)
+	}
+	if progress < 0 {
+		progress = 0
+	}
+	if progress > 100 {
+		progress = 100
+	}
+	_ = a.ensureSelfUpdateInfoRow()
+	events := a.readSelfUpdateEvents()
+	if strings.TrimSpace(eventMessage) != "" {
+		if eventLevel == "" {
+			eventLevel = "info"
+		}
+		events = append(events, selfUpdateEvent{Time: nowString(), Level: eventLevel, Message: strings.TrimSpace(eventMessage)})
+	}
+	if len(events) > maxSelfUpdateEvents {
+		events = events[len(events)-maxSelfUpdateEvents:]
+	}
+	raw, err := json.Marshal(events)
+	if err != nil {
+		raw = []byte("[]")
+	}
+	_, _ = a.DB.Exec(`update update_info set status=?,phase=?,progress=?,message=?,event_log=?,error_message=?,updated_at=? where component='msf'`,
+		status, phase, progress, message, string(raw), errorText, nowString())
+}
+
+func phaseForSelfUpdateStatus(status string, hasUpdate bool) string {
+	switch status {
+	case "checking":
+		return "checking"
+	case "checked":
+		if hasUpdate {
+			return "ready"
+		}
+		return "idle"
+	case "downloading":
+		return "downloading"
+	case "downloaded":
+		return "downloaded"
+	case "installing":
+		return "installing"
+	case "restarting":
+		return "restarting"
+	case "completed":
+		return "completed"
+	case "failed":
+		return "failed"
+	default:
+		return "idle"
+	}
+}
+
+func messageForSelfUpdatePhase(phase string) string {
+	switch phase {
+	case "checking":
+		return "正在检查最新版本"
+	case "ready":
+		return "检测到新版本可用"
+	case "connecting":
+		return "正在连接下载地址"
+	case "downloading":
+		return "正在下载更新包"
+	case "downloaded":
+		return "更新包已下载"
+	case "installing":
+		return "正在安装更新"
+	case "restarting":
+		return "服务正在重启"
+	case "completed":
+		return "更新完成"
+	case "failed":
+		return "更新失败"
+	default:
+		return ""
+	}
+}
+
 func (a *App) handleUpdateStatus(w http.ResponseWriter, r *http.Request) {
 	item := a.selfUpdateState()
 	writeJSON(w, http.StatusOK, map[string]any{"success": true, "data": item})
@@ -58,7 +205,10 @@ func (a *App) selfUpdateState() map[string]any {
 		"latest_version":  a.Version,
 		"has_update":      false,
 		"status":          "idle",
+		"phase":           "idle",
 		"progress":        0,
+		"message":         "",
+		"events":          []selfUpdateEvent{},
 		"supported":       true,
 	}
 	if IsDockerRuntime() {
@@ -66,17 +216,39 @@ func (a *App) selfUpdateState() map[string]any {
 		item["disabled_reason"] = DockerUpdateDisabledReason()
 		return item
 	}
-	row := a.DB.QueryRow(`select current_version,latest_version,has_update,status,progress,coalesce(error_message,''),coalesce(download_url,''),coalesce(release_notes,''),last_check_time from update_info where component='msf' order by id desc limit 1`)
-	var current, latest, status, errText, downloadURL, notes string
+	if IsFnOSFPKRuntime() {
+		item["supported"] = false
+		item["disabled_reason"] = FnOSUpdateDisabledReason()
+		return item
+	}
+	row := a.DB.QueryRow(`select current_version,latest_version,has_update,status,coalesce(phase,''),progress,coalesce(message,''),coalesce(event_log,''),coalesce(error_message,''),coalesce(download_url,''),coalesce(release_notes,''),last_check_time from update_info where component='msf' order by id desc limit 1`)
+	var current, latest, status, phase, message, rawEvents, errText, downloadURL, notes string
 	var hasUpdate bool
 	var progress int
 	var last sql.NullTime
-	if err := row.Scan(&current, &latest, &hasUpdate, &status, &progress, &errText, &downloadURL, &notes, &last); err == nil {
+	if err := row.Scan(&current, &latest, &hasUpdate, &status, &phase, &progress, &message, &rawEvents, &errText, &downloadURL, &notes, &last); err == nil {
+		if phase == "" || (phase == "idle" && status != "idle") {
+			phase = phaseForSelfUpdateStatus(status, hasUpdate)
+		}
+		if message == "" {
+			message = messageForSelfUpdatePhase(phase)
+		}
+		var events []selfUpdateEvent
+		_ = json.Unmarshal([]byte(rawEvents), &events)
+		if events == nil {
+			events = []selfUpdateEvent{}
+		}
+		if len(events) > maxSelfUpdateEvents {
+			events = events[len(events)-maxSelfUpdateEvents:]
+		}
 		item["current_version"] = current
 		item["latest_version"] = latest
 		item["has_update"] = hasUpdate
 		item["status"] = status
+		item["phase"] = phase
 		item["progress"] = progress
+		item["message"] = message
+		item["events"] = events
 		item["error_message"] = errText
 		item["download_url"] = downloadURL
 		item["release_notes"] = notes
@@ -89,11 +261,13 @@ func (a *App) selfUpdateState() map[string]any {
 				item["can_install"] = true
 			}
 		}
-		if latest != "" && !versionDifferent(a.Version, latest) && oneOf(status, "installing", "downloaded", "checked") {
+		if latest != "" && !versionDifferent(a.Version, latest) && oneOf(status, "installing", "restarting", "downloaded", "checked") {
 			item["current_version"] = a.Version
 			item["has_update"] = false
 			item["status"] = "completed"
+			item["phase"] = "completed"
 			item["progress"] = 100
+			item["message"] = messageForSelfUpdatePhase("completed")
 			item["can_install"] = false
 		}
 	}
@@ -105,20 +279,32 @@ func (a *App) handleUpdateCheck(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": DockerUpdateDisabledReason(), "data": a.selfUpdateState()})
 		return
 	}
+	if IsFnOSFPKRuntime() {
+		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": FnOSUpdateDisabledReason(), "data": a.selfUpdateState()})
+		return
+	}
+	a.setSelfUpdateState("checking", "checking", 1, "正在检查最新版本", "", "info", "开始检查最新版本")
 	release, err := a.fetchLatestRelease("scoltzero", "msf")
 	if err != nil {
+		a.setSelfUpdateState("failed", "failed", 1, "检查更新失败", err.Error(), "error", "检查更新失败: "+err.Error())
 		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": err.Error(), "data": a.selfUpdateState()})
 		return
 	}
 	downloadURL := releaseAssetURL(release, selfUpdateAssetContainsFor(runtime.GOOS, runtime.GOARCH), ".tar.gz")
 	hasUpdate := versionDifferent(a.Version, release.TagName)
 	now := time.Now()
-	_, _ = a.DB.Exec(`insert into update_info(component,current_version,latest_version,has_update,status,progress,error_message,download_url,release_notes,last_check_time,created_at,updated_at)
-		values('msf',?,?,?,?,?,?,?,?,?,?,?)
-		on conflict(id) do nothing`,
-		a.Version, release.TagName, hasUpdate, "checked", 0, "", downloadURL, release.Body, now, now, now)
-	_, _ = a.DB.Exec(`update update_info set current_version=?,latest_version=?,has_update=?,status='checked',progress=0,error_message='',download_url=?,release_notes=?,last_check_time=?,updated_at=? where component='msf'`,
-		a.Version, release.TagName, hasUpdate, downloadURL, release.Body, now, now)
+	phase := "idle"
+	message := "已是最新版本"
+	eventMessage := "已检查更新，当前已是最新版本"
+	if hasUpdate {
+		phase = "ready"
+		message = "检测到新版本可用"
+		eventMessage = "检测到新版本 " + release.TagName
+	}
+	_ = a.ensureSelfUpdateInfoRow()
+	_, _ = a.DB.Exec(`update update_info set current_version=?,latest_version=?,has_update=?,status='checked',phase=?,progress=0,message=?,error_message='',download_url=?,release_notes=?,last_check_time=?,updated_at=? where component='msf'`,
+		a.Version, release.TagName, hasUpdate, phase, message, downloadURL, release.Body, now, now)
+	a.appendSelfUpdateEvent("info", eventMessage)
 	writeJSON(w, http.StatusOK, map[string]any{"success": true, "data": map[string]any{
 		"component":       "msf",
 		"current_version": a.Version,
@@ -127,6 +313,8 @@ func (a *App) handleUpdateCheck(w http.ResponseWriter, r *http.Request) {
 		"download_url":    downloadURL,
 		"release_notes":   release.Body,
 		"status":          "checked",
+		"phase":           phase,
+		"message":         message,
 		"last_check_time": now,
 	}})
 }
@@ -208,39 +396,72 @@ func (a *App) handleUpdateDownload(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": DockerUpdateDisabledReason(), "data": a.selfUpdateState()})
 		return
 	}
+	if IsFnOSFPKRuntime() {
+		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": FnOSUpdateDisabledReason(), "data": a.selfUpdateState()})
+		return
+	}
 	state := a.selfUpdateState()
 	rawURL := strings.TrimSpace(fmt.Sprint(state["download_url"]))
 	if rawURL == "" {
+		a.setSelfUpdateState("checking", "checking", 1, "正在获取最新发布信息", "", "info", "下载前获取最新发布信息")
 		release, err := a.fetchLatestRelease("scoltzero", "msf")
 		if err != nil {
-			writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": err.Error(), "data": state})
+			a.setSelfUpdateState("failed", "failed", 1, "获取发布信息失败", err.Error(), "error", "获取发布信息失败: "+err.Error())
+			writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": err.Error(), "data": a.selfUpdateState()})
 			return
 		}
 		rawURL = releaseAssetURL(release, selfUpdateAssetContainsFor(runtime.GOOS, runtime.GOARCH), ".tar.gz")
 	}
 	if rawURL == "" {
-		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": "no " + selfUpdateAssetContainsFor(runtime.GOOS, runtime.GOARCH) + " release asset found", "data": state})
+		errText := "no " + selfUpdateAssetContainsFor(runtime.GOOS, runtime.GOARCH) + " release asset found"
+		a.setSelfUpdateState("failed", "failed", 1, "未找到当前平台的更新包", errText, "error", "未找到当前平台的更新包")
+		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": errText, "data": a.selfUpdateState()})
 		return
 	}
 	dest := filepath.Join(a.DataDir, "data", "updates", filepath.Base(rawURL))
 	effectiveURL := a.rewriteDownloadURL(rawURL)
-	last := DownloadEvent{Status: "running", Progress: 5, Message: "starting"}
+	_ = a.ensureSelfUpdateInfoRow()
+	_, _ = a.DB.Exec(`update update_info set download_url=?,status='downloading',phase='connecting',progress=3,message='正在连接下载地址',error_message='',updated_at=? where component='msf'`, rawURL, nowString())
+	a.appendSelfUpdateEvent("info", "开始连接下载地址")
+	last := DownloadEvent{Status: "connecting", Progress: 3, Message: "connecting"}
+	connectedLogged := false
+	downloadingLogged := false
 	err := a.downloadFile(rawURL, dest, func(ev DownloadEvent) {
 		last = ev
-		_, _ = a.DB.Exec(`update update_info set status='downloading',progress=?,error_message='',updated_at=? where component='msf'`, ev.Progress, nowString())
+		message := "正在下载更新包"
+		eventMessage := ""
+		if ev.Message == "connected" {
+			message = "已连接下载地址，正在接收数据"
+			if !connectedLogged {
+				eventMessage = "已连接下载地址"
+				connectedLogged = true
+			}
+		} else if ev.Message != "" {
+			message = "正在下载更新包"
+			if !downloadingLogged {
+				eventMessage = "开始接收更新包数据"
+				downloadingLogged = true
+			}
+		}
+		a.setSelfUpdateState("downloading", "downloading", ev.Progress, message, "", "info", eventMessage)
 	})
 	if err != nil {
-		_, _ = a.DB.Exec(`update update_info set status='failed',progress=?,error_message=?,updated_at=? where component='msf'`, last.Progress, err.Error(), nowString())
+		a.setSelfUpdateState("failed", "failed", last.Progress, "下载更新失败", err.Error(), "error", "下载更新失败: "+err.Error())
 		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": err.Error(), "data": a.selfUpdateState()})
 		return
 	}
-	_, _ = a.DB.Exec(`update update_info set status='downloaded',progress=100,error_message='',download_url=?,updated_at=? where component='msf'`, rawURL, nowString())
-	writeJSON(w, http.StatusOK, map[string]any{"success": true, "data": map[string]any{"path": dest, "download_url": rawURL, "effective_download_url": effectiveURL, "event": last}})
+	_, _ = a.DB.Exec(`update update_info set status='downloaded',phase='downloaded',progress=100,message='更新包已下载',error_message='',download_url=?,updated_at=? where component='msf'`, rawURL, nowString())
+	a.appendSelfUpdateEvent("info", "更新包下载完成")
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "data": map[string]any{"path": dest, "download_url": rawURL, "effective_download_url": effectiveURL, "event": last, "status": a.selfUpdateState()}})
 }
 
 func (a *App) handleUpdateInstall(w http.ResponseWriter, r *http.Request) {
 	if IsDockerRuntime() {
 		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": DockerUpdateDisabledReason(), "data": a.selfUpdateState()})
+		return
+	}
+	if IsFnOSFPKRuntime() {
+		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": FnOSUpdateDisabledReason(), "data": a.selfUpdateState()})
 		return
 	}
 	if os.Geteuid() != 0 {
@@ -254,17 +475,19 @@ func (a *App) handleUpdateInstall(w http.ResponseWriter, r *http.Request) {
 	state := a.selfUpdateState()
 	rawURL := strings.TrimSpace(fmt.Sprint(state["download_url"]))
 	if rawURL == "" {
-		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": "请先检查并下载更新包", "data": state})
+		a.setSelfUpdateState("failed", "failed", 0, "请先检查并下载更新包", "请先检查并下载更新包", "error", "安装失败: 尚未下载更新包")
+		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": "请先检查并下载更新包", "data": a.selfUpdateState()})
 		return
 	}
 	archivePath := filepath.Join(a.DataDir, "data", "updates", filepath.Base(rawURL))
 	if _, err := os.Stat(archivePath); err != nil {
-		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": "更新包不存在，请先下载更新", "data": state})
+		a.setSelfUpdateState("failed", "failed", 0, "更新包不存在，请先下载更新", "更新包不存在，请先下载更新", "error", "安装失败: 更新包不存在")
+		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": "更新包不存在，请先下载更新", "data": a.selfUpdateState()})
 		return
 	}
-	_, _ = a.DB.Exec(`update update_info set status='installing',progress=95,error_message='',updated_at=? where component='msf'`, nowString())
+	a.setSelfUpdateState("installing", "installing", 90, "正在准备安装更新包", "", "info", "开始安装更新包")
 	if err := a.startSelfUpdateInstaller(archivePath); err != nil {
-		_, _ = a.DB.Exec(`update update_info set status='failed',progress=95,error_message=?,updated_at=? where component='msf'`, err.Error(), nowString())
+		a.setSelfUpdateState("failed", "failed", 95, "安装更新失败", err.Error(), "error", "安装更新失败: "+err.Error())
 		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": err.Error(), "data": a.selfUpdateState()})
 		return
 	}
@@ -279,6 +502,7 @@ func (a *App) startSelfUpdateInstaller(archivePath string) error {
 	if err := untarGz(archivePath, workDir); err != nil {
 		return err
 	}
+	a.setSelfUpdateState("installing", "installing", 93, "更新包已解压，正在准备安装脚本", "", "info", "更新包已解压")
 	installScript := filepath.Join(workDir, "install.sh")
 	if _, err := os.Stat(installScript); err != nil {
 		return fmt.Errorf("update archive missing install.sh")
@@ -299,18 +523,22 @@ func (a *App) startSelfUpdateInstaller(archivePath string) error {
 		if err != nil {
 			return fmt.Errorf("start update installer: %w: %s", err, strings.TrimSpace(string(out)))
 		}
+		a.setSelfUpdateState("restarting", "restarting", 97, "安装任务已启动，服务即将重启", "", "info", "安装任务已交给 systemd-run，服务即将重启")
 		return nil
 	}
 	go func() {
 		cmdArgs := append([]string{installScript}, args...)
 		cmd := exec.Command("sh", cmdArgs...)
 		cmd.Dir = workDir
+		a.setSelfUpdateState("restarting", "restarting", 97, "正在执行安装脚本，服务即将重启", "", "info", "正在执行安装脚本")
 		out, err := cmd.CombinedOutput()
 		if err != nil {
-			_, _ = a.DB.Exec(`update update_info set status='failed',progress=95,error_message=?,updated_at=? where component='msf'`, fmt.Sprintf("%v: %s", err, strings.TrimSpace(string(out))), nowString())
+			errText := fmt.Sprintf("%v: %s", err, strings.TrimSpace(string(out)))
+			a.setSelfUpdateState("failed", "failed", 95, "安装更新失败", errText, "error", "安装更新失败: "+errText)
 			return
 		}
-		_, _ = a.DB.Exec(`update update_info set current_version=?,has_update=false,status='completed',progress=100,error_message='',updated_at=? where component='msf'`, a.Version, nowString())
+		_, _ = a.DB.Exec(`update update_info set current_version=?,has_update=false,status='completed',phase='completed',progress=100,message='更新完成',error_message='',updated_at=? where component='msf'`, a.Version, nowString())
+		a.appendSelfUpdateEvent("info", "更新安装完成")
 	}()
 	return nil
 }
@@ -370,7 +598,7 @@ func serverIsUnraidRuntime() bool {
 }
 
 func (a *App) handleUpdateCancel(w http.ResponseWriter, r *http.Request) {
-	_, _ = a.DB.Exec(`update update_info set status='idle',progress=0,updated_at=? where component='msf'`, nowString())
+	a.setSelfUpdateState("idle", "idle", 0, "已取消更新", "", "info", "已取消更新")
 	writeJSON(w, http.StatusOK, map[string]any{"success": true, "data": a.selfUpdateState()})
 }
 

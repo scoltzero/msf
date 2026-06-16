@@ -116,7 +116,14 @@ func (a *App) ensureDefaultConfigs() error {
 			}
 		}
 	}
-	return a.ensureMosDNSRuleFiles()
+	if err := a.ensureMosDNSRuleFiles(); err != nil {
+		return err
+	}
+	if a.mihomoConfigMode() != "custom" {
+		a.ensureGeneratedMihomoConfigCompatibility()
+		return a.ensureMihomoGeoDataFiles()
+	}
+	return nil
 }
 
 func (a *App) writeGeneratedConfigs(cfg SetupConfig) error {
@@ -142,7 +149,13 @@ func (a *App) writeGeneratedConfigs(cfg SetupConfig) error {
 			return err
 		}
 	}
-	return a.ensureMosDNSRuleFiles()
+	if err := a.ensureMosDNSRuleFiles(); err != nil {
+		return err
+	}
+	if a.mihomoConfigMode() != "custom" {
+		return a.ensureMihomoGeoDataFiles()
+	}
+	return nil
 }
 
 func renderDisabledSingBoxJSON() string {
@@ -225,13 +238,17 @@ geodata-loader: standard
 geo-auto-update: true
 geo-update-interval: 24
 find-process-mode: strict
-global-client-fingerprint: chrome
 allow-lan: true
 bind-address: "*"
 routing-mark: 1
 external-controller: :9090
 external-ui: ui
 external-ui-url: https://github.com/Zephyruso/zashboard/releases/latest/download/dist.zip
+geox-url:
+  geoip: "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geoip.dat"
+  geosite: "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geosite.dat"
+  mmdb: "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geoip.metadb"
+  asn: "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/GeoLite2-ASN.mmdb"
 profile:
   store-selected: true
   store-fake-ip: true
