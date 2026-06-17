@@ -62,7 +62,7 @@ geodata-mode: true
 # mmdb 兼容传统 Clash 的 Country.mmdb
 geodata-loader: standard
 # 是否自动更新 geo 数据
-geo-auto-update: true
+geo-auto-update: false
 # 每 24 小时更新一次
 geo-update-interval: 24
 # 匹配进程 always/strict/off 流量进程识别

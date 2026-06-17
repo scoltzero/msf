@@ -17,7 +17,7 @@
 - `msf update` 会保留已安装服务的监听 host/port，并继续限制 Docker、Unraid、fnOS FPK 通过平台管理器升级。
 - WebUI 系统更新状态新增旋转图标、总流程条、动态进度和最近日志；下载连接等待或 TCP timeout 期间也会显示当前阶段。
 - 自更新 API 新增 `phase`、`message`、`events`，后端会记录连接下载、下载中、安装、重启和失败日志。
-- 默认 Mihomo 配置补齐 MetaCubeX `geox-url`，并自动确保 GeoSite/GeoIP 数据文件存在。
+- 默认 Mihomo 配置保留 MetaCubeX `geox-url`，但关闭 `geo-auto-update`，首次初始化不再等待 GeoSite/GeoIP 下载；用户后续手动开启时由 Mihomo 自行更新。
 - Mihomo provider 健康检查改用 `http://detectportal.firefox.com/success.txt`，降低受限网络下的误判。
     ]]>
   </CHANGES>

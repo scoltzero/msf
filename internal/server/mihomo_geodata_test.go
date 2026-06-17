@@ -2,69 +2,11 @@ package server
 
 import (
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
-
-func TestEnsureMihomoGeoDataFilesDownloadsMissingFiles(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/geosite.dat":
-			_, _ = w.Write([]byte("site-data"))
-		case "/geoip.dat":
-			_, _ = w.Write([]byte("ip-data"))
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer server.Close()
-	withMihomoGeoDataTestFiles(t, []mihomoGeoDataFile{
-		{Name: "GeoSite.dat", URL: server.URL + "/geosite.dat"},
-		{Name: "GeoIP.dat", URL: server.URL + "/geoip.dat"},
-	})
-	app := &App{DataDir: t.TempDir()}
-
-	if err := app.ensureMihomoGeoDataFiles(); err != nil {
-		t.Fatal(err)
-	}
-	assertFileContent(t, filepath.Join(app.DataDir, "configs/mihomo/GeoSite.dat"), "site-data")
-	assertFileContent(t, filepath.Join(app.DataDir, "configs/mihomo/GeoIP.dat"), "ip-data")
-}
-
-func TestEnsureMihomoGeoDataFilesSkipsExistingAndIgnoresFailures(t *testing.T) {
-	hits := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		hits++
-		http.Error(w, "failed", http.StatusInternalServerError)
-	}))
-	defer server.Close()
-	withMihomoGeoDataTestFiles(t, []mihomoGeoDataFile{
-		{Name: "GeoSite.dat", URL: server.URL + "/geosite.dat"},
-		{Name: "GeoIP.dat", URL: server.URL + "/geoip.dat"},
-	})
-	app := &App{DataDir: t.TempDir()}
-	existing := filepath.Join(app.DataDir, "configs/mihomo/GeoSite.dat")
-	if err := os.MkdirAll(filepath.Dir(existing), 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(existing, []byte("existing"), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := app.ensureMihomoGeoDataFiles(); err != nil {
-		t.Fatal(err)
-	}
-	assertFileContent(t, existing, "existing")
-	if fileExists(filepath.Join(app.DataDir, "configs/mihomo/GeoIP.dat")) {
-		t.Fatal("failed GeoIP download should not leave a target file")
-	}
-	if hits != 1 {
-		t.Fatalf("expected only missing file to be downloaded, got %d hits", hits)
-	}
-}
 
 func TestEnsureGeneratedMihomoConfigCompatibilityPatchesOldGeneratedConfig(t *testing.T) {
 	app := &App{DataDir: t.TempDir()}
@@ -74,6 +16,7 @@ func TestEnsureGeneratedMihomoConfigCompatibilityPatchesOldGeneratedConfig(t *te
 	}
 	oldConfig := `mode: rule
 global-client-fingerprint: chrome
+geo-auto-update: true
 geox-url:
   geoip: "https://github.com/MetaCubeX/meta-rules-dat/releases/latest/download/geoip.dat"
   geosite: "https://github.com/MetaCubeX/meta-rules-dat/releases/latest/download/geosite.dat"
@@ -110,11 +53,33 @@ proxies:
 		"releases/download/latest/geoip.dat",
 		"releases/download/latest/geoip.metadb",
 		"releases/download/latest/GeoLite2-ASN.mmdb",
+		"geo-auto-update: true",
 		"client-fingerprint: chrome",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("compat patch missing %q:\n%s", want, text)
 		}
+	}
+}
+
+func TestEnsureBaseLayoutDoesNotCreateMihomoGeoDataFiles(t *testing.T) {
+	app := newTestApp(t)
+
+	if err := app.EnsureBaseLayout(); err != nil {
+		t.Fatal(err)
+	}
+	if fileExists(filepath.Join(app.DataDir, "configs/mihomo/GeoSite.dat")) {
+		t.Fatal("EnsureBaseLayout should not download or create GeoSite.dat")
+	}
+	if fileExists(filepath.Join(app.DataDir, "configs/mihomo/GeoIP.dat")) {
+		t.Fatal("EnsureBaseLayout should not download or create GeoIP.dat")
+	}
+	cfg, err := os.ReadFile(filepath.Join(app.DataDir, "configs/mihomo/config.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(cfg), "geo-auto-update: false") {
+		t.Fatalf("default Mihomo config should disable geo auto update:\n%s", string(cfg))
 	}
 }
 
@@ -148,28 +113,5 @@ func TestMihomoOverviewDoesNotDialTProxyPort(t *testing.T) {
 		if port == 7896 {
 			t.Fatalf("unexpected tproxy dial recorded in ports: %v", ports)
 		}
-	}
-}
-
-func withMihomoGeoDataTestFiles(t *testing.T, files []mihomoGeoDataFile) {
-	t.Helper()
-	oldFiles := mihomoGeoDataFiles
-	oldAuto := mihomoGeoDataAutoEnsure
-	mihomoGeoDataFiles = files
-	mihomoGeoDataAutoEnsure = true
-	t.Cleanup(func() {
-		mihomoGeoDataFiles = oldFiles
-		mihomoGeoDataAutoEnsure = oldAuto
-	})
-}
-
-func assertFileContent(t *testing.T, path, want string) {
-	t.Helper()
-	got, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(got) != want {
-		t.Fatalf("content mismatch for %s: got %q want %q", path, string(got), want)
 	}
 }

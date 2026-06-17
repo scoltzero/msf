@@ -1,53 +1,10 @@
 package server
 
 import (
-	"context"
-	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 )
-
-type mihomoGeoDataFile struct {
-	Name string
-	URL  string
-}
-
-var (
-	mihomoGeoDataAutoEnsure = true
-	mihomoGeoDataHTTPClient = &http.Client{Timeout: 60 * time.Second}
-	mihomoGeoDataFiles      = []mihomoGeoDataFile{
-		{Name: "GeoSite.dat", URL: "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geosite.dat"},
-		{Name: "GeoIP.dat", URL: "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geoip.dat"},
-	}
-)
-
-func (a *App) ensureMihomoGeoDataFiles() error {
-	if !mihomoGeoDataAutoEnsure {
-		return nil
-	}
-	dir := filepath.Join(a.DataDir, "configs/mihomo")
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		a.logMihomoGeoDataWarning("", "", err)
-		return nil
-	}
-	for _, item := range mihomoGeoDataFiles {
-		if item.Name == "" || item.URL == "" {
-			continue
-		}
-		dest := filepath.Join(dir, item.Name)
-		if nonEmptyRegularFile(dest) {
-			continue
-		}
-		if err := downloadMihomoGeoDataFile(context.Background(), item.URL, dest); err != nil {
-			a.logMihomoGeoDataWarning(item.Name, item.URL, err)
-		}
-	}
-	return nil
-}
 
 func (a *App) ensureGeneratedMihomoConfigCompatibility() {
 	path := filepath.Join(a.DataDir, "configs/mihomo/config.yaml")
@@ -70,7 +27,10 @@ func (a *App) ensureGeneratedMihomoConfigCompatibility() {
 		return
 	}
 	if err := os.WriteFile(path, []byte(updated), 0644); err != nil {
-		a.logMihomoGeoDataWarning("config.yaml", "", err)
+		a.LogWarn("mihomo_geodata", "Mihomo GeoData 配置兼容修正失败", map[string]any{
+			"file":  "config.yaml",
+			"error": err.Error(),
+		})
 	}
 }
 
@@ -86,61 +46,4 @@ func removeTopLevelYAMLKey(content, key string) string {
 		out = append(out, line)
 	}
 	return strings.Join(out, "")
-}
-
-func nonEmptyRegularFile(path string) bool {
-	st, err := os.Stat(path)
-	return err == nil && !st.IsDir() && st.Size() > 0
-}
-
-func downloadMihomoGeoDataFile(ctx context.Context, rawURL, dest string) error {
-	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
-	if err != nil {
-		return err
-	}
-	resp, err := mihomoGeoDataHTTPClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("download %s: HTTP %d", rawURL, resp.StatusCode)
-	}
-	if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(filepath.Dir(dest), "."+filepath.Base(dest)+".*.tmp")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
-	written, copyErr := io.Copy(tmp, resp.Body)
-	closeErr := tmp.Close()
-	if copyErr != nil {
-		return copyErr
-	}
-	if closeErr != nil {
-		return closeErr
-	}
-	if written == 0 {
-		return fmt.Errorf("download %s: empty response", rawURL)
-	}
-	if err := os.Chmod(tmpName, 0644); err != nil {
-		return err
-	}
-	return os.Rename(tmpName, dest)
-}
-
-func (a *App) logMihomoGeoDataWarning(name, rawURL string, err error) {
-	if err == nil {
-		return
-	}
-	a.LogWarn("mihomo_geodata", "Mihomo GeoData 文件准备失败", map[string]any{
-		"file":  name,
-		"url":   rawURL,
-		"error": err.Error(),
-	})
 }
