@@ -121,7 +121,6 @@ func (a *App) ensureDefaultConfigs() error {
 	}
 	if a.mihomoConfigMode() != "custom" {
 		a.ensureGeneratedMihomoConfigCompatibility()
-		return a.ensureMihomoGeoDataFiles()
 	}
 	return nil
 }
@@ -151,9 +150,6 @@ func (a *App) writeGeneratedConfigs(cfg SetupConfig) error {
 	}
 	if err := a.ensureMosDNSRuleFiles(); err != nil {
 		return err
-	}
-	if a.mihomoConfigMode() != "custom" {
-		return a.ensureMihomoGeoDataFiles()
 	}
 	return nil
 }
@@ -235,7 +231,7 @@ redir-port: 7877
 tproxy-port: 7896
 geodata-mode: true
 geodata-loader: standard
-geo-auto-update: true
+geo-auto-update: false
 geo-update-interval: 24
 find-process-mode: strict
 allow-lan: true

@@ -7,7 +7,7 @@
 <!ENTITY packageName "msf-0.3.5-x86_64-1">
 <!ENTITY packageFile "&packageName;.txz">
 <!ENTITY packageURL "https://github.com/&githubRepo;/releases/download/&releaseTag;/&packageFile;">
-<!ENTITY packageSHA256 "d7ea87c08f05a3ea30cfb93d67814f04880ba072caedabd6d9636b51028d3dca">
+<!ENTITY packageSHA256 "2aa2f0be453f31ac9ebb76f89ae0356bae9da04a02d5bd210c13a8094c60213e">
 ]>
 <PLUGIN name="&name;" author="&author;" version="&version;" pluginURL="https://raw.githubusercontent.com/&githubRepo;/main/msf.plg" launch="Settings/&name;" support="https://github.com/&githubRepo;/issues" icon="network-wired" min="6.12.0">
   <CHANGES>
@@ -17,7 +17,7 @@
 - `msf update` 会保留已安装服务的监听 host/port，并继续限制 Docker、Unraid、fnOS FPK 通过平台管理器升级。
 - WebUI 系统更新状态新增旋转图标、总流程条、动态进度和最近日志；下载连接等待或 TCP timeout 期间也会显示当前阶段。
 - 自更新 API 新增 `phase`、`message`、`events`，后端会记录连接下载、下载中、安装、重启和失败日志。
-- 默认 Mihomo 配置补齐 MetaCubeX `geox-url`，并自动确保 GeoSite/GeoIP 数据文件存在。
+- 默认 Mihomo 配置保留 MetaCubeX `geox-url`，但关闭 `geo-auto-update`，首次初始化不再等待 GeoSite/GeoIP 下载；用户后续手动开启时由 Mihomo 自行更新。
 - Mihomo provider 健康检查改用 `http://detectportal.firefox.com/success.txt`，降低受限网络下的误判。
     ]]>
   </CHANGES>

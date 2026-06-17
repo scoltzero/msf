@@ -70,10 +70,13 @@ func TestSetupInitializeLoginAndGeneratedConfigs(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(cfg)
-	for _, want := range []string{"proxy-providers:", "msf_manual:", "https://example.com/a.yaml", "机场A", "机场1", "tproxy-port: 7896", "geox-url:", "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geosite.dat", "listen: 0.0.0.0:6666", "fake-ip-range: 28.0.0.1/8", "UrlTest: &UrlTest", "sniffer:", "enable: true", "name: 谷歌服务", "Private-Domain:", "Private-IP:", "RULE-SET,Google,谷歌服务", "RULE-SET,Microsoft-CN,全球直连", "name: 机场节点, type: select, include-all: true, include-all-proxies: true, include-all-providers: true"} {
+	for _, want := range []string{"proxy-providers:", "msf_manual:", "https://example.com/a.yaml", "机场A", "机场1", "tproxy-port: 7896", "geox-url:", "geo-auto-update: false", "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geosite.dat", "listen: 0.0.0.0:6666", "fake-ip-range: 28.0.0.1/8", "UrlTest: &UrlTest", "sniffer:", "enable: true", "name: 谷歌服务", "Private-Domain:", "Private-IP:", "RULE-SET,Google,谷歌服务", "RULE-SET,Microsoft-CN,全球直连", "name: 机场节点, type: select, include-all: true, include-all-proxies: true, include-all-providers: true"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("mihomo config missing %q:\n%s", want, text)
 		}
+	}
+	if strings.Contains(text, "geo-auto-update: true") {
+		t.Fatalf("mihomo config should not enable geo auto update by default:\n%s", text)
 	}
 	if strings.Contains(text, "global-client-fingerprint") {
 		t.Fatalf("mihomo config should not contain removed global-client-fingerprint:\n%s", text)

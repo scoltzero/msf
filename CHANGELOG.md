@@ -6,7 +6,7 @@
 
 #### 说明
 
-- 这是一次热更新可靠性、更新状态可视化和 Mihomo 默认运行兼容性修复发布，重点解决 `msf update` 后用户配置丢失或需要重新设置、WebUI 下载更新等待阶段无反馈，以及 Mihomo geodata / TProxy 健康检查在部分环境下启动或测速异常的问题。
+- 这是一次热更新可靠性、更新状态可视化和 Mihomo 默认运行兼容性修复发布，重点解决 `msf update` 后用户配置丢失或需要重新设置、WebUI 下载更新等待阶段无反馈，以及 Mihomo GEO 初始化阻塞 / TProxy 健康检查在部分环境下启动或测速异常的问题。
 - 本版本发布资产数量与 v0.3.4 保持一致：Linux amd64/arm64 tarball、Unraid `.txz`/`.plg`，以及从同步后的 `fnos-fpk` 分支构建的 fnOS x86/arm `.fpk` 包，共 12 个 release assets。
 
 #### 新增
@@ -15,8 +15,7 @@
 - 新增 `update_info` 的 `phase`、`message`、`event_log` 兼容迁移，保留最近 20 条更新事件，便于 WebUI 和管理员排查。
 - 新增 WebUI “更新状态”卡片的动态状态图标、总流程条、持续进度条和最近日志展示，下载/安装/重启期间状态图标会持续旋转。
 - 新增 WebUI 下载和安装的乐观状态更新与 1 秒轮询，点击下载后即显示“正在连接下载地址”，即使网络连接或 GitHub 响应卡住也不会空白。
-- 新增 Mihomo GeoSite/GeoIP 数据文件自动补齐逻辑，在默认非自定义配置下会确保 `configs/mihomo/GeoSite.dat` 和 `GeoIP.dat` 可用，下载失败仅记录警告不阻断初始化。
-- 新增 Mihomo geodata 下载测试覆盖，校验正常下载、HTTP 错误、空文件保护和自动补齐开关。
+- 新增 Mihomo GEO 初始化行为测试覆盖，确保默认配置不会在安装或首次初始化阶段创建、下载 `GeoSite.dat` / `GeoIP.dat`。
 
 #### 变更
 
@@ -25,9 +24,9 @@
 - `msf update` 只面向 Linux tarball/systemd 安装；Docker、Unraid 和 fnOS FPK 环境会提示通过各自平台管理器升级。
 - 自更新下载流程在真正发起 HTTP 请求前先写入 `connecting` 状态，拿到响应后写入 `downloading`，未知 Content-Length 时也保持活动状态和日志。
 - 自更新安装流程会写入准备安装、解压、交给 `systemd-run` / 执行安装脚本、重启中等状态，让 WebUI 可以持续反馈服务重启前的阶段。
-- Mihomo 默认配置和生成配置改用 MetaCubeX geodata 直链，并在生成配置时补齐 `geox-url`。
+- Mihomo 默认配置和生成配置继续保留 MetaCubeX `geox-url`，但默认将 `geo-auto-update` 设为 `false`，避免新机器首次初始化时被 GeoSite/GeoIP 下载阻塞。
 - Mihomo provider 健康检查地址改为 `http://detectportal.firefox.com/success.txt`，降低在国内或受限网络下误判节点不可用的概率。
-- 系统初始化和默认配置生成在非自定义 Mihomo 配置模式下会在写入配置后补齐 geodata 文件；自定义配置模式不自动改写用户 geodata。
+- 系统初始化和默认配置生成不再主动下载 Mihomo GEO 数据文件；用户后续手动将 `geo-auto-update` 改回 `true` 时，MSF 不会覆盖该选择，Mihomo 会按配置中的 `geox-url` 自行更新。
 
 #### 修复
 
@@ -38,13 +37,13 @@
 - 修复旧数据库中已有 `status=downloaded/failed/installing` 但新增 `phase` 默认 `idle` 时，状态接口可能无法正确推导展示阶段的问题。
 - 修复通用下载器只有在 Content-Length 可用且收到数据后才发出进度事件的问题；现在连接成功和未知大小下载也会触发进度回调。
 - 修复组件更新复用下载器时可能被新连接事件污染为未知状态的问题，连接事件仍保持 `running` 状态，仅通过 message 标识。
-- 修复 Mihomo 缺少 GeoSite/GeoIP 数据文件时可能影响规则解析、启动或运行稳定性的问题。
+- 修复 v0.3.5 新机器命令行安装后可能等待 GeoSite/GeoIP 下载超时，导致 WebUI 地址提示延迟 2-3 分钟才出现的问题。
 
 ### English
 
 #### Notes
 
-- This is a reliability and visibility release for self-update, update-progress feedback, and default Mihomo runtime compatibility. It focuses on preserving user configuration after `msf update`, keeping the WebUI informative while downloads are connecting or stuck, and improving Mihomo geodata / TProxy health-check behavior.
+- This is a reliability and visibility release for self-update, update-progress feedback, and default Mihomo runtime compatibility. It focuses on preserving user configuration after `msf update`, keeping the WebUI informative while downloads are connecting or stuck, and avoiding Mihomo GEO initialization blocking / TProxy health-check issues in restricted environments.
 - Release asset count remains aligned with v0.3.4: Linux amd64/arm64 tarballs, Unraid `.txz`/`.plg`, and fnOS x86/arm `.fpk` packages built from the synced `fnos-fpk` branch, for 12 release assets total.
 
 #### Added
@@ -53,8 +52,7 @@
 - Added compatible `update_info` migration columns for `phase`, `message`, and `event_log`, retaining the latest 20 update events for WebUI display and admin troubleshooting.
 - Added dynamic icons, an overall process bar, an always-visible progress indicator, and recent event logs to the WebUI Update Status card.
 - Added optimistic WebUI state and 1-second polling for download/install actions, so clicking download immediately shows “connecting to download URL” even before the HTTP request returns.
-- Added automatic Mihomo GeoSite/GeoIP data-file provisioning for default non-custom Mihomo configs, ensuring `configs/mihomo/GeoSite.dat` and `GeoIP.dat` exist when possible without blocking setup on download failures.
-- Added Mihomo geodata tests covering successful downloads, HTTP errors, empty-file protection, and the auto-provisioning switch.
+- Added Mihomo GEO initialization tests to ensure default setup does not create or download `GeoSite.dat` / `GeoIP.dat` during install or first initialization.
 
 #### Changed
 
@@ -63,9 +61,9 @@
 - `msf update` is limited to Linux tarball/systemd installs; Docker, Unraid, and fnOS FPK environments are directed to their platform managers.
 - Self-update download now persists `connecting` before the HTTP request, switches to `downloading` after a response, and keeps an active state/log even when Content-Length is unknown.
 - Self-update install now records preparation, extraction, `systemd-run` / background installer handoff, and restarting phases so the WebUI can keep reporting progress before service restart.
-- Default and generated Mihomo configs now use MetaCubeX geodata release URLs and include `geox-url`.
+- Default and generated Mihomo configs still include MetaCubeX `geox-url`, but now default `geo-auto-update` to `false` so first-time setup is not blocked by GeoSite/GeoIP downloads.
 - Mihomo provider health checks now use `http://detectportal.firefox.com/success.txt` instead of Google/Fastly-style endpoints, reducing false negatives in restricted networks.
-- Setup/default generation now provisions Mihomo geodata after writing non-custom Mihomo configs; custom Mihomo configs are left untouched.
+- Setup/default generation no longer downloads Mihomo GEO data files. If users later set `geo-auto-update` back to `true`, MSF will not override that choice and Mihomo will update through the configured `geox-url`.
 
 #### Fixed
 
@@ -76,7 +74,7 @@
 - Fixed legacy database rows with `status=downloaded/failed/installing` and default `phase=idle` not being displayed with the correct phase.
 - Fixed the downloader emitting progress only when Content-Length existed and body bytes were received; connection success and unknown-size downloads now emit progress events too.
 - Fixed component updates seeing the new connection event as an unknown status; connection progress remains `running` and is identified through the message.
-- Fixed Mihomo startup/runtime instability caused by missing GeoSite/GeoIP data files in default generated configs.
+- Fixed first-time CLI installs on new machines taking 2-3 minutes before printing the WebUI URL because GeoSite/GeoIP downloads could wait for network timeouts during initialization.
 
 ## v0.3.4 - 2026-06-15
 
