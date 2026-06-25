@@ -3,6 +3,7 @@ package server
 import (
 	"bufio"
 	"errors"
+	"math"
 	"net"
 	"os"
 	"path/filepath"
@@ -52,9 +53,27 @@ func processResourceSnapshot(pid int) (procMetrics, bool) {
 		elapsed = 1
 	}
 	cpuSeconds := float64(utime+stime) / clockTicks
-	cpuPercent := int64(cpuSeconds * 100 / elapsed)
+	cpuPercent := int64(math.Round(normalizeProcessCPUPercent(cpuSeconds * 100 / elapsed)))
 	rss := readProcRSSBytes(pid)
 	return procMetrics{Uptime: int64(elapsed), Memory: int64(rss), CPU: cpuPercent}, true
+}
+
+func normalizeProcessCPUPercent(raw float64) float64 {
+	capacity := runtime.NumCPU()
+	if capacity < 1 {
+		capacity = 1
+	}
+	return clampPercentFloat(raw / float64(capacity))
+}
+
+func clampPercentFloat(value float64) float64 {
+	if math.IsNaN(value) || math.IsInf(value, 0) || value < 0 {
+		return 0
+	}
+	if value > 100 {
+		return 100
+	}
+	return value
 }
 
 func readProcRSSBytes(pid int) uint64 {
@@ -134,7 +153,7 @@ func sampleCPUPercent() float64 {
 	if total == 0 || idle > total {
 		return 0
 	}
-	return float64(total-idle) * 100 / float64(total)
+	return clampPercentFloat(float64(total-idle) * 100 / float64(total))
 }
 
 func readNetworkCounters() []map[string]any {
