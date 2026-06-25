@@ -1,6 +1,6 @@
-Menu="Settings:45"
+Menu="Utilities"
 Title="MSF Free"
-Icon="network-wired"
+Icon="msf.png"
 ---
 <?php
 $cfgPath = "/boot/config/plugins/msf/msf.cfg";
@@ -85,7 +85,7 @@ $webUrl = "http://" . $serverHost . ":" . $cfg["PORT"];
 </style>
 <div class="msf-panel">
   <div class="msf-note">
-    This is a lightweight Unraid Settings control page for the local msf rc service. It only manages service enablement, listen address, data directory, status, and the WebUI link. Use Open WebUI for the full management interface.
+    This is a lightweight Unraid plugin control page for the local msf rc service. It only manages service enablement, listen address, data directory, status, and the WebUI link. Use Open WebUI for the full management interface.
   </div>
   <?php if ($message !== ""): ?>
     <blockquote><?=msf_e($message)?></blockquote>

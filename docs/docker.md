@@ -1,6 +1,17 @@
-# Docker 部署
+# Docker 实验部署
 
-`msf` 的 Docker 镜像目标是一比一复刻普通 Linux 二进制能力：WebUI、MosDNS、Mihomo、FakeIP、TProxy/Redirect、nftables 和策略路由都会在容器中可用。
+Docker host-network 部署目前是实验性能力，尚未作为推荐安装方式。它适合熟悉 Docker、nftables、策略路由和透明代理行为的用户验证当前实现；生产或长期使用优先选择 [Linux tarball/systemd](install/linux.md)、[fnOS FPK](install/fnos-fpk.md) 或 [Unraid PLG](install/unraid-plg.md)。
+
+当前版本：`v0.3.6`
+
+## 当前状态
+
+- Docker 镜像会以 host 网络运行，并尝试在宿主机网络命名空间中管理 MosDNS、Mihomo、FakeIP、TProxy/Redirect、nftables 和策略路由。
+- Docker 实现还没有完全完成，不承诺与 Linux tarball/systemd 完全等价。
+- 不支持把 br0、macvlan、ipvlan、bridge 静态 IP 或端口映射模式当作等价部署方式。
+- 容器内禁用 `msf update` 和 WebUI 自更新安装；镜像升级必须通过 Docker / Compose / 容器管理器完成。
+
+如果你的目标是稳定部署，请先使用 Linux、fnOS 或 Unraid 安装方式。
 
 ## 运行要求
 
@@ -13,9 +24,7 @@ cap_add:
   - NET_RAW
 ```
 
-不要使用 br0、macvlan、ipvlan、bridge 静态 IP 或端口映射模式作为等价部署方式。MSF 需要写入宿主机的 nftables 和策略路由；如果容器拥有独立网络命名空间，这些规则只会落在容器内部，不能完整接管宿主机和局域网流量。
-
-容器内默认以 root 运行。绑定 MosDNS `:53`、写 nftables、写 `ip rule` / `ip route` 都需要网络管理权限。
+MSF 需要绑定 MosDNS `:53`、写入宿主机 nftables、写入 `ip rule` / `ip route`，所以容器需要网络管理权限。若容器拥有独立网络命名空间，相关规则只会落在容器内部，不能完整接管宿主机和局域网流量。
 
 ## 快速启动：Docker Compose
 
@@ -30,6 +39,7 @@ docker compose up -d
 - 数据目录：`./msf-data:/opt/msf`
 - WebUI：`http://<宿主机IP>:7777`
 - 停止宽限期：`30s`
+- 运行标识：`MSF_RUNTIME=docker`
 
 首次打开 WebUI 后完成初始化向导。完成初始化后，MSF 会按保存状态恢复 MosDNS、Mihomo 和 nftables。
 
@@ -77,7 +87,7 @@ docker rm msf
 
 ## 路由接入
 
-Docker host 网络模式下，MSF 使用宿主机 IP 对外提供服务。路由器侧仍按普通 Linux 部署接入：
+Docker host 网络模式下，MSF 使用宿主机 IP 对外提供服务。路由器侧按普通 Linux 部署接入：
 
 1. DHCP DNS 指向 MSF 宿主机 IP，默认 MosDNS 监听 `:53`。
 2. FakeIP 静态路由指向 MSF 宿主机 IP。
@@ -89,7 +99,7 @@ Docker host 网络模式下，MSF 使用宿主机 IP 对外提供服务。路由
 | IPv4 | `28.0.0.0/8` |
 | IPv6 | `f2b0::/18` |
 
-如果初始化时改过 FakeIP 网段，以 WebUI 中的实际配置为准。
+如果初始化时改过 FakeIP 网段，以 WebUI 中的实际配置为准。完整教程见 [路由器接入总览](guide/zh/router-integration.md)。
 
 ## 网络清理
 
@@ -100,7 +110,7 @@ MSF_RUNTIME=docker
 MSF_DOCKER_CLEANUP_NETWORK_ON_EXIT=true
 ```
 
-正常 `docker stop`、`docker compose down`、WebUI 停止或重启会先停止 MosDNS/Mihomo，再清理 MSF 自己创建的网络资源：
+正常 `docker stop`、`docker compose down`、WebUI 停止或重启会先停止 MosDNS/Mihomo，再尝试清理 MSF 自己创建的网络资源：
 
 - `table inet msf`
 - `fwmark 1 table 100` 策略路由规则
@@ -121,7 +131,7 @@ environment:
 -e MSF_DOCKER_CLEANUP_NETWORK_ON_EXIT=false
 ```
 
-## 更新方式
+## 更新和卸载
 
 Docker 容器内禁用 `msf update` 和 WebUI 自更新安装。镜像升级应通过拉取新镜像并重建容器完成。
 
@@ -140,6 +150,8 @@ docker stop msf
 docker rm msf
 ./docker-run.sh
 ```
+
+卸载时通过 Docker / Compose / 容器管理器删除容器。默认数据目录在宿主机当前目录的 `./msf-data`，需要彻底清理时再手动删除该目录。
 
 MosDNS、Mihomo、Zashboard 的组件更新仍可在 WebUI 中使用。
 

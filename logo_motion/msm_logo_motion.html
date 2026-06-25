@@ -1,0 +1,627 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MSM Free Logo Motion</title>
+  <style>
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --bg: #ffffff;
+      --surface: #f5f5f3;
+      --border: rgba(0,0,0,0.08);
+      --text-primary: #0d0d0d;
+      --text-secondary: #777;
+      --text-tertiary: #aaa;
+      --accent: #e64036;
+      --speed-progress: 9%;
+    }
+
+    html, body {
+      min-height: 100%;
+      background: var(--bg);
+      color: var(--text-primary);
+      font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+    }
+
+    body {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 2rem;
+      padding: 2rem;
+    }
+
+    #logo-root {
+      width: min(92vw, 716.8px);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      overflow: visible;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    #logo-root svg {
+      width: 100%;
+      height: auto;
+      display: block;
+      overflow: visible;
+      text-rendering: geometricPrecision;
+    }
+
+    .atomic-motions {
+      display: flex;
+      gap: 1.5rem;
+      align-items: flex-end;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .atom {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .atom-stage {
+      width: 74px;
+      height: 74px;
+      display: grid;
+      place-items: center;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .atom-stage img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      transition: transform 260ms cubic-bezier(0.34,1.56,0.64,1);
+      transform-origin: center;
+    }
+
+    .atom-label {
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-tertiary);
+      white-space: nowrap;
+    }
+
+    .principles {
+      max-width: 760px;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .pill {
+      font-size: 11px;
+      line-height: 1;
+      padding: 5px 10px;
+      border: 0.5px solid var(--border);
+      border-radius: 999px;
+      color: var(--text-secondary);
+      white-space: nowrap;
+    }
+
+    .pill.active {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .controls {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    button {
+      font: 12px/1.2 inherit;
+      letter-spacing: 0.04em;
+      padding: 8px 18px;
+      border: 0.5px solid var(--border);
+      border-radius: 999px;
+      background: transparent;
+      color: var(--text-primary);
+      cursor: pointer;
+    }
+
+    button.primary {
+      color: var(--bg);
+      background: var(--text-primary);
+      border-color: var(--text-primary);
+    }
+
+    .speed-control {
+      width: min(340px, 80vw);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 12px;
+      border: 0.5px solid var(--border);
+      border-radius: 999px;
+      color: var(--text-secondary);
+    }
+
+    .speed-caption,
+    .speed-value {
+      font-size: 11px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .speed-value {
+      min-width: 46px;
+      text-align: right;
+      color: var(--text-primary);
+      text-transform: none;
+      font-variant-numeric: tabular-nums;
+    }
+
+    input[type="range"] {
+      flex: 1;
+      min-width: 120px;
+      height: 24px;
+      appearance: none;
+      -webkit-appearance: none;
+      background: transparent;
+      cursor: grab;
+      accent-color: var(--accent);
+    }
+
+    input[type="range"]::-webkit-slider-runnable-track {
+      height: 3px;
+      border-radius: 999px;
+      background: linear-gradient(to right, var(--accent) 0%, var(--accent) var(--speed-progress), var(--border) var(--speed-progress), var(--border) 100%);
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      appearance: none;
+      -webkit-appearance: none;
+      width: 16px;
+      height: 16px;
+      margin-top: -6.5px;
+      border-radius: 50%;
+      border: 2px solid var(--bg);
+      background: var(--accent);
+      box-shadow: 0 1px 6px rgba(0,0,0,0.18);
+    }
+
+    .footer {
+      font-size: 11px;
+      color: var(--text-tertiary);
+      text-align: center;
+      line-height: 1.7;
+    }
+
+    .p2m-chromeless .atomic-motions,
+    .p2m-chromeless .principles,
+    .p2m-chromeless .controls,
+    .p2m-chromeless .footer {
+      display: none;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      * {
+        animation: none !important;
+        transition: none !important;
+      }
+    }
+
+    @media (prefers-reduced-motion: no-preference) {
+      :root {
+        --p2m-duration: 1800ms;
+        --p2m-ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
+        --p2m-ease-settle: cubic-bezier(0.34, 1.56, 0.64, 1);
+      }
+
+      #logo-geometry,
+      #m-original,
+      #m-draw-stroke,
+      #m-final-mask-fill,
+      #branch-left-original,
+      #branch-right-original {
+        transform-box: fill-box;
+        transform-origin: center;
+      }
+
+      #m-original {
+        animation: msf-m-settle var(--p2m-duration) cubic-bezier(0.16, 1, 0.3, 1) both;
+      }
+
+      #m-draw-stroke {
+        stroke-dasharray: 1 1;
+        stroke-dashoffset: 0;
+        animation: msf-m-draw var(--p2m-duration) cubic-bezier(0.16, 1, 0.3, 1) both;
+      }
+
+      #m-final-mask-fill {
+        animation: msf-m-final-fill var(--p2m-duration) linear both;
+      }
+
+      #branch-left-original {
+        animation: msf-branch-left var(--p2m-duration) cubic-bezier(0.22, 1, 0.36, 1) both;
+      }
+
+      #branch-right-original {
+        animation: msf-branch-right var(--p2m-duration) cubic-bezier(0.22, 1, 0.36, 1) both;
+      }
+
+      @keyframes msf-m-settle {
+        0% {
+          opacity: 0;
+          transform: translateY(18px) scale(0.97);
+        }
+        12% {
+          opacity: 1;
+          transform: translateY(14px) scale(0.97);
+        }
+        58% {
+          opacity: 1;
+          transform: translateY(-3px) scale(1.015);
+        }
+        80% {
+          opacity: 1;
+          transform: translateY(1px) scale(0.997);
+        }
+        100% {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+      }
+
+      @keyframes msf-m-draw {
+        0%,
+        10% {
+          stroke-dashoffset: 1;
+        }
+        64%,
+        100% {
+          stroke-dashoffset: 0;
+        }
+      }
+
+      @keyframes msf-m-final-fill {
+        0%,
+        62% {
+          opacity: 0;
+        }
+        68%,
+        100% {
+          opacity: 1;
+        }
+      }
+
+      @keyframes msf-branch-left {
+        0%,
+        42% {
+          opacity: 0;
+          clip-path: inset(0 0 100% 0);
+          transform: translateY(22px) scale(0.98);
+        }
+        70% {
+          opacity: 1;
+          clip-path: inset(0 0 0 0);
+          transform: translateY(-3px) scale(1.035);
+        }
+        86% {
+          opacity: 1;
+          clip-path: inset(0 0 0 0);
+          transform: translateY(1px) scale(0.995);
+        }
+        100% {
+          opacity: 1;
+          clip-path: inset(0 0 0 0);
+          transform: translateY(0) scale(1);
+        }
+      }
+
+      @keyframes msf-branch-right {
+        0%,
+        46% {
+          opacity: 0;
+          clip-path: inset(0 0 100% 0);
+          transform: translateY(22px) scale(0.98);
+        }
+        74% {
+          opacity: 1;
+          clip-path: inset(0 0 0 0);
+          transform: translateY(-3px) scale(1.035);
+        }
+        90% {
+          opacity: 1;
+          clip-path: inset(0 0 0 0);
+          transform: translateY(1px) scale(0.995);
+        }
+        100% {
+          opacity: 1;
+          clip-path: inset(0 0 0 0);
+          transform: translateY(0) scale(1);
+        }
+      }
+    }
+  </style>
+</head>
+<body>
+  <main id="logo-root" aria-label="Animated logo" data-p2m-duration="1800"></main>
+
+  <section class="atomic-motions" aria-label="Atomic motion studies">
+    <div class="atom" data-atom="hover"><div class="atom-stage"></div><span class="atom-label">Hover</span></div>
+    <div class="atom" data-atom="pulse"><div class="atom-stage"></div><span class="atom-label">Pulse</span></div>
+    <div class="atom" data-atom="arc"><div class="atom-stage"></div><span class="atom-label">Arc</span></div>
+    <div class="atom" data-atom="press"><div class="atom-stage"></div><span class="atom-label">Press</span></div>
+  </section>
+
+  <div class="principles" id="principlesRow">
+    <span class="pill" data-p="squashstretch">Squash &amp; stretch</span>
+    <span class="pill" data-p="anticipation">Anticipation</span>
+    <span class="pill" data-p="staging">Staging</span>
+    <span class="pill" data-p="followthrough">Follow through</span>
+    <span class="pill" data-p="overlap">Overlapping</span>
+    <span class="pill" data-p="slowinout">Slow in / out</span>
+    <span class="pill" data-p="arc">Arc</span>
+    <span class="pill" data-p="secondary">Secondary action</span>
+    <span class="pill" data-p="timing">Timing</span>
+    <span class="pill" data-p="appeal">Appeal</span>
+  </div>
+
+  <div class="controls">
+    <button class="primary" id="btnReplay" type="button">Replay</button>
+    <button id="btnSlow" type="button">Slow motion</button>
+    <label class="speed-control" for="speedSlider">
+      <span class="speed-caption">Speed</span>
+      <input id="speedSlider" type="range" min="0.25" max="2.5" step="0.05" value="0.45" aria-label="Animation speed">
+      <span class="speed-value" id="speedValue">0.45x</span>
+    </label>
+  </div>
+
+  <p class="footer">Click the main logo to replay | Drag speed | Try atomic motions</p>
+
+  <script>
+    const SVG_NS = "http://www.w3.org/2000/svg";
+    const LOGO = {"tag":"svg","attrs":{"width":"1024","height":"1024","viewBox":"0 0 1024 1024","role":"img","aria-labelledby":"title desc"},"children":[{"tag":"title","attrs":{"id":"title"},"children":[],"text":"MSM Free logo"},{"tag":"desc","attrs":{"id":"desc"},"children":[],"text":"Motion-ready layered version of the original MSM Free raster logo."},{"tag":"defs","attrs":{},"children":[{"tag":"mask","attrs":{"id":"m-draw-mask","maskUnits":"userSpaceOnUse","x":"285","y":"175","width":"460","height":"430"},"children":[{"tag":"rect","attrs":{"x":"285","y":"175","width":"460","height":"430","fill":"black"},"children":[]},{"tag":"path","attrs":{"id":"m-draw-stroke","pathLength":"1","d":"M 365 552 C 365 486 365 360 365 278 C 365 238 416 229 437 266 L 508 414 C 530 458 552 458 575 414 L 636 286 C 660 238 700 241 700 284 C 700 356 700 480 700 552","fill":"none","stroke":"white","stroke-width":"165","stroke-linecap":"round","stroke-linejoin":"round","stroke-dasharray":"1 1","stroke-dashoffset":"0"},"children":[]},{"tag":"rect","attrs":{"id":"m-final-mask-fill","x":"285","y":"175","width":"460","height":"430","fill":"white","opacity":"1"},"children":[]}]}]},{"tag":"g","attrs":{"id":"logo-geometry","fill":"none"},"children":[{"tag":"image","attrs":{"id":"branch-left-original","x":"213","y":"504","width":"303","height":"319","href":"assets/msm_branch_left_original.png","preserveAspectRatio":"none"},"children":[]},{"tag":"image","attrs":{"id":"branch-right-original","x":"508","y":"504","width":"303","height":"313","href":"assets/msm_branch_right_original.png","preserveAspectRatio":"none"},"children":[]},{"tag":"image","attrs":{"id":"m-original","x":"313","y":"205","width":"399","height":"361","href":"assets/msm_m_original.png","preserveAspectRatio":"none","mask":"url(#m-draw-mask)"},"children":[]}]}]};
+    const SVG_TEXT = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1024\" height=\"1024\" viewBox=\"0 0 1024 1024\" role=\"img\" aria-labelledby=\"title desc\"><style>:root,svg{--bg:#ffffff;--surface:#f5f5f3;--text-primary:#0d0d0d;--text-secondary:#777;--text-tertiary:#aaa;--logo-wordmark:#363e47;--accent:#e64036;--red:#e64036;--red-bright:#ff493f;}<\/style>\n  <title id=\"title\">MSM Free logo<\/title>\n  <desc id=\"desc\">Motion-ready layered version of the original MSM Free raster logo.<\/desc>\n  <defs>\n    <mask id=\"m-draw-mask\" maskUnits=\"userSpaceOnUse\" x=\"285\" y=\"175\" width=\"460\" height=\"430\">\n      <rect x=\"285\" y=\"175\" width=\"460\" height=\"430\" fill=\"black\"/>\n      <path id=\"m-draw-stroke\" pathLength=\"1\" d=\"M 365 552 C 365 486 365 360 365 278 C 365 238 416 229 437 266 L 508 414 C 530 458 552 458 575 414 L 636 286 C 660 238 700 241 700 284 C 700 356 700 480 700 552\" fill=\"none\" stroke=\"white\" stroke-width=\"165\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-dasharray=\"1 1\" stroke-dashoffset=\"0\"/>\n      <rect id=\"m-final-mask-fill\" x=\"285\" y=\"175\" width=\"460\" height=\"430\" fill=\"white\" opacity=\"1\"/>\n    <\/mask>\n  <\/defs>\n\n  <g id=\"logo-geometry\" fill=\"none\">\n    <image id=\"branch-left-original\" x=\"213\" y=\"504\" width=\"303\" height=\"319\" href=\"assets/msm_branch_left_original.png\" preserveAspectRatio=\"none\"/>\n    <image id=\"branch-right-original\" x=\"508\" y=\"504\" width=\"303\" height=\"313\" href=\"assets/msm_branch_right_original.png\" preserveAspectRatio=\"none\"/>\n    <image id=\"m-original\" x=\"313\" y=\"205\" width=\"399\" height=\"361\" href=\"assets/msm_m_original.png\" preserveAspectRatio=\"none\" mask=\"url(#m-draw-mask)\"/>\n  <\/g>\n<\/svg>\n";
+    const SVG_URI = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(SVG_TEXT);
+    const DURATION = 1800;
+
+    let playbackRate = 0.45;
+    let pulseRaf = null;
+    let arcRaf = null;
+    window.__p2mReady = false;
+
+    function createSvgNode(node) {
+      const element = document.createElementNS(SVG_NS, node.tag);
+      for (const [name, value] of Object.entries(node.attrs || {})) {
+        element.setAttribute(name, value);
+      }
+      if (node.text) {
+        element.appendChild(document.createTextNode(node.text));
+      }
+      for (const child of node.children || []) {
+        element.appendChild(createSvgNode(child));
+      }
+      return element;
+    }
+
+    function heroAnimations() {
+      const root = document.getElementById("logo-root");
+      if (root.getAnimations) return root.getAnimations({ subtree: true });
+      return document.getAnimations().filter(animation => {
+        const target = animation.effect && animation.effect.target;
+        return target && root.contains(target);
+      });
+    }
+
+    function applyPlaybackRate() {
+      for (const animation of heroAnimations()) {
+        if (animation.updatePlaybackRate) animation.updatePlaybackRate(playbackRate);
+        else animation.playbackRate = playbackRate;
+      }
+    }
+
+    function renderHero() {
+      const root = document.getElementById("logo-root");
+      root.replaceChildren(createSvgNode(LOGO));
+      const svg = root.querySelector("svg");
+      if (svg) {
+        svg.removeAttribute("width");
+        svg.removeAttribute("height");
+        svg.style.width = "100%";
+        svg.style.height = "auto";
+        svg.style.overflow = "visible";
+      }
+      requestAnimationFrame(() => requestAnimationFrame(applyPlaybackRate));
+    }
+
+    function flashPills(...names) {
+      document.querySelectorAll(".pill").forEach(pill => pill.classList.remove("active"));
+      names.forEach(name => {
+        const pill = document.querySelector(`[data-p="${name}"]`);
+        if (pill) pill.classList.add("active");
+      });
+    }
+
+    function cyclePrinciples() {
+      const phases = [
+        ["staging", "timing"],
+        ["anticipation", "squashstretch"],
+        ["arc", "slowinout"],
+        ["overlap", "followthrough"],
+        ["appeal"]
+      ];
+      let i = 0;
+      flashPills(...phases[0]);
+      return setInterval(() => {
+        i = (i + 1) % phases.length;
+        flashPills(...phases[i]);
+      }, Math.max(240, DURATION / phases.length / Math.max(playbackRate, 0.25)));
+    }
+
+    let pillTimer = null;
+    function replayMain() {
+      clearInterval(pillTimer);
+      renderHero();
+      pillTimer = cyclePrinciples();
+      setTimeout(() => {
+        clearInterval(pillTimer);
+        document.querySelectorAll(".pill").forEach(pill => pill.classList.remove("active"));
+      }, DURATION / Math.max(playbackRate, 0.25) + 600);
+    }
+
+    function formatSpeed(rate) {
+      return `${rate.toFixed(2)}x`;
+    }
+
+    function updateSpeedUI() {
+      const slider = document.getElementById("speedSlider");
+      const value = Number(slider.value);
+      const min = Number(slider.min);
+      const max = Number(slider.max);
+      const progress = ((value - min) / (max - min)) * 100;
+      document.getElementById("speedValue").textContent = formatSpeed(value);
+      slider.style.setProperty("--speed-progress", `${progress}%`);
+      const slow = value <= 0.251;
+      const btnSlow = document.getElementById("btnSlow");
+      btnSlow.textContent = slow ? "Normal speed" : "Slow motion";
+      btnSlow.style.background = slow ? "var(--surface)" : "";
+      btnSlow.style.borderColor = slow ? "var(--text-secondary)" : "";
+    }
+
+    function setPlaybackRate(rate, replay = false) {
+      const slider = document.getElementById("speedSlider");
+      const min = Number(slider.min);
+      const max = Number(slider.max);
+      playbackRate = Math.min(max, Math.max(min, Number(rate)));
+      slider.value = String(playbackRate);
+      updateSpeedUI();
+      applyPlaybackRate();
+      if (replay) replayMain();
+    }
+
+    function setupAtomImages() {
+      document.querySelectorAll(".atom-stage").forEach(stage => {
+        const img = new Image();
+        img.src = SVG_URI;
+        img.alt = "";
+        stage.appendChild(img);
+      });
+    }
+
+    function setupAtoms() {
+      const hover = document.querySelector('[data-atom="hover"] img');
+      const pulse = document.querySelector('[data-atom="pulse"] img');
+      const arc = document.querySelector('[data-atom="arc"] img');
+      const press = document.querySelector('[data-atom="press"] img');
+
+      hover.parentElement.addEventListener("mouseenter", () => {
+        flashPills("squashstretch", "appeal");
+        hover.style.transform = "scale(1.08) rotate(-1.5deg)";
+      });
+      hover.parentElement.addEventListener("mouseleave", () => {
+        hover.style.transform = "scale(1)";
+      });
+
+      function pulseTick(ts) {
+        const p = (Math.sin(ts / 900) + 1) / 2;
+        pulse.style.transform = `scale(${1 + 0.1 * p})`;
+        pulseRaf = requestAnimationFrame(pulseTick);
+      }
+      if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        pulseRaf = requestAnimationFrame(pulseTick);
+      }
+
+      let arcAngle = -14;
+      let arcVel = 0;
+      function arcTick() {
+        arcVel += (0 - arcAngle) * 0.08;
+        arcVel *= 0.86;
+        arcAngle += arcVel;
+        arc.style.transform = `rotate(${arcAngle}deg)`;
+        arcRaf = requestAnimationFrame(arcTick);
+      }
+      arc.parentElement.addEventListener("mouseenter", () => {
+        flashPills("arc", "anticipation", "appeal");
+        cancelAnimationFrame(arcRaf);
+        arcAngle = 28;
+        arcVel = 0;
+        arcTick();
+      });
+      arc.parentElement.addEventListener("mouseleave", () => {
+        arcAngle = 0;
+      });
+
+      press.parentElement.addEventListener("mousedown", () => {
+        flashPills("squashstretch", "anticipation");
+        press.style.transform = "scaleX(1.10) scaleY(0.88)";
+      });
+      ["mouseup", "mouseleave"].forEach(ev => {
+        press.parentElement.addEventListener(ev, () => {
+          press.style.transform = "scale(1)";
+        });
+      });
+    }
+
+    function applyQaMode() {
+      const params = new URLSearchParams(location.search);
+      const seekMs = params.get("t");
+      const staticMode = params.get("static");
+      if (seekMs === null && staticMode === null) {
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          applyPlaybackRate();
+          window.__p2mReady = true;
+        }));
+        return;
+      }
+
+      document.documentElement.classList.add("p2m-chromeless");
+      cancelAnimationFrame(pulseRaf);
+      cancelAnimationFrame(arcRaf);
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        for (const animation of heroAnimations()) {
+          if (staticMode !== null) {
+            try {
+              animation.finish();
+            } catch (err) {
+              animation.cancel();
+            }
+          } else {
+            animation.pause();
+            animation.currentTime = Number(seekMs);
+          }
+        }
+        window.__p2mReady = true;
+      }));
+    }
+
+    document.getElementById("btnReplay").addEventListener("click", replayMain);
+    document.getElementById("logo-root").addEventListener("click", replayMain);
+    document.getElementById("speedSlider").addEventListener("input", event => {
+      setPlaybackRate(event.target.value, false);
+    });
+    document.getElementById("btnSlow").addEventListener("click", () => {
+      const slow = Number(document.getElementById("speedSlider").value) <= 0.251;
+      setPlaybackRate(slow ? 0.45 : 0.25, true);
+    });
+
+    setupAtomImages();
+    setupAtoms();
+    setPlaybackRate(0.45, false);
+    renderHero();
+    applyQaMode();
+  </script>
+</body>
+</html>

@@ -1,0 +1,130 @@
+:root {
+  --p2m-duration: 1800ms;
+  --p2m-ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
+  --p2m-ease-settle: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+#logo-geometry,
+#m-original,
+#m-draw-stroke,
+#m-final-mask-fill,
+#branch-left-original,
+#branch-right-original {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+#m-original {
+  animation: msf-m-settle var(--p2m-duration) cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+#m-draw-stroke {
+  stroke-dasharray: 1 1;
+  stroke-dashoffset: 0;
+  animation: msf-m-draw var(--p2m-duration) cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+#m-final-mask-fill {
+  animation: msf-m-final-fill var(--p2m-duration) linear both;
+}
+
+#branch-left-original {
+  animation: msf-branch-left var(--p2m-duration) cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+#branch-right-original {
+  animation: msf-branch-right var(--p2m-duration) cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes msf-m-settle {
+  0% {
+    opacity: 0;
+    transform: translateY(18px) scale(0.97);
+  }
+  12% {
+    opacity: 1;
+    transform: translateY(14px) scale(0.97);
+  }
+  58% {
+    opacity: 1;
+    transform: translateY(-3px) scale(1.015);
+  }
+  80% {
+    opacity: 1;
+    transform: translateY(1px) scale(0.997);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes msf-m-draw {
+  0%,
+  10% {
+    stroke-dashoffset: 1;
+  }
+  64%,
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes msf-m-final-fill {
+  0%,
+  62% {
+    opacity: 0;
+  }
+  68%,
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes msf-branch-left {
+  0%,
+  42% {
+    opacity: 0;
+    clip-path: inset(0 0 100% 0);
+    transform: translateY(22px) scale(0.98);
+  }
+  70% {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+    transform: translateY(-3px) scale(1.035);
+  }
+  86% {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+    transform: translateY(1px) scale(0.995);
+  }
+  100% {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes msf-branch-right {
+  0%,
+  46% {
+    opacity: 0;
+    clip-path: inset(0 0 100% 0);
+    transform: translateY(22px) scale(0.98);
+  }
+  74% {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+    transform: translateY(-3px) scale(1.035);
+  }
+  90% {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+    transform: translateY(1px) scale(0.995);
+  }
+  100% {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+    transform: translateY(0) scale(1);
+  }
+}

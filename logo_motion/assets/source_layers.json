@@ -1,0 +1,26 @@
+{
+  "m_original": {
+    "id": "msm_m_original",
+    "x": 313,
+    "y": 205,
+    "width": 399,
+    "height": 361,
+    "asset": "/Users/luochuhan/Documents/Codex/2026-06-17/nolangz-pixel2motion-https-github-com-nolangz/work/msm-pixel2motion/assets/msm_m_original.png"
+  },
+  "branch_left": {
+    "id": "msm_branch_left_original",
+    "x": 213,
+    "y": 504,
+    "width": 303,
+    "height": 319,
+    "asset": "/Users/luochuhan/Documents/Codex/2026-06-17/nolangz-pixel2motion-https-github-com-nolangz/work/msm-pixel2motion/assets/msm_branch_left_original.png"
+  },
+  "branch_right": {
+    "id": "msm_branch_right_original",
+    "x": 508,
+    "y": 504,
+    "width": 303,
+    "height": 313,
+    "asset": "/Users/luochuhan/Documents/Codex/2026-06-17/nolangz-pixel2motion-https-github-com-nolangz/work/msm-pixel2motion/assets/msm_branch_right_original.png"
+  }
+}

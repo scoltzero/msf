@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">MSM Free logo</title>
+  <desc id="desc">Motion-ready layered version of the original MSM Free raster logo.</desc>
+  <defs>
+    <mask id="m-draw-mask" maskUnits="userSpaceOnUse" x="285" y="175" width="460" height="430">
+      <rect x="285" y="175" width="460" height="430" fill="black"/>
+      <path id="m-draw-stroke" pathLength="1" d="M 365 552 C 365 486 365 360 365 278 C 365 238 416 229 437 266 L 508 414 C 530 458 552 458 575 414 L 636 286 C 660 238 700 241 700 284 C 700 356 700 480 700 552" fill="none" stroke="white" stroke-width="165" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="1 1" stroke-dashoffset="0"/>
+      <rect id="m-final-mask-fill" x="285" y="175" width="460" height="430" fill="white" opacity="1"/>
+    </mask>
+  </defs>
+
+  <g id="logo-geometry" fill="none">
+    <image id="branch-left-original" x="213" y="504" width="303" height="319" href="assets/msm_branch_left_original.png" preserveAspectRatio="none"/>
+    <image id="branch-right-original" x="508" y="504" width="303" height="313" href="assets/msm_branch_right_original.png" preserveAspectRatio="none"/>
+    <image id="m-original" x="313" y="205" width="399" height="361" href="assets/msm_m_original.png" preserveAspectRatio="none" mask="url(#m-draw-mask)"/>
+  </g>
+</svg>

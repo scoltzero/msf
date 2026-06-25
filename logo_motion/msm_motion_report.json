@@ -1,0 +1,24 @@
+{
+  "html": "logo_motion.html",
+  "times_ms": [
+    0,
+    200,
+    450,
+    750,
+    1000,
+    1150,
+    1400,
+    1800
+  ],
+  "frames": [
+    "outputs/motion_frames/frame_000000ms.png",
+    "outputs/motion_frames/frame_000200ms.png",
+    "outputs/motion_frames/frame_000450ms.png",
+    "outputs/motion_frames/frame_000750ms.png",
+    "outputs/motion_frames/frame_001000ms.png",
+    "outputs/motion_frames/frame_001150ms.png",
+    "outputs/motion_frames/frame_001400ms.png",
+    "outputs/motion_frames/frame_001800ms.png"
+  ],
+  "strip": "outputs/motion_strip.png"
+}

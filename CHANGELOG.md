@@ -1,5 +1,67 @@
 # 更新日志
 
+## v0.3.6 - 2026-06-25
+
+### 中文
+
+#### 说明
+
+- 这是一次文档结构、登录页品牌动效、初始化 53 端口预检和首页 CPU 展示修复发布。
+- 本版本发布资产数量与 v0.3.5 保持一致：Linux amd64/arm64 tarball、Unraid `.txz`/`.plg`，以及从同步后的 `fnos-fpk` 分支构建的 fnOS x86/arm `.fpk` 包，共 12 个 release assets。
+
+#### 新增
+
+- 新增登录页白底区域的动态 MSF Logo，保持原静态 Logo 的视觉尺寸，并加入 1000ms 延迟和 0.75x 播放节奏。
+- 新增 README 顶部动态 Logo 展示，让项目简介区域直接呈现当前品牌动效。
+- 新增独立安装文档入口：Linux tarball/systemd、fnOS FPK、Unraid PLG 和 Docker 实验部署拆分为分页面说明。
+- 新增 53 端口预检诊断字段 `reason`、`probe_error` 和 bind probe 来源错误，便于用户截图反馈真实原因。
+
+#### 变更
+
+- README / README.en 改为入口页：保留项目能力、当前版本、平台支持矩阵、下载入口和详细文档链接，减少首页操作手册堆叠。
+- 平台支持说明明确 Linux tarball/systemd、fnOS FPK、Unraid PLG 和 Docker host network 的状态差异；Docker 当前标记为实验性部署，不再作为主推安装方式。
+- fnOS FPK、Unraid PLG 的更新和卸载说明统一改为由平台管理器负责；`msf update` / `msf uninstall` 继续只面向 Linux tarball/systemd 安装。
+- MosDNS 启动前的 53 端口检查只在真实监听占用或 bind 返回 `EADDRINUSE` 时提前阻断；权限、capability 或其他探测异常改为警告，允许 MosDNS 直接尝试启动并返回真实运行结果。
+- 首页和服务状态中的进程 CPU 百分比改为按可用 vCPU/逻辑 CPU 容量归一化，并限制在 0-100%，避免 PVE / 多 vCPU 环境出现 350% 这类单核累计百分比。
+
+#### 修复
+
+- 修复 Unraid 插件页面入口在 WebGUI 中显示位置不正确的问题。
+- 修复初始化前 53 端口预检把 `EACCES`、`EPERM` 或其他 bind probe 错误误报为“未知进程占用”的问题。
+- 修复模板、配置文本中出现 `systemd-resolved` / `dnsmasq` / `:53` 字样时可能被未来解析路径误判为监听输出的风险。
+- 修复初始化页只用红/绿状态展示 53 端口结果的问题；非阻断探测异常现在以黄色警告展示，不禁用初始化按钮。
+- 修复 PVE / 多 vCPU 环境下首页服务 CPU 显示可能超过 100% 的问题。
+
+### English
+
+#### Notes
+
+- This is a documentation, login-branding, setup preflight, and dashboard CPU-display release.
+- Release asset count remains aligned with v0.3.5: Linux amd64/arm64 tarballs, Unraid `.txz`/`.plg`, and fnOS x86/arm `.fpk` packages built from the synced `fnos-fpk` branch, for 12 release assets total.
+
+#### Added
+
+- Added the animated MSF Logo to the white logo area on the login page, preserving the previous static logo's visual size with a 1000ms start delay and 0.75x playback pacing.
+- Added the animated logo to the README header so the project introduction reflects the current branding.
+- Added dedicated install documentation pages for Linux tarball/systemd, fnOS FPK, Unraid PLG, and experimental Docker deployment.
+- Added DNS port 53 preflight diagnostics: `reason`, `probe_error`, and bind-probe source errors for clearer user reports.
+
+#### Changed
+
+- README / README.en are now entry pages focused on project capabilities, current version, platform support, downloads, and links to detailed docs.
+- Platform support text now clearly separates Linux tarball/systemd, fnOS FPK, Unraid PLG, and Docker host-network status. Docker is marked experimental and is not the recommended install path.
+- fnOS FPK and Unraid PLG update/removal guidance now consistently points to the platform manager; `msf update` / `msf uninstall` remain Linux tarball/systemd-only.
+- MosDNS startup preflight now blocks only on real listeners or bind `EADDRINUSE`. Permission, capability, and other probe errors are warnings, allowing MosDNS to attempt startup and report the real runtime error.
+- Dashboard/service process CPU usage is normalized by available vCPU/logical CPU capacity and clamped to 0-100%, avoiding single-core accumulated values such as 350% on PVE / multi-vCPU systems.
+
+#### Fixed
+
+- Fixed the Unraid plugin WebGUI page entry location.
+- Fixed setup DNS port 53 preflight misreporting `EACCES`, `EPERM`, or other bind-probe errors as unknown process occupancy.
+- Fixed the risk of future parser paths treating template/config text containing `systemd-resolved`, `dnsmasq`, or `:53` as listener output.
+- Fixed setup-page DNS53 display using only red/green states. Non-blocking probe issues now render as yellow warnings and do not disable setup completion.
+- Fixed dashboard service CPU usage sometimes exceeding 100% on PVE / multi-vCPU environments.
+
 ## v0.3.5 - 2026-06-17
 
 ### 中文

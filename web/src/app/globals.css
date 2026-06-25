@@ -184,6 +184,150 @@
     transform: translateY(0);
   }
 }
+@keyframes login-motion-m-settle {
+  0% {
+    opacity: 0;
+    transform: translateY(18px) scale(0.97);
+  }
+  12% {
+    opacity: 1;
+    transform: translateY(14px) scale(0.97);
+  }
+  70% {
+    opacity: 1;
+    transform: translateY(-3px) scale(1.015);
+  }
+  88% {
+    opacity: 1;
+    transform: translateY(1px) scale(0.997);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes login-motion-m-draw {
+  0%,
+  4% {
+    stroke-dashoffset: 1;
+  }
+  82%,
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes login-motion-m-final-fill {
+  0%,
+  80% {
+    opacity: 0;
+  }
+  86%,
+  100% {
+    opacity: 1;
+  }
+}
+@keyframes login-motion-branch-left {
+  0%,
+  24% {
+    opacity: 0;
+    clip-path: inset(0 0 100% 0);
+    transform: translateY(22px) scale(0.98);
+  }
+  82% {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+    transform: translateY(-3px) scale(1.035);
+  }
+  92% {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+    transform: translateY(1px) scale(0.995);
+  }
+  100% {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes login-motion-branch-right {
+  0%,
+  28% {
+    opacity: 0;
+    clip-path: inset(0 0 100% 0);
+    transform: translateY(22px) scale(0.98);
+  }
+  86% {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+    transform: translateY(-3px) scale(1.035);
+  }
+  94% {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+    transform: translateY(1px) scale(0.995);
+  }
+  100% {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+    transform: translateY(0) scale(1);
+  }
+}
+
+.login-motion-logo .login-motion-m-original,
+.login-motion-logo .login-motion-draw-stroke,
+.login-motion-logo .login-motion-final-fill,
+.login-motion-logo .login-motion-branch-left,
+.login-motion-logo .login-motion-branch-right {
+  --login-motion-delay: 1000ms;
+  --login-motion-duration: 2400ms;
+  animation-delay: var(--login-motion-delay);
+  animation-duration: var(--login-motion-duration);
+  animation-fill-mode: both;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.login-motion-logo .login-motion-m-original {
+  animation-name: login-motion-m-settle;
+  animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.login-motion-logo .login-motion-draw-stroke {
+  animation-name: login-motion-m-draw;
+  animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.login-motion-logo .login-motion-final-fill {
+  animation-name: login-motion-m-final-fill;
+  animation-timing-function: linear;
+}
+
+.login-motion-logo .login-motion-branch-left {
+  animation-name: login-motion-branch-left;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.login-motion-logo .login-motion-branch-right {
+  animation-name: login-motion-branch-right;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-motion-logo .login-motion-m-original,
+  .login-motion-logo .login-motion-draw-stroke,
+  .login-motion-logo .login-motion-final-fill,
+  .login-motion-logo .login-motion-branch-left,
+  .login-motion-logo .login-motion-branch-right {
+    animation: none;
+    clip-path: inset(0 0 0 0);
+    opacity: 1;
+    transform: none;
+  }
+
+  .login-motion-logo .login-motion-draw-stroke {
+    stroke-dashoffset: 0;
+  }
+}
 
 @layer utilities {
   .animate-fade-in {

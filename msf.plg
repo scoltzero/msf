@@ -1,24 +1,24 @@
 <!DOCTYPE PLUGIN [
 <!ENTITY name "msf">
 <!ENTITY author "luochuhan">
-<!ENTITY version "0.3.5">
+<!ENTITY version "0.3.6">
 <!ENTITY githubRepo "scoltzero/msf">
-<!ENTITY releaseTag "v0.3.5">
-<!ENTITY packageName "msf-0.3.5-x86_64-1">
+<!ENTITY releaseTag "v0.3.6">
+<!ENTITY packageName "msf-0.3.6-x86_64-1">
 <!ENTITY packageFile "&packageName;.txz">
 <!ENTITY packageURL "https://github.com/&githubRepo;/releases/download/&releaseTag;/&packageFile;">
-<!ENTITY packageSHA256 "2aa2f0be453f31ac9ebb76f89ae0356bae9da04a02d5bd210c13a8094c60213e">
+<!ENTITY packageSHA256 "c6c12a6ba1347f12e55da9893bdde6ad7da5cddb2ab353c383a99d6c0b920a6e">
 ]>
-<PLUGIN name="&name;" author="&author;" version="&version;" pluginURL="https://raw.githubusercontent.com/&githubRepo;/main/msf.plg" launch="Settings/&name;" support="https://github.com/&githubRepo;/issues" icon="network-wired" min="6.12.0">
+<PLUGIN name="&name;" author="&author;" version="&version;" pluginURL="https://raw.githubusercontent.com/&githubRepo;/main/msf.plg" launch="Utilities/&name;" support="https://github.com/&githubRepo;/issues" icon="network-wired" min="6.12.0">
   <CHANGES>
     <![CDATA[
-### msf 0.3.5
-- 修复 `msf update` 后可能没有继承原数据目录、导致 WebUI 看起来被重置的问题；更新会从 systemd service / 环境变量 / `--config` 自动解析用户数据目录。
-- `msf update` 会保留已安装服务的监听 host/port，并继续限制 Docker、Unraid、fnOS FPK 通过平台管理器升级。
-- WebUI 系统更新状态新增旋转图标、总流程条、动态进度和最近日志；下载连接等待或 TCP timeout 期间也会显示当前阶段。
-- 自更新 API 新增 `phase`、`message`、`events`，后端会记录连接下载、下载中、安装、重启和失败日志。
-- 默认 Mihomo 配置保留 MetaCubeX `geox-url`，但关闭 `geo-auto-update`，首次初始化不再等待 GeoSite/GeoIP 下载；用户后续手动开启时由 Mihomo 自行更新。
-- Mihomo provider 健康检查改用 `http://detectportal.firefox.com/success.txt`，降低受限网络下的误判。
+### msf 0.3.6
+- 登录页和 README 顶部加入动态 MSF Logo。
+- README / README.en 改为入口页，并拆分 Linux、fnOS FPK、Unraid PLG、Docker 安装文档。
+- 明确 Linux tarball/systemd 使用 `msf update` / `msf uninstall`；fnOS FPK、Unraid PLG 通过平台管理器更新卸载；Docker 仍为实验部署。
+- 初始化 53 端口预检不再把权限、capability 或探测异常误报为未知进程占用；非真实占用以警告展示。
+- MosDNS 启动前只在真实监听占用或 bind `EADDRINUSE` 时提前阻断，其他探测异常允许 MosDNS 直接尝试启动。
+- 服务 CPU 使用率按可用 vCPU / 逻辑 CPU 容量归一化，修复 PVE / 多 vCPU 环境首页 CPU 显示超过 100% 的问题。
     ]]>
   </CHANGES>
 
@@ -58,8 +58,8 @@ set +e
 if [ -x /etc/rc.d/rc.msf ]; then
   /etc/rc.d/rc.msf stop
 fi
-removepkg msf-0.3.5-x86_64-1
-rm -f /boot/config/plugins/msf/msf-0.3.5-x86_64-1.txz
+removepkg msf-0.3.6-x86_64-1
+rm -f /boot/config/plugins/msf/msf-0.3.6-x86_64-1.txz
 echo "msf plugin removed. Persistent data remains under /mnt/user/appdata/msf unless you delete it manually."
       ]]>
     </INLINE>

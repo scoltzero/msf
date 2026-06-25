@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -98,14 +99,92 @@ func TestDNS53PreflightClassifiesSystemdResolvedAndUnknown(t *testing.T) {
 	systemd := parseSSListeners(`udp UNCONN 0 0 127.0.0.53%lo:53 0.0.0.0:* users:(("systemd-resolve",pid=422,fd=14))
 tcp LISTEN 0 4096 127.0.0.53%lo:53 0.0.0.0:* users:(("systemd-resolve",pid=422,fd=15))`, "udp", []int{53})
 	status := setupDNS53Preflight(context.Background(), systemd, false)
-	if status.Status != "blocked" || !status.CanRemediate {
+	if status.Status != "blocked" || !status.CanRemediate || status.Reason != setupDNS53ReasonSystemdResolvedStub {
 		t.Fatalf("systemd-resolved should be blocked but remediable: %+v", status)
 	}
 
 	unknown := []setupPortListener{{Port: 53, Protocol: "udp", Address: "0.0.0.0:53", PID: 100, Process: "dnsmasq"}}
 	status = setupDNS53Preflight(context.Background(), unknown, false)
-	if status.Status != "blocked" || status.CanRemediate {
+	if status.Status != "blocked" || status.CanRemediate || status.Reason != setupDNS53ReasonOccupied {
 		t.Fatalf("unknown 53 owner should block without remediation: %+v", status)
+	}
+}
+
+func TestDNS53PreflightClassifiesBindProbeErrors(t *testing.T) {
+	tests := []struct {
+		name          string
+		err           error
+		wantStatus    string
+		wantReason    string
+		wantBlocking  bool
+		wantBlockers  bool
+		wantProbeText string
+	}{
+		{
+			name:          "address in use blocks",
+			err:           syscall.EADDRINUSE,
+			wantStatus:    "blocked",
+			wantReason:    setupDNS53ReasonOccupied,
+			wantBlocking:  true,
+			wantBlockers:  true,
+			wantProbeText: "address already in use",
+		},
+		{
+			name:          "permission denied warns",
+			err:           syscall.EACCES,
+			wantStatus:    "warning",
+			wantReason:    setupDNS53ReasonPermissionDenied,
+			wantBlocking:  false,
+			wantProbeText: "permission denied",
+		},
+		{
+			name:          "unexpected probe error warns",
+			err:           errors.New("bind probe unavailable"),
+			wantStatus:    "warning",
+			wantReason:    setupDNS53ReasonProbeError,
+			wantBlocking:  false,
+			wantProbeText: "bind probe unavailable",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			withTestSetupSystemOps(t)
+			setupProbePort = func(protocol string, port int) error { return tt.err }
+
+			status := setupDNS53Preflight(context.Background(), nil, false)
+			if status.Status != tt.wantStatus || status.Reason != tt.wantReason {
+				t.Fatalf("status = %+v, want status=%s reason=%s", status, tt.wantStatus, tt.wantReason)
+			}
+			if (len(status.Blockers) > 0) != tt.wantBlockers {
+				t.Fatalf("blockers = %+v, want blockers=%v", status.Blockers, tt.wantBlockers)
+			}
+			if !strings.Contains(status.ProbeError, tt.wantProbeText) {
+				t.Fatalf("probe_error = %q, want containing %q", status.ProbeError, tt.wantProbeText)
+			}
+
+			res := (&App{}).buildSetupPreflight(context.Background(), "Asia/Shanghai", false)
+			if res.Blocking != tt.wantBlocking {
+				t.Fatalf("blocking = %v, want %v; result=%+v", res.Blocking, tt.wantBlocking, res)
+			}
+		})
+	}
+}
+
+func TestDNS53PreflightIgnoresTemplateText(t *testing.T) {
+	templateText := `
+# systemd-resolved dnsmasq listen :53 marker in a template comment
+plugins:
+  - tag: udp_all
+    type: server
+    args:
+      entry: main_sequence
+      listen: ":53"
+`
+	if listeners := parseSSListeners(templateText, "udp", []int{53}); len(listeners) != 0 {
+		t.Fatalf("template text should not parse as ss listeners: %+v", listeners)
+	}
+	if listeners := parseLSOFListeners(templateText, "udp", 53); len(listeners) != 0 {
+		t.Fatalf("template text should not parse as lsof listeners: %+v", listeners)
 	}
 }
 
@@ -127,6 +206,40 @@ func TestReservedPortConflictIsWarningOnly(t *testing.T) {
 	if status := setupDNS53Preflight(context.Background(), nil, false); status.Status != "ok" {
 		t.Fatalf("non-53 conflict must not affect DNS blocker: %+v", status)
 	}
+}
+
+func TestMosDNSStartOnlyBlocksOnDNS53Blocked(t *testing.T) {
+	t.Run("warning does not preempt startup", func(t *testing.T) {
+		app := newTestApp(t)
+		installTestMosDNSBinary(t, app, "echo attempted >&2\nexit 42\n")
+		setupProbePort = func(protocol string, port int) error { return syscall.EACCES }
+
+		_, err := app.Services.Start(context.Background(), "mosdns")
+		if err == nil {
+			t.Fatal("mosdns start should return process failure from the test binary")
+		}
+		if strings.Contains(err.Error(), "mosdns cannot bind 53") {
+			t.Fatalf("warning preflight should not block startup: %v", err)
+		}
+		if !strings.Contains(err.Error(), "attempted") {
+			t.Fatalf("start should reach the test binary and report stderr, got: %v", err)
+		}
+	})
+
+	t.Run("blocked preempts startup", func(t *testing.T) {
+		app := newTestApp(t)
+		marker := filepath.Join(app.DataDir, "mosdns-started")
+		installTestMosDNSBinary(t, app, "echo started > "+marker+"\nexit 0\n")
+		setupProbePort = func(protocol string, port int) error { return syscall.EADDRINUSE }
+
+		_, err := app.Services.Start(context.Background(), "mosdns")
+		if err == nil || !strings.Contains(err.Error(), "mosdns cannot bind 53") {
+			t.Fatalf("blocked preflight should stop startup, got: %v", err)
+		}
+		if _, statErr := os.Stat(marker); !os.IsNotExist(statErr) {
+			t.Fatalf("blocked preflight should not execute mosdns binary, stat err=%v", statErr)
+		}
+	})
 }
 
 func TestSetupActivateReturnsConflictOnRuntimeErrors(t *testing.T) {
@@ -151,10 +264,12 @@ func withTestSetupSystemOps(t *testing.T) {
 	oldLookPath := setupLookPath
 	oldGeteuid := setupGeteuid
 	oldProbePort := setupProbePort
+	oldShouldProbePort := setupShouldProbePort
 	oldLocal := time.Local
 	oldTZ, hadTZ := os.LookupEnv("TZ")
 	setupGeteuid = func() int { return 0 }
 	setupProbePort = func(protocol string, port int) error { return nil }
+	setupShouldProbePort = func() bool { return true }
 	setupLookPath = func(name string) (string, error) {
 		switch name {
 		case "timedatectl", "systemctl":
@@ -179,6 +294,7 @@ func withTestSetupSystemOps(t *testing.T) {
 		setupLookPath = oldLookPath
 		setupGeteuid = oldGeteuid
 		setupProbePort = oldProbePort
+		setupShouldProbePort = oldShouldProbePort
 		time.Local = oldLocal
 		if hadTZ {
 			_ = os.Setenv("TZ", oldTZ)
@@ -186,4 +302,15 @@ func withTestSetupSystemOps(t *testing.T) {
 			_ = os.Unsetenv("TZ")
 		}
 	})
+}
+
+func installTestMosDNSBinary(t *testing.T, app *App, body string) {
+	t.Helper()
+	bin := filepath.Join(app.DataDir, "data/binaries/mosdns/mosdns")
+	if err := os.MkdirAll(filepath.Dir(bin), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"+body), 0755); err != nil {
+		t.Fatal(err)
+	}
 }

@@ -8,11 +8,82 @@ gsap.registerPlugin(useGSAP);
 
 const FLOW_DELAYS = [0, 0.8, 1.6, 2.4, 3.2];
 const SIDE_FLOW_DELAYS = [0.4, 1.2, 2, 2.8, 3.6];
+const LOGIN_LOGO_MOTION_ASSET_BASE = "/logo-motion/assets";
+const LOGIN_LOGO_MOTION_FIT = "matrix(1.60068 0 0 1.60068 -307.55 -310.75)";
 
 type LoginLogoShowcaseProps = {
   compact?: boolean;
   className?: string;
 };
+
+type LoginMotionLogoProps = {
+  compact: boolean;
+  maskId: string;
+};
+
+function LoginMotionLogo({ compact, maskId }: LoginMotionLogoProps) {
+  return (
+    <svg
+      viewBox="0 0 1024 1024"
+      role="img"
+      aria-label="MSF"
+      className={cn(
+        "login-motion-logo relative z-10 overflow-visible drop-shadow-2xl",
+        compact ? "h-[4.4rem] w-[4.4rem]" : "h-[6.6rem] w-[6.6rem]",
+      )}
+    >
+      <defs>
+        <mask id={maskId} maskUnits="userSpaceOnUse" x="285" y="175" width="460" height="430">
+          <rect x="285" y="175" width="460" height="430" fill="black" />
+          <path
+            className="login-motion-draw-stroke"
+            pathLength="1"
+            d="M 365 552 C 365 486 365 360 365 278 C 365 238 416 229 437 266 L 508 414 C 530 458 552 458 575 414 L 636 286 C 660 238 700 241 700 284 C 700 356 700 480 700 552"
+            fill="none"
+            stroke="white"
+            strokeWidth="165"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeDasharray="1 1"
+            strokeDashoffset="0"
+          />
+          <rect className="login-motion-final-fill" x="285" y="175" width="460" height="430" fill="white" opacity="1" />
+        </mask>
+      </defs>
+
+      <g fill="none" transform={LOGIN_LOGO_MOTION_FIT}>
+        <image
+          className="login-motion-branch-left"
+          x="213"
+          y="504"
+          width="303"
+          height="319"
+          href={`${LOGIN_LOGO_MOTION_ASSET_BASE}/msm_branch_left_original.png`}
+          preserveAspectRatio="none"
+        />
+        <image
+          className="login-motion-branch-right"
+          x="508"
+          y="504"
+          width="303"
+          height="313"
+          href={`${LOGIN_LOGO_MOTION_ASSET_BASE}/msm_branch_right_original.png`}
+          preserveAspectRatio="none"
+        />
+        <image
+          className="login-motion-m-original"
+          x="313"
+          y="205"
+          width="399"
+          height="361"
+          href={`${LOGIN_LOGO_MOTION_ASSET_BASE}/msm_m_original.png`}
+          preserveAspectRatio="none"
+          mask={`url(#${maskId})`}
+        />
+      </g>
+    </svg>
+  );
+}
 
 export function LoginLogoShowcase({ compact = false, className }: LoginLogoShowcaseProps) {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -22,6 +93,7 @@ export function LoginLogoShowcase({ compact = false, className }: LoginLogoShowc
   const gradientInId = `login-logo-gradient-in-${id}`;
   const gradientLeftId = `login-logo-gradient-left-${id}`;
   const gradientRightId = `login-logo-gradient-right-${id}`;
+  const motionMaskId = `login-logo-motion-mask-${id}`;
 
   useGSAP(
     () => {
@@ -298,11 +370,7 @@ export function LoginLogoShowcase({ compact = false, className }: LoginLogoShowc
           )}
         >
           <div ref={tileRef} aria-hidden="true" className="login-logo-tile absolute inset-0 rounded-3xl bg-gradient-to-br from-primary/20 via-transparent to-blue-400/20" />
-          <img
-            src="/logo/logo-square.png"
-            alt="MSF"
-            className={cn("relative z-10 object-contain drop-shadow-2xl", compact ? "h-[4.4rem] w-[4.4rem]" : "h-[6.6rem] w-[6.6rem]")}
-          />
+          <LoginMotionLogo compact={compact} maskId={motionMaskId} />
         </div>
 
         <span aria-hidden="true" className={cn("login-ping absolute left-1/2 top-1/2 rounded-full bg-primary/40", compact ? "h-3 w-3" : "h-4 w-4")} />

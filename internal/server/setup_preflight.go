@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -29,6 +30,8 @@ type setupPreflightResult struct {
 type setupDNS53Status struct {
 	Status       string              `json:"status"`
 	Message      string              `json:"message"`
+	Reason       string              `json:"reason,omitempty"`
+	ProbeError   string              `json:"probe_error,omitempty"`
 	Remediated   bool                `json:"remediated"`
 	Blockers     []setupPortListener `json:"blockers,omitempty"`
 	CanRemediate bool                `json:"can_remediate"`
@@ -58,6 +61,7 @@ type setupPortListener struct {
 	PID      int    `json:"pid,omitempty"`
 	Process  string `json:"process,omitempty"`
 	Source   string `json:"source,omitempty"`
+	Error    string `json:"error,omitempty"`
 }
 
 type setupReservedPort struct {
@@ -71,10 +75,27 @@ var (
 		defer cancel()
 		return exec.CommandContext(cmdCtx, name, args...).CombinedOutput()
 	}
-	setupLookPath  = exec.LookPath
-	setupGeteuid   = os.Geteuid
-	setupProbePort = probeSetupPort
+	setupLookPath        = exec.LookPath
+	setupGeteuid         = os.Geteuid
+	setupProbePort       = probeSetupPort
+	setupShouldProbePort = func() bool {
+		return runtime.GOOS == "linux" && setupGeteuid() == 0
+	}
 )
+
+const (
+	setupDNS53ReasonFree                = "free"
+	setupDNS53ReasonOccupied            = "occupied"
+	setupDNS53ReasonPermissionDenied    = "permission_denied"
+	setupDNS53ReasonProbeError          = "probe_error"
+	setupDNS53ReasonSystemdResolvedStub = "systemd_resolved_stub"
+)
+
+type setupDNS53ProbeResult struct {
+	Blockers   []setupPortListener
+	Reason     string
+	ProbeError string
+}
 
 func (a *App) buildSetupPreflight(ctx context.Context, targetTimezone string, autoRemediateDNS bool) setupPreflightResult {
 	targetTimezone = strings.TrimSpace(targetTimezone)
@@ -97,6 +118,8 @@ func (a *App) buildSetupPreflight(ctx context.Context, targetTimezone string, au
 	if result.DNS53.Status == "blocked" {
 		result.Blocking = true
 		result.Errors = append(result.Errors, result.DNS53.Message)
+	} else if result.DNS53.Status == "warning" {
+		result.Warnings = append(result.Warnings, result.DNS53.Message)
 	}
 	if result.DNS53.Remediated {
 		listeners = collectSetupPortListeners(ctx, setupAllCheckedPorts())
@@ -197,14 +220,33 @@ func applyHostTimezone(ctx context.Context, target string) error {
 }
 
 func setupDNS53Preflight(ctx context.Context, listeners []setupPortListener, autoRemediate bool) setupDNS53Status {
-	blockers := dns53Blockers(listeners)
+	result := dns53Probe(listeners)
+	blockers := result.Blockers
 	if len(blockers) == 0 {
-		return setupDNS53Status{Status: "ok", Message: "53 端口可用"}
+		if result.ProbeError != "" {
+			message := "53 端口未发现真实监听占用，但探测绑定时遇到环境限制，MosDNS 将在启动时直接尝试绑定 53"
+			if result.Reason == setupDNS53ReasonPermissionDenied {
+				message = "53 端口未发现真实监听占用，但当前运行环境拒绝探测绑定，MosDNS 将在启动时直接尝试绑定 53"
+			}
+			return setupDNS53Status{
+				Status:     "warning",
+				Message:    message,
+				Reason:     result.Reason,
+				ProbeError: result.ProbeError,
+			}
+		}
+		return setupDNS53Status{Status: "ok", Message: "53 端口可用", Reason: setupDNS53ReasonFree}
 	}
 	canRemediate := allSystemdResolvedStub(blockers)
+	reason := result.Reason
+	if canRemediate {
+		reason = setupDNS53ReasonSystemdResolvedStub
+	}
 	status := setupDNS53Status{
 		Status:       "blocked",
 		Message:      "53 端口已被占用",
+		Reason:       reason,
+		ProbeError:   result.ProbeError,
 		Blockers:     blockers,
 		CanRemediate: canRemediate,
 	}
@@ -223,6 +265,11 @@ func setupDNS53Preflight(ctx context.Context, listeners []setupPortListener, aut
 	after := collectSetupPortListeners(ctx, []int{53})
 	if remaining := filterListeners(after, 53, ""); len(remaining) > 0 {
 		status.Blockers = remaining
+		status.CanRemediate = allSystemdResolvedStub(remaining)
+		status.Reason = setupDNS53ReasonOccupied
+		if status.CanRemediate {
+			status.Reason = setupDNS53ReasonSystemdResolvedStub
+		}
 		status.Message = "systemd-resolved 已尝试修复，但 53 端口仍被占用"
 		return status
 	}
@@ -234,16 +281,55 @@ func setupDNS53Preflight(ctx context.Context, listeners []setupPortListener, aut
 }
 
 func dns53Blockers(listeners []setupPortListener) []setupPortListener {
+	return dns53Probe(listeners).Blockers
+}
+
+func dns53Probe(listeners []setupPortListener) setupDNS53ProbeResult {
 	blockers := filterListeners(listeners, 53, "")
-	if len(blockers) > 0 || runtime.GOOS != "linux" || setupGeteuid() != 0 {
-		return blockers
+	if len(blockers) > 0 {
+		return setupDNS53ProbeResult{Blockers: blockers, Reason: setupDNS53ReasonOccupied}
 	}
+	if !setupShouldProbePort() {
+		return setupDNS53ProbeResult{Reason: setupDNS53ReasonFree}
+	}
+	var probeErrors []string
+	probeReason := ""
 	for _, proto := range []string{"tcp", "udp"} {
 		if err := setupProbePort(proto, 53); err != nil {
-			blockers = append(blockers, setupPortListener{Port: 53, Protocol: proto, Address: "0.0.0.0:53", Process: "unknown", Source: "bind_probe"})
+			probeErrors = append(probeErrors, fmt.Sprintf("%s: %v", proto, err))
+			switch setupBindErrorReason(err) {
+			case setupDNS53ReasonOccupied:
+				blockers = append(blockers, setupPortListener{Port: 53, Protocol: proto, Address: "0.0.0.0:53", Process: "unknown", Source: "bind_probe", Error: err.Error()})
+			case setupDNS53ReasonPermissionDenied:
+				if probeReason == "" {
+					probeReason = setupDNS53ReasonPermissionDenied
+				}
+			default:
+				if probeReason == "" {
+					probeReason = setupDNS53ReasonProbeError
+				}
+			}
 		}
 	}
-	return blockers
+	probeError := strings.Join(probeErrors, "; ")
+	if len(blockers) > 0 {
+		return setupDNS53ProbeResult{Blockers: blockers, Reason: setupDNS53ReasonOccupied, ProbeError: probeError}
+	}
+	if probeReason != "" {
+		return setupDNS53ProbeResult{Reason: probeReason, ProbeError: probeError}
+	}
+	return setupDNS53ProbeResult{Reason: setupDNS53ReasonFree}
+}
+
+func setupBindErrorReason(err error) string {
+	switch {
+	case errors.Is(err, syscall.EADDRINUSE):
+		return setupDNS53ReasonOccupied
+	case errors.Is(err, syscall.EACCES), errors.Is(err, syscall.EPERM):
+		return setupDNS53ReasonPermissionDenied
+	default:
+		return setupDNS53ReasonProbeError
+	}
 }
 
 func remediateSystemdResolvedStub(ctx context.Context) error {
@@ -382,6 +468,9 @@ func parseSSListeners(output, fallbackProtocol string, ports []int) []setupPortL
 		}
 		proto := strings.ToLower(fields[0])
 		if proto != "tcp" && proto != "udp" {
+			if !isSSListenerState(fields[0]) {
+				continue
+			}
 			proto = fallbackProtocol
 		}
 		local := ""
@@ -402,6 +491,15 @@ func parseSSListeners(output, fallbackProtocol string, ports []int) []setupPortL
 	return out
 }
 
+func isSSListenerState(value string) bool {
+	switch strings.ToUpper(value) {
+	case "LISTEN", "UNCONN":
+		return true
+	default:
+		return false
+	}
+}
+
 func parseLSOFListeners(output, protocol string, port int) []setupPortListener {
 	var out []setupPortListener
 	for _, line := range strings.Split(output, "\n") {
@@ -414,7 +512,16 @@ func parseLSOFListeners(output, protocol string, port int) []setupPortListener {
 			continue
 		}
 		pid, _ := strconv.Atoi(fields[1])
+		if pid <= 0 {
+			continue
+		}
 		address := fields[len(fields)-1]
+		if strings.HasPrefix(address, "(") && len(fields) >= 2 {
+			address = fields[len(fields)-2]
+		}
+		if parsedPort, ok := parsePortFromAddress(address); !ok || parsedPort != port {
+			continue
+		}
 		out = append(out, setupPortListener{Port: port, Protocol: protocol, Address: address, PID: pid, Process: fields[0], Source: "lsof"})
 	}
 	return out

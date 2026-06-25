@@ -5,7 +5,7 @@
 <Icon>https://raw.githubusercontent.com/scoltzero/msf/main/packaging/unraid/msf.png</Icon>
 <Overview>
 A free and open-source, user-facing all-in-one management tool for DNS and proxy (mihomo / sing-box, in development), packaged for Unraid.
-msf installs a lightweight Settings control page plus a self-managed local service. The Settings page is only for enabling the rc service, setting the listen host/port, choosing the data directory, viewing status, and opening the separate msf WebUI. The full DNS/proxy management interface runs in that WebUI.
+msf installs a lightweight Utilities page entry plus a self-managed local service. The Unraid plugin page is only for enabling the rc service, setting the listen host/port, choosing the data directory, viewing status, and opening the separate msf WebUI. The full DNS/proxy management interface runs in that WebUI.
 After you complete the in-app setup wizard, msf can run MosDNS (DNS), Mihomo (proxy/TProxy), and the required nftables rules. Online MosDNS/Mihomo/Zashboard core downloads are verified against GitHub Release API asset SHA-256 digests before install; local uploads remain user-supplied files and are not marked as project-verified. Default sample subscriptions/nodes are inert placeholders only. Persistent data lives under /mnt/user/appdata/msf.
 Update and remove msf from the Unraid Plugins page (not via the in-app updater).
 </Overview>
@@ -13,14 +13,14 @@ Update and remove msf from the Unraid Plugins page (not via the in-app updater).
 <Project>https://github.com/scoltzero/msf</Project>
 <Category>Network:Management Tools:System Plugins:</Category>
 <Beta>False</Beta>
-<Date>2026-06-17</Date>
+<Date>2026-06-25</Date>
 <Changes>
-### msf 0.3.5
-- Fixed `msf update` so Linux tarball/systemd updates preserve the installed data directory and no longer make the WebUI look reset after update.
-- `msf update` now reuses the installed host/port unless explicitly overridden and continues to direct Docker, Unraid, and fnOS FPK installs to platform managers.
-- The WebUI Update Status card now shows a spinning state icon, process bar, dynamic progress, and recent logs during check/download/install/restart/failure phases.
-- Self-update APIs now expose `phase`, `message`, and `events`, with backend logs for connecting, downloading, installing, restarting, and failed states.
-- Default Mihomo configs keep MetaCubeX `geox-url`, but `geo-auto-update` is disabled by default so first-time setup no longer waits for GeoSite/GeoIP downloads; if users enable it later, Mihomo updates through the configured URLs.
-- Mihomo provider health checks now use `http://detectportal.firefox.com/success.txt` to reduce false negatives on restricted networks.
+### msf 0.3.6
+- Added animated MSF logo branding to the login page and README header.
+- Reworked README / README.en as entry pages and split Linux, fnOS FPK, Unraid PLG, and Docker install details into separate docs.
+- Clarified platform update/removal boundaries: Linux tarball/systemd uses `msf update` / `msf uninstall`; fnOS FPK and Unraid PLG use their platform managers; Docker remains experimental.
+- Fixed DNS port 53 setup preflight so permission/capability probe errors are warnings instead of false "unknown process occupied" blockers.
+- MosDNS startup now only pre-blocks on real port 53 occupancy or bind `EADDRINUSE`; non-occupancy probe warnings allow MosDNS to attempt startup and report the real runtime error.
+- Normalized service CPU usage by available vCPU/logical CPU capacity to avoid dashboard values above 100% on PVE / multi-vCPU environments.
 </Changes>
 </Plugin>

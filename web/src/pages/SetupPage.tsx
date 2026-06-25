@@ -79,6 +79,7 @@ interface SetupPortListener {
   pid?: number;
   process?: string;
   source?: string;
+  error?: string;
 }
 
 interface SetupPortCheck {
@@ -95,6 +96,8 @@ interface SetupPreflight {
   dns53?: {
     status?: string;
     message?: string;
+    reason?: string;
+    probe_error?: string;
     remediated?: boolean;
     can_remediate?: boolean;
     blockers?: SetupPortListener[];
@@ -259,14 +262,37 @@ function occupiedReservedPorts(preflight: SetupPreflight | null) {
 
 function listenerText(listener: SetupPortListener) {
   const owner = listener.process ? `${listener.process}${listener.pid ? `(${listener.pid})` : ""}` : listener.pid ? `PID ${listener.pid}` : "未知进程";
-  return [owner, listener.address].filter(Boolean).join(" · ");
+  const source = listener.source ? `来源 ${listener.source}` : "";
+  const error = listener.error ? `错误 ${listener.error}` : "";
+  return [owner, listener.address, source, error].filter(Boolean).join(" · ");
 }
 
 function preflightDNSLabel(status?: string) {
   if (status === "ok") return "可用";
   if (status === "remediated") return "已自动修复";
+  if (status === "warning") return "需确认";
   if (status === "blocked") return "阻断";
   return "未知";
+}
+
+function preflightDNSClass(status?: string) {
+  if (status === "blocked") return "border-red-500/25 bg-red-500/10 text-red-700 dark:text-red-300";
+  if (status === "warning") return "border-yellow-500/25 bg-yellow-500/10 text-yellow-800 dark:text-yellow-300";
+  return "border-green-500/25 bg-green-500/10 text-green-700 dark:text-green-300";
+}
+
+function preflightDNSReasonLabel(reason?: string) {
+  if (reason === "occupied") return "真实监听占用";
+  if (reason === "permission_denied") return "权限或运行环境限制";
+  if (reason === "probe_error") return "探测异常";
+  if (reason === "systemd_resolved_stub") return "systemd-resolved DNS stub";
+  if (reason === "free") return "未发现占用";
+  return reason || "";
+}
+
+function preflightDNSDiagnostics(dns53?: SetupPreflight["dns53"]) {
+  const reason = preflightDNSReasonLabel(dns53?.reason);
+  return [reason ? `原因：${reason}` : "", dns53?.probe_error ? `探测错误：${dns53.probe_error}` : ""].filter(Boolean);
 }
 
 function serializeSubscriptions(rows: SubscriptionRow[]) {
@@ -1771,16 +1797,27 @@ export function SetupPage() {
                       <div
                         className={cn(
                           "rounded-lg border p-3 text-xs leading-5",
-                          preflight.dns53?.status === "blocked"
-                            ? "border-red-500/25 bg-red-500/10 text-red-700 dark:text-red-300"
-                            : "border-green-500/25 bg-green-500/10 text-green-700 dark:text-green-300"
+                          preflightDNSClass(preflight.dns53?.status)
                         )}
                       >
                         <div className="flex items-start gap-2">
-                          {preflight.dns53?.status === "blocked" ? <AlertCircle className="mt-0.5 h-4 w-4" /> : <CheckCircle2 className="mt-0.5 h-4 w-4" />}
+                          {preflight.dns53?.status === "blocked" || preflight.dns53?.status === "warning" ? (
+                            <AlertCircle className="mt-0.5 h-4 w-4" />
+                          ) : (
+                            <CheckCircle2 className="mt-0.5 h-4 w-4" />
+                          )}
                           <div className="min-w-0">
                             <div className="font-medium">53 端口：{preflightDNSLabel(preflight.dns53?.status)}</div>
                             <div className="mt-0.5 break-words">{preflight.dns53?.message || "未返回检查结果"}</div>
+                            {preflightDNSDiagnostics(preflight.dns53).length > 0 && (
+                              <div className="mt-1 space-y-0.5">
+                                {preflightDNSDiagnostics(preflight.dns53).map((item) => (
+                                  <div key={item} className="break-words text-[11px]">
+                                    {item}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                             {(preflight.dns53?.blockers || []).length > 0 && (
                               <div className="mt-1 space-y-0.5">
                                 {(preflight.dns53?.blockers || []).map((item, index) => (
