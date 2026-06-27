@@ -97,11 +97,12 @@ type setupDNS53ProbeResult struct {
 	ProbeError string
 }
 
-func (a *App) buildSetupPreflight(ctx context.Context, targetTimezone string, autoRemediateDNS bool) setupPreflightResult {
+func (a *App) buildSetupPreflight(ctx context.Context, targetTimezone string, autoRemediateDNS bool, proxyModes ...string) setupPreflightResult {
 	targetTimezone = strings.TrimSpace(targetTimezone)
 	if targetTimezone == "" {
 		targetTimezone = "Asia/Shanghai"
 	}
+	proxyMode := setupPreflightProxyMode(proxyModes...)
 	result := setupPreflightResult{Success: true}
 	result.Timezone = setupTimezonePreflight(ctx, targetTimezone)
 	if !result.Timezone.Valid {
@@ -110,10 +111,10 @@ func (a *App) buildSetupPreflight(ctx context.Context, targetTimezone string, au
 	}
 	if runtime.GOOS == "linux" && setupGeteuid() != 0 {
 		result.Blocking = true
-		result.Errors = append(result.Errors, "MosDNS 53 端口和 nftables 需要 root 权限")
+		result.Errors = append(result.Errors, "MosDNS 53 端口和 TUN/nftables 需要 root 权限")
 	}
 
-	listeners := collectSetupPortListeners(ctx, setupAllCheckedPorts())
+	listeners := collectSetupPortListeners(ctx, setupAllCheckedPorts(proxyMode))
 	result.DNS53 = setupDNS53Preflight(ctx, listeners, autoRemediateDNS)
 	if result.DNS53.Status == "blocked" {
 		result.Blocking = true
@@ -122,10 +123,10 @@ func (a *App) buildSetupPreflight(ctx context.Context, targetTimezone string, au
 		result.Warnings = append(result.Warnings, result.DNS53.Message)
 	}
 	if result.DNS53.Remediated {
-		listeners = collectSetupPortListeners(ctx, setupAllCheckedPorts())
+		listeners = collectSetupPortListeners(ctx, setupAllCheckedPorts(proxyMode))
 	}
 
-	result.ReservedPorts = setupReservedPortChecks(ctx, listeners)
+	result.ReservedPorts = setupReservedPortChecks(ctx, listeners, proxyMode)
 	for _, item := range result.ReservedPorts {
 		if item.Status != "occupied" {
 			continue
@@ -134,6 +135,18 @@ func (a *App) buildSetupPreflight(ctx context.Context, targetTimezone string, au
 	}
 	result.Success = !result.Blocking
 	return result
+}
+
+func setupPreflightProxyMode(proxyModes ...string) string {
+	for _, mode := range proxyModes {
+		mode = strings.TrimSpace(mode)
+		if mode != "" {
+			return mode
+		}
+	}
+	cfg := SetupConfig{}
+	cfg.defaults()
+	return cfg.LinuxProxyMode
 }
 
 func setupTimezonePreflight(ctx context.Context, target string) setupTimezoneStatus {
@@ -377,8 +390,8 @@ func replaceResolvConfSymlink(target string) {
 	_ = os.Symlink(target, "/etc/resolv.conf")
 }
 
-func setupReservedPortChecks(ctx context.Context, listeners []setupPortListener) []setupPortCheck {
-	ports := setupReservedPorts()
+func setupReservedPortChecks(ctx context.Context, listeners []setupPortListener, proxyModes ...string) []setupPortCheck {
+	ports := setupReservedPorts(proxyModes...)
 	out := make([]setupPortCheck, 0, len(ports)*2)
 	for _, item := range ports {
 		for _, proto := range []string{"tcp", "udp"} {
@@ -398,8 +411,8 @@ func setupReservedPortChecks(ctx context.Context, listeners []setupPortListener)
 	return out
 }
 
-func setupReservedPorts() []setupReservedPort {
-	return []setupReservedPort{
+func setupReservedPorts(proxyModes ...string) []setupReservedPort {
+	ports := []setupReservedPort{
 		{2222, "MosDNS forward_1"},
 		{3333, "MosDNS forward_nocn"},
 		{4444, "MosDNS forward_nocn_ecs"},
@@ -411,16 +424,21 @@ func setupReservedPorts() []setupReservedPort {
 		{7890, "Mihomo HTTP proxy"},
 		{7891, "Mihomo SOCKS proxy"},
 		{7892, "Mihomo mixed proxy"},
-		{7896, "Mihomo TProxy"},
 		{7897, "reserved compatibility port"},
-		{7877, "Mihomo redirect"},
 	}
+	if !isTUNProxyMode(setupPreflightProxyMode(proxyModes...)) {
+		ports = append(ports,
+			setupReservedPort{7896, "Mihomo TProxy"},
+			setupReservedPort{7877, "Mihomo redirect"},
+		)
+	}
+	return ports
 }
 
-func setupAllCheckedPorts() []int {
+func setupAllCheckedPorts(proxyModes ...string) []int {
 	seen := map[int]bool{53: true}
 	out := []int{53}
-	for _, item := range setupReservedPorts() {
+	for _, item := range setupReservedPorts(proxyModes...) {
 		if !seen[item.Port] {
 			out = append(out, item.Port)
 			seen[item.Port] = true

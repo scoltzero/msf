@@ -69,7 +69,11 @@ func (c *SetupConfig) defaults() {
 		c.FakeIPRangeV6 = "f2b0::/18"
 	}
 	if c.LinuxProxyMode == "" {
-		c.LinuxProxyMode = "nft"
+		if IsDockerRuntime() {
+			c.LinuxProxyMode = "tun"
+		} else {
+			c.LinuxProxyMode = "nft"
+		}
 	}
 	if c.NFTProxyPolicy == "" {
 		c.NFTProxyPolicy = "direct_default"
@@ -78,6 +82,19 @@ func (c *SetupConfig) defaults() {
 		c.ProxyCore = "mihomo"
 	}
 	c.MosDNSEnabled = true
+}
+
+func isTUNProxyMode(mode string) bool {
+	return strings.EqualFold(strings.TrimSpace(mode), "tun")
+}
+
+func isNFTProxyMode(mode string) bool {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "", "nft", "nftables", "tproxy":
+		return true
+	default:
+		return false
+	}
 }
 
 func (a *App) ensureDefaultConfigs() error {
@@ -99,8 +116,10 @@ func (a *App) ensureDefaultConfigs() error {
 		"configs/app.yaml":             a.renderAppYAML(cfg),
 		"configs/mosdns/config.yaml":   a.renderMosDNSYAML(cfg),
 		"configs/network/network.yaml": a.renderNetworkYAML(cfg),
-		"configs/network/network.nft":  a.renderNFT(cfg),
 		"configs/singbox/config.json":  renderDisabledSingBoxJSON(),
+	}
+	if shouldRestoreNFT(cfg) {
+		files["configs/network/network.nft"] = a.renderNFT(cfg)
 	}
 	if a.mihomoConfigMode() != "custom" {
 		files["configs/mihomo/config.yaml"] = a.renderMihomoYAML(cfg)
@@ -134,8 +153,10 @@ func (a *App) writeGeneratedConfigs(cfg SetupConfig) error {
 		"configs/app.yaml":             a.renderAppYAML(cfg),
 		"configs/mosdns/config.yaml":   a.renderMosDNSYAML(cfg),
 		"configs/network/network.yaml": a.renderNetworkYAML(cfg),
-		"configs/network/network.nft":  a.renderNFT(cfg),
 		"configs/singbox/config.json":  renderDisabledSingBoxJSON(),
+	}
+	if shouldRestoreNFT(cfg) {
+		files["configs/network/network.nft"] = a.renderNFT(cfg)
 	}
 	if a.mihomoConfigMode() != "custom" {
 		files["configs/mihomo/config.yaml"] = a.renderMihomoYAML(cfg)
@@ -210,12 +231,15 @@ func renderMihomoTemplate(template string, cfg SetupConfig) string {
 	content = strings.ReplaceAll(content, "ipv6: true", "ipv6: "+ipv6)
 	content = strings.Replace(content, "external-ui: /mssb/mihomo/ui", "external-ui: ui", 1)
 	content = strings.Replace(content, "fake-ip-range: 28.0.0.1/8", "fake-ip-range: "+normalizeMihomoFakeIPv4Range(cfg.FakeIPRangeV4), 1)
+	content = applyMihomoProxyMode(content, cfg)
 	return replaceMihomoProxyProviders(content, renderProxyProvidersYAML(parseSubscriptionProviders(cfg.SubscriptionURLs), hasMihomoManualProxies(cfg.MihomoProxies)))
 }
 
 func renderMihomoFallbackYAML(cfg SetupConfig) string {
 	providerYAML := renderProxyProvidersYAML(parseSubscriptionProviders(cfg.SubscriptionURLs), hasMihomoManualProxies(cfg.MihomoProxies))
 	ipv6 := boolYAML(cfg.EnableIPv6)
+	transparentYAML := renderMihomoTransparentProxyYAML(cfg)
+	tunYAML := renderMihomoTunYAML(isTUNProxyMode(cfg.LinuxProxyMode))
 	return fmt.Sprintf(`# msf generated Mihomo config
 mode: rule
 log-level: info
@@ -227,8 +251,7 @@ udp: true
 port: 7890
 socks-port: 7891
 mixed-port: 7892
-redir-port: 7877
-tproxy-port: 7896
+%s
 geodata-mode: true
 geodata-loader: standard
 geo-auto-update: false
@@ -236,7 +259,6 @@ geo-update-interval: 24
 find-process-mode: strict
 allow-lan: true
 bind-address: "*"
-routing-mark: 1
 external-controller: :9090
 external-ui: ui
 external-ui-url: https://github.com/Zephyruso/zashboard/releases/latest/download/dist.zip
@@ -250,8 +272,7 @@ profile:
   store-fake-ip: true
 sniffer:
   enable: false
-tun:
-  enable: false
+%s
 dns:
   enable: true
   listen: 0.0.0.0:6666
@@ -277,7 +298,90 @@ rules:
   - IP-CIDR,8.8.8.8/32,节点选择
   - IP-CIDR,1.1.1.1/32,节点选择
   - MATCH,节点选择
-%s`, selectedInterface(cfg.SelectedInterface), ipv6, ipv6, normalizeMihomoFakeIPv4Range(cfg.FakeIPRangeV4), providerYAML)
+%s`, selectedInterface(cfg.SelectedInterface), ipv6, transparentYAML, tunYAML, ipv6, normalizeMihomoFakeIPv4Range(cfg.FakeIPRangeV4), providerYAML)
+}
+
+func renderMihomoTransparentProxyYAML(cfg SetupConfig) string {
+	if isTUNProxyMode(cfg.LinuxProxyMode) {
+		return ""
+	}
+	return "redir-port: 7877\ntproxy-port: 7896\nrouting-mark: 1"
+}
+
+func renderMihomoTunYAML(enabled bool) string {
+	if !enabled {
+		return "tun:\n  enable: false"
+	}
+	return `tun:
+  enable: true
+  stack: mixed
+  device: mihomo
+  auto-route: true
+  auto-detect-interface: true
+  strict-route: false
+  auto-redirect: false
+  dns-hijack:
+    - any:53`
+}
+
+func applyMihomoProxyMode(content string, cfg SetupConfig) string {
+	if isTUNProxyMode(cfg.LinuxProxyMode) {
+		content = removeTopLevelYAMLKeys(content, map[string]bool{
+			"redir-port":   true,
+			"tproxy-port":  true,
+			"routing-mark": true,
+		})
+		return replaceTopLevelYAMLBlock(content, "tun", renderMihomoTunYAML(true))
+	}
+	return replaceTopLevelYAMLBlock(content, "tun", renderMihomoTunYAML(false))
+}
+
+func removeTopLevelYAMLKeys(content string, keys map[string]bool) string {
+	var out strings.Builder
+	for _, line := range strings.SplitAfter(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") || strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t") {
+			out.WriteString(line)
+			continue
+		}
+		key, _, ok := strings.Cut(trimmed, ":")
+		if ok && keys[strings.TrimSpace(key)] {
+			continue
+		}
+		out.WriteString(line)
+	}
+	return out.String()
+}
+
+func replaceTopLevelYAMLBlock(content, key, replacement string) string {
+	lines := strings.SplitAfter(content, "\n")
+	var out strings.Builder
+	replaced := false
+	for i := 0; i < len(lines); i++ {
+		line := lines[i]
+		trimmed := strings.TrimSpace(line)
+		if !replaced && !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") && strings.HasPrefix(trimmed, key+":") {
+			out.WriteString(strings.TrimRight(replacement, "\n"))
+			out.WriteByte('\n')
+			replaced = true
+			for i+1 < len(lines) {
+				next := lines[i+1]
+				nextTrimmed := strings.TrimSpace(next)
+				if nextTrimmed == "" || strings.HasPrefix(next, " ") || strings.HasPrefix(next, "\t") {
+					i++
+					continue
+				}
+				break
+			}
+			continue
+		}
+		out.WriteString(line)
+	}
+	if !replaced {
+		out.WriteString(strings.TrimRight(replacement, "\n"))
+		out.WriteByte('\n')
+	}
+	return out.String()
 }
 
 func renderProxyProvidersYAML(providers map[string]string, includeManual bool) string {
@@ -397,11 +501,9 @@ func mssbMainSplitServerYAML() string {
 
 func (a *App) renderNetworkYAML(cfg SetupConfig) string {
 	v := map[string]any{
-		"mode":            "tproxy",
+		"mode":            cfg.LinuxProxyMode,
 		"proxy_policy":    cfg.NFTProxyPolicy,
 		"interface":       cfg.SelectedInterface,
-		"mark":            1,
-		"table":           100,
 		"allow_dns":       true,
 		"dns_ports":       []int{53, 5353},
 		"system_dns_on":   cfg.DNSOn,
@@ -409,9 +511,14 @@ func (a *App) renderNetworkYAML(cfg SetupConfig) string {
 		"auto_system_dns": cfg.AutoSetDNS,
 		"fake_ipv4":       []string{fakeIPv4RouteCIDR(cfg.FakeIPRangeV4)},
 		"fake_ipv6":       []string{fakeIPv6RouteCIDR(cfg.FakeIPRangeV6)},
-		"tproxy_port":     7896,
-		"ipv4":            map[string]any{"enable": true, "listen_port": 7877},
-		"ipv6":            map[string]any{"enable": cfg.EnableIPv6, "listen_port": 7877},
+	}
+	if !isTUNProxyMode(cfg.LinuxProxyMode) {
+		v["mode"] = "tproxy"
+		v["mark"] = 1
+		v["table"] = 100
+		v["tproxy_port"] = 7896
+		v["ipv4"] = map[string]any{"enable": true, "listen_port": 7877}
+		v["ipv6"] = map[string]any{"enable": cfg.EnableIPv6, "listen_port": 7877}
 	}
 	b, _ := yaml.Marshal(v)
 	return string(b)

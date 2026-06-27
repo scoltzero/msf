@@ -60,6 +60,10 @@ interface SetupSystemInfo {
 interface PrivilegeInfo {
   is_root?: boolean;
   message?: string;
+  runtime?: {
+    docker?: boolean;
+    docker_network_mode?: string;
+  };
 }
 
 interface SubscriptionRow {
@@ -931,7 +935,12 @@ export function SetupPage() {
       api<any>("/api/v1/setup/system-info", { skipAuth: true }),
       api<any>("/api/v1/setup/network-interfaces", { skipAuth: true }),
     ]).then(([privilegeResult, systemResult, networkResult]) => {
-      if (privilegeResult.status === "fulfilled") setPrivilege(privilegeResult.value);
+      if (privilegeResult.status === "fulfilled") {
+        setPrivilege(privilegeResult.value);
+        if (privilegeResult.value?.runtime?.docker) {
+          setForm((current) => ({ ...current, linux_proxy_mode: "tun" }));
+        }
+      }
       if (systemResult.status === "fulfilled") setSystem(systemResult.value);
       if (networkResult.status === "fulfilled") {
         const rows = networkRows(networkResult.value);
@@ -967,18 +976,23 @@ export function SetupPage() {
   const manualNodeCount = nodeMode === "yaml" ? (form.mihomo_proxies.trim() ? 1 : 0) : manualNodes.filter((node) => node.trim()).length;
   const occupiedPorts = useMemo(() => occupiedReservedPorts(preflight), [preflight]);
   const hasPortWarnings = occupiedPorts.length > 0;
+  const isDockerRuntime = Boolean(privilege?.runtime?.docker);
 
   const fetchPreflight = useCallback(async () => {
     setPreflightBusy(true);
     try {
-      const payload = await api<SetupPreflight>(`/api/v1/setup/preflight?timezone=${encodeURIComponent(form.timezone)}`, { skipAuth: true });
+      const params = new URLSearchParams({
+        timezone: form.timezone,
+        linux_proxy_mode: form.linux_proxy_mode,
+      });
+      const payload = await api<SetupPreflight>(`/api/v1/setup/preflight?${params.toString()}`, { skipAuth: true });
       setPreflight(payload);
       if (occupiedReservedPorts(payload).length === 0) setPortRiskAccepted(false);
       return payload;
     } finally {
       setPreflightBusy(false);
     }
-  }, [form.timezone]);
+  }, [form.linux_proxy_mode, form.timezone]);
 
   useEffect(() => {
     if (step !== steps.length - 1 || downloadStatus !== "idle") return;
@@ -986,7 +1000,7 @@ export function SetupPage() {
   }, [downloadStatus, fetchPreflight, step]);
 
   const update = (key: keyof SetupForm, value: string | boolean) => {
-    if (key === "timezone") {
+    if (key === "timezone" || key === "linux_proxy_mode") {
       setPreflight(null);
       setPortRiskAccepted(false);
     }
@@ -1244,7 +1258,7 @@ export function SetupPage() {
                       <div>
                         <div className="font-medium">{privilege.is_root ? "权限检查通过" : "权限检查未通过"}</div>
                         <div className="mt-0.5">
-                          {privilege.is_root ? "服务以 sudo/root 权限运行，可以继续配置" : privilege.message || "MosDNS 53 端口和 nftables 需要管理员权限"}
+                          {privilege.is_root ? "服务以 sudo/root 权限运行，可以继续配置" : privilege.message || "MosDNS 53 端口和 TUN/nftables 需要管理员权限"}
                         </div>
                       </div>
                     </div>
@@ -1568,35 +1582,41 @@ export function SetupPage() {
                       <div className="grid gap-3 sm:grid-cols-2">
                         <ChoiceCard
                           title="nftables 转发（TProxy + Redirect）"
-                          description="Linux 下 Mihomo 支持 nftables 转发，默认使用 nftables 转发。"
+                          description={
+                            isDockerRuntime
+                              ? "传统 Linux 透明代理，会管理宿主 nftables，不作为 Docker 默认模式。"
+                              : "Linux 下 Mihomo 支持 nftables 转发，默认使用 nftables 转发。"
+                          }
                           selected={form.linux_proxy_mode === "nft"}
                           onClick={() => update("linux_proxy_mode", "nft")}
                         />
                         <ChoiceCard
-                          title="TUN 模式"
-                          description="使用 TUN 虚拟网卡处理流量。"
+                          title={isDockerRuntime ? "TUN 模式（Docker 推荐）" : "TUN 模式"}
+                          description="使用 Mihomo TUN 虚拟网卡处理流量，不由 MSF 写入 nftables 策略路由。"
                           selected={form.linux_proxy_mode === "tun"}
                           onClick={() => update("linux_proxy_mode", "tun")}
                         />
                       </div>
                     </div>
-                    <div>
-                      <div className="mb-2 text-sm font-medium">nftables 代理策略</div>
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <ChoiceCard
-                          title="默认直连（推荐）"
-                          description="只有规则内的流量走代理服务，其他流量走 MosDNS 国内 DNS。适合大多数场景。"
-                          selected={form.nft_proxy_policy === "direct_default"}
-                          onClick={() => update("nft_proxy_policy", "direct_default")}
-                        />
-                        <ChoiceCard
-                          title="默认代理"
-                          description="只有规则内的流量走 MosDNS，其他不在规则内的都进代理服务。"
-                          selected={form.nft_proxy_policy === "proxy_default"}
-                          onClick={() => update("nft_proxy_policy", "proxy_default")}
-                        />
+                    {form.linux_proxy_mode !== "tun" && (
+                      <div>
+                        <div className="mb-2 text-sm font-medium">nftables 代理策略</div>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <ChoiceCard
+                            title="默认直连（推荐）"
+                            description="只有规则内的流量走代理服务，其他流量走 MosDNS 国内 DNS。适合大多数场景。"
+                            selected={form.nft_proxy_policy === "direct_default"}
+                            onClick={() => update("nft_proxy_policy", "direct_default")}
+                          />
+                          <ChoiceCard
+                            title="默认代理"
+                            description="只有规则内的流量走 MosDNS，其他不在规则内的都进代理服务。"
+                            selected={form.nft_proxy_policy === "proxy_default"}
+                            onClick={() => update("nft_proxy_policy", "proxy_default")}
+                          />
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </div>
                 </div>
                 <SetupSection title="订阅链接" description="机场订阅链接">

@@ -1,0 +1,32 @@
+services:
+  msf:
+    image: ${MSF_IMAGE:-ghcr.io/scoltzero/msf:v0.3.7}
+    container_name: ${MSF_CONTAINER_NAME:-msf}
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    environment:
+      MSF_RUNTIME: docker
+      MSF_DATA_DIR: /opt/msf
+      MSF_DOCKER_NETWORK_MODE: macvlan-tun
+      MSF_DOCKER_CLEANUP_NETWORK_ON_EXIT: "false"
+    volumes:
+      - ${MSF_DOCKER_DATA_DIR:-./msf-data}:/opt/msf
+    networks:
+      msf_macvlan:
+        ipv4_address: ${MSF_DOCKER_IPV4_ADDRESS:?set MSF_DOCKER_IPV4_ADDRESS}
+    restart: unless-stopped
+    stop_grace_period: 30s
+
+networks:
+  msf_macvlan:
+    name: ${MSF_DOCKER_NETWORK_NAME:-msf-macvlan}
+    driver: macvlan
+    driver_opts:
+      parent: ${MSF_DOCKER_PARENT_IFACE:?set MSF_DOCKER_PARENT_IFACE}
+    ipam:
+      config:
+        - subnet: ${MSF_DOCKER_SUBNET:?set MSF_DOCKER_SUBNET}
+          gateway: ${MSF_DOCKER_GATEWAY:?set MSF_DOCKER_GATEWAY}

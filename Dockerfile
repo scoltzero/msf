@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-FROM node:24-bookworm-slim AS web-build
+FROM --platform=$BUILDPLATFORM node:24-bookworm-slim AS web-build
 WORKDIR /src
 
 COPY web/package*.json ./web/
@@ -10,7 +10,7 @@ COPY web ./web
 COPY internal/server/web ./internal/server/web
 RUN cd web && npm run build
 
-FROM golang:1.24-bookworm AS go-build
+FROM --platform=$BUILDPLATFORM golang:1.24-bookworm AS go-build
 WORKDIR /src
 
 ARG TARGETOS
@@ -32,14 +32,15 @@ RUN apt-get update \
 
 ENV MSF_DATA_DIR=/opt/msf \
     MSF_RUNTIME=docker \
-    MSF_DOCKER_CLEANUP_NETWORK_ON_EXIT=true
+    MSF_DOCKER_NETWORK_MODE=host-tun \
+    MSF_DOCKER_CLEANUP_NETWORK_ON_EXIT=false
 
 COPY --from=go-build /out/msf /usr/local/bin/msf
 
 RUN mkdir -p /opt/msf
 VOLUME ["/opt/msf"]
 
-EXPOSE 7777 53/tcp 53/udp 7890 7891 7892 7877 7896 9090 9099
+EXPOSE 7777 53/tcp 53/udp 7890 7891 7892 9090 9099
 STOPSIGNAL SIGTERM
 
 ENTRYPOINT ["/usr/local/bin/msf"]

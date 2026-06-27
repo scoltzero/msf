@@ -38,6 +38,18 @@ func DockerCleanupNetworkOnExit() bool {
 	return value == "" || value == "1" || value == "true" || value == "yes" || value == "on"
 }
 
+func DockerNetworkMode() string {
+	value := strings.ToLower(strings.TrimSpace(os.Getenv("MSF_DOCKER_NETWORK_MODE")))
+	switch value {
+	case "macvlan", "macvlan-tun":
+		return "macvlan-tun"
+	case "host", "host-tun", "":
+		return "host-tun"
+	default:
+		return value
+	}
+}
+
 func DockerUpdateDisabledReason() string {
 	return dockerUpdateDisabledReason
 }
@@ -63,10 +75,21 @@ func FnOSUpdateDisabledReason() string {
 
 func (a *App) ShutdownRuntime(ctx context.Context) error {
 	err := a.Services.StopAll(ctx)
-	if IsDockerRuntime() && DockerCleanupNetworkOnExit() {
+	if IsDockerRuntime() && DockerCleanupNetworkOnExit() && a.shouldCleanupDockerNetwork() {
 		if _, clearErr := a.clearNFT(ctx); clearErr != nil && err == nil {
 			err = clearErr
 		}
 	}
 	return err
+}
+
+func (a *App) shouldCleanupDockerNetwork() bool {
+	if desired := a.setting(nftDesiredKey, ""); desired != "" {
+		return desired == "true"
+	}
+	if cfg, ok := a.latestSetupConfig(); ok {
+		cfg.defaults()
+		return shouldRestoreNFT(cfg)
+	}
+	return false
 }

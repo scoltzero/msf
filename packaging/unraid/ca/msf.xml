@@ -13,14 +13,14 @@ Update and remove msf from the Unraid Plugins page (not via the in-app updater).
 <Project>https://github.com/scoltzero/msf</Project>
 <Category>Network:Management Tools:System Plugins:</Category>
 <Beta>False</Beta>
-<Date>2026-06-25</Date>
+<Date>2026-06-27</Date>
 <Changes>
-### msf 0.3.6
-- Added animated MSF logo branding to the login page and README header.
-- Reworked README / README.en as entry pages and split Linux, fnOS FPK, Unraid PLG, and Docker install details into separate docs.
-- Clarified platform update/removal boundaries: Linux tarball/systemd uses `msf update` / `msf uninstall`; fnOS FPK and Unraid PLG use their platform managers; Docker remains experimental.
-- Fixed DNS port 53 setup preflight so permission/capability probe errors are warnings instead of false "unknown process occupied" blockers.
-- MosDNS startup now only pre-blocks on real port 53 occupancy or bind `EADDRINUSE`; non-occupancy probe warnings allow MosDNS to attempt startup and report the real runtime error.
-- Normalized service CPU usage by available vCPU/logical CPU capacity to avoid dashboard values above 100% on PVE / multi-vCPU environments.
+### msf 0.3.7
+- Added experimental Docker TUN runtime support with host and IPv4 macvlan container network entries.
+- Docker runtime now defaults to Mihomo TUN; regular Linux, fnOS, and Unraid installs keep the existing nftables transparent-proxy defaults.
+- Added full Docker Compose, macvlan Compose, plain docker-run.sh examples, and bilingual Docker deployment docs.
+- Docker TUN no longer generates host `network.nft`, no longer checks `7877` / `7896`, and disables in-container self-update installation.
+- Added README FAQ entry points, port 53 occupancy FAQ, architecture diagrams, and the English architecture diagram.
+- Added the linux.do community badge, acknowledgements updates, and thanks to Gzh256 for multi-version testing.
 </Changes>
 </Plugin>

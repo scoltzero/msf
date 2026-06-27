@@ -205,7 +205,7 @@ func (a *App) handleMihomoConfigPut(w http.ResponseWriter, r *http.Request) {
 	}
 	validation := mihomoConfigValidation{Valid: true}
 	if req.Path == mihomoActiveConfigRelPath {
-		validation = validateMihomoConfigContent(req.Content)
+		validation = a.validateMihomoConfigContent(req.Content)
 		if !validation.Valid {
 			writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": validation.Error, "data": validation})
 			return
@@ -275,7 +275,7 @@ func (a *App) handleMihomoConfigPathPut(w http.ResponseWriter, r *http.Request) 
 	}
 	validation := mihomoConfigValidation{Valid: true}
 	if rel == mihomoActiveConfigRelPath {
-		validation = validateMihomoConfigContent(req.Content)
+		validation = a.validateMihomoConfigContent(req.Content)
 		if !validation.Valid {
 			writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": validation.Error, "data": validation})
 			return
@@ -457,7 +457,7 @@ func (a *App) handleMihomoControllerProxy(w http.ResponseWriter, r *http.Request
 		}
 	}
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
-		if fallback, ok := mihomoControllerFallback(controllerPath); ok {
+		if fallback, ok := a.mihomoControllerFallback(controllerPath); ok {
 			writeJSON(w, http.StatusOK, map[string]any{"success": true, "data": fallback})
 			return
 		}
@@ -467,21 +467,34 @@ func (a *App) handleMihomoControllerProxy(w http.ResponseWriter, r *http.Request
 	r.URL.Path = orig
 }
 
-func mihomoControllerFallback(path string) (any, bool) {
+func (a *App) mihomoControllerFallback(path string) (any, bool) {
 	clean := strings.Trim(path, "/")
 	switch clean {
 	case "configs":
-		return map[string]any{
+		cfg := map[string]any{
 			"mode":                "rule",
 			"port":                7890,
 			"socks-port":          7891,
 			"mixed-port":          7892,
-			"redir-port":          7877,
-			"tproxy-port":         7896,
 			"external-controller": "127.0.0.1:9090",
 			"allow-lan":           true,
 			"log-level":           "info",
-		}, true
+		}
+		if isTUNProxyMode(a.currentLinuxProxyMode()) {
+			cfg["tun"] = map[string]any{
+				"enable":                true,
+				"stack":                 "mixed",
+				"device":                "mihomo",
+				"auto-route":            true,
+				"auto-detect-interface": true,
+				"auto-redirect":         false,
+				"dns-hijack":            []string{"any:53"},
+			}
+		} else {
+			cfg["redir-port"] = 7877
+			cfg["tproxy-port"] = 7896
+		}
+		return cfg, true
 	case "providers/proxies":
 		return map[string]any{"providers": map[string]any{}}, true
 	case "providers/rules":
@@ -532,7 +545,7 @@ func (a *App) handleMihomoValidate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
-	validation := validateMihomoConfigContent(req.Content)
+	validation := a.validateMihomoConfigContent(req.Content)
 	resp := map[string]any{"success": true, "valid": validation.Valid, "warnings": validation.Warnings, "data": validation}
 	if !validation.Valid {
 		resp["error"] = validation.Error

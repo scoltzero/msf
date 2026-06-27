@@ -1,5 +1,69 @@
 # 更新日志
 
+## v0.3.7 - 2026-06-27
+
+### 中文
+
+#### 说明
+
+- 这是一次 Docker TUN 实验部署、文档入口和社区致谢更新发布。
+- 本版本 GitHub Release 资产数量与 v0.3.6 保持一致：Linux amd64/arm64 tarball、Unraid `.txz`/`.plg`，以及从同步后的 `fnos-fpk` 分支构建的 fnOS x86/arm `.fpk` 包，共 12 个 release assets。
+- Docker 镜像额外以 `ghcr.io/scoltzero/msf:v0.3.7` 发布，不推送 `latest`。
+
+#### 新增
+
+- 新增 Docker TUN 实验运行时，支持 `host-tun` 和 IPv4 `macvlan-tun` 两种入口。
+- 新增 `docker-compose.yml`、`docker-compose.macvlan.yml`、`docker.env.example` 和增强版 `docker-run.sh`，同时支持 Compose 与普通 Docker 脚本启动。
+- 新增 Docker 中英文部署文档，覆盖数据目录映射、host TUN、macvlan TUN、Unraid Dockerman IPv4 手工配置，以及 LXC / Portainer 常见问题。
+- 新增 README 常见问题入口与双语 FAQ 页面，首个问题说明 53 端口占用排查和 `systemd-resolved` 常见处理方式。
+- 新增 README 架构原理图，并为英文 README 提供英文版架构图。
+- 新增 linux.do 社区徽章和 Gzh256 测试验证致谢。
+
+#### 变更
+
+- Docker runtime 下初始化默认使用 Mihomo TUN；非 Docker 环境默认仍保持 nftables / TProxy / Redirect 模式。
+- Docker TUN 配置启用 `tun.auto-route`、`tun.auto-detect-interface` 和 `tun.dns-hijack`，并禁用 `tun.auto-redirect`，避免由 MSF 写入宿主机 nftables 或 policy routing。
+- Docker TUN 下不再生成或暴露 `redir-port`、`tproxy-port`、`routing-mark`，初始化预检也不再检查 `7877` / `7896`。
+- Docker 容器内禁用 `msf update` 和 WebUI 自更新安装；镜像升级需通过 Docker / Compose / 容器管理器完成。
+- GHCR workflow 保持手动闲置；Docker 镜像发布改为在正式 release 资产确认后手动构建并推送版本 tag。
+
+#### 修复
+
+- 修复 Docker TUN 场景下继续生成 `network.nft` 或尝试恢复宿主 nftables 的风险。
+- 修复 Mihomo 自定义配置校验在 TUN 模式下仍要求 `redir-port` / `tproxy-port` 的问题。
+- 修复 Docker macvlan 示例缺少完整 compose / `.env` 参考导致用户需要纯手写配置的问题。
+
+### English
+
+#### Notes
+
+- This release adds the experimental Docker TUN runtime, documentation entry updates, and community acknowledgements.
+- GitHub Release assets remain aligned with v0.3.6: Linux amd64/arm64 tarballs, Unraid `.txz`/`.plg`, and fnOS x86/arm `.fpk` packages built from the synced `fnos-fpk` branch, for 12 release assets total.
+- The Docker image is additionally published as `ghcr.io/scoltzero/msf:v0.3.7`. The `latest` tag is not pushed.
+
+#### Added
+
+- Added the experimental Docker TUN runtime with `host-tun` and IPv4 `macvlan-tun` entry points.
+- Added `docker-compose.yml`, `docker-compose.macvlan.yml`, `docker.env.example`, and an enhanced `docker-run.sh` so both Compose and plain Docker script startup are supported.
+- Added Chinese and English Docker deployment docs covering data volume mapping, host TUN, macvlan TUN, manual Unraid Dockerman IPv4 setup, and LXC / Portainer troubleshooting.
+- Added README FAQ entry points and bilingual FAQ pages, starting with port 53 occupancy diagnosis and the common `systemd-resolved` mitigation.
+- Added the README architecture diagram and a dedicated English architecture diagram for README.en.
+- Added the linux.do community badge and thanks to Gzh256 for multi-version testing.
+
+#### Changed
+
+- Docker runtime now defaults setup to Mihomo TUN, while non-Docker environments continue to default to nftables / TProxy / Redirect mode.
+- Docker TUN config enables `tun.auto-route`, `tun.auto-detect-interface`, and `tun.dns-hijack`, and disables `tun.auto-redirect` to avoid MSF writing host nftables or policy routing.
+- Docker TUN no longer generates or exposes `redir-port`, `tproxy-port`, or `routing-mark`, and setup preflight no longer checks `7877` / `7896`.
+- `msf update` and WebUI self-update installation are disabled inside Docker containers; image upgrades must go through Docker, Compose, or the container manager.
+- The GHCR workflow remains manual/idle. Docker image publication is now a manual version-tag push after release assets are confirmed.
+
+#### Fixed
+
+- Fixed the risk of Docker TUN still generating `network.nft` or restoring host nftables state.
+- Fixed Mihomo custom-config validation still requiring `redir-port` / `tproxy-port` in TUN mode.
+- Fixed Docker macvlan examples lacking complete compose / `.env` references and forcing users to hand-write configuration.
+
 ## v0.3.6 - 2026-06-25
 
 ### 中文

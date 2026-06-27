@@ -85,7 +85,11 @@ func (a *App) handleSetupPrivilege(w http.ResponseWriter, r *http.Request) {
 		"success": true,
 		"is_root": os.Geteuid() == 0,
 		"uid":     os.Geteuid(),
-		"message": "MosDNS 53 port and nftables require root on Linux",
+		"runtime": map[string]any{
+			"docker":              IsDockerRuntime(),
+			"docker_network_mode": DockerNetworkMode(),
+		},
+		"message": "MosDNS 53 port and TUN/nftables require root on Linux",
 	})
 }
 
@@ -94,7 +98,8 @@ func (a *App) handleSetupPreflight(w http.ResponseWriter, r *http.Request) {
 	if timezone == "" {
 		timezone = "Asia/Shanghai"
 	}
-	result := a.buildSetupPreflight(r.Context(), timezone, false)
+	proxyMode := strings.TrimSpace(r.URL.Query().Get("linux_proxy_mode"))
+	result := a.buildSetupPreflight(r.Context(), timezone, false, proxyMode)
 	writeJSON(w, http.StatusOK, result)
 }
 
@@ -217,7 +222,7 @@ func (a *App) handleSetupInitialize(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "validation_error", "username and password are required")
 		return
 	}
-	preflight := a.buildSetupPreflight(r.Context(), cfg.Timezone, true)
+	preflight := a.buildSetupPreflight(r.Context(), cfg.Timezone, true, cfg.LinuxProxyMode)
 	if preflight.Blocking {
 		writeJSON(w, http.StatusConflict, map[string]any{
 			"success":   false,

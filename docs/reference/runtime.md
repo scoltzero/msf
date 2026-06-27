@@ -47,11 +47,11 @@
 | mihomo/sing-box | `7890` | HTTP 代理 |
 | mihomo/sing-box | `7891` | SOCKS5 代理 |
 | mihomo/sing-box | `7892` | 混合端口（Mixed） |
-| mihomo/sing-box | `7896` | TProxy 透明代理（nftables 策略使用） |
-| mihomo/sing-box | `7877` | Redirect 代理（nftables 策略使用） |
+| mihomo/sing-box | `7896` | TProxy 透明代理（nftables 策略使用；Docker TUN 默认不启用） |
+| mihomo/sing-box | `7877` | Redirect 代理（nftables 策略使用；Docker TUN 默认不启用） |
 | mihomo/sing-box | `9090` | 外部控制器 / Web 界面（zashboard） |
 
-host 网络模式下没有端口映射隔离，因此 Docker 宿主机上也不能已有进程占用这些端口。
+host 网络模式下没有端口映射隔离，因此 Docker host TUN 宿主机上也不能已有进程占用启用中的端口。Docker TUN 默认不启用 `7877` / `7896`。
 
 ## 初始化后的运行状态
 

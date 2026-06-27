@@ -38,7 +38,7 @@ func (a *App) handleMihomoCustomTemplate(w http.ResponseWriter, r *http.Request)
 		"success": true,
 		"data": map[string]any{
 			"content":          a.mihomoCustomTemplateContent(),
-			"protected_fields": mihomoProtectedFields(),
+			"protected_fields": a.mihomoProtectedFields(),
 			"mode":             a.mihomoConfigMode(),
 			"suggested_name":   a.nextMihomoUserConfigName(),
 		},
@@ -271,7 +271,7 @@ func (a *App) handleMihomoProxyGroupsConfigPut(w http.ResponseWriter, r *http.Re
 }
 
 func (a *App) saveMihomoUserConfig(name, content string, overwrite bool, username string) (map[string]any, mihomoConfigValidation, error) {
-	validation := validateMihomoConfigContent(content)
+	validation := a.validateMihomoConfigContent(content)
 	if !validation.Valid {
 		return nil, validation, nil
 	}
@@ -308,7 +308,7 @@ func (a *App) applyMihomoUserConfig(ctx context.Context, rel string, restart boo
 	if err != nil {
 		return nil, err
 	}
-	validation := validateMihomoConfigContent(content)
+	validation := a.validateMihomoConfigContent(content)
 	if !validation.Valid {
 		return nil, fmt.Errorf("%s", validation.Error)
 	}
@@ -463,7 +463,7 @@ func (a *App) mihomoConfigModePayload() map[string]any {
 		"mode":              a.mihomoConfigMode(),
 		"backup_path":       backupRel,
 		"backup_exists":     backupExists,
-		"protected_fields":  mihomoProtectedFields(),
+		"protected_fields":  a.mihomoProtectedFields(),
 		"protected_warning": "自定义配置请保留这些字段，否则 WebUI、MosDNS 转发或透明代理可能无法正常工作。",
 	}
 }
@@ -546,17 +546,11 @@ func (a *App) mihomoCustomTemplateContent() string {
 	}
 	cfg.defaults()
 	body := a.renderMihomoYAML(cfg)
+	protected := strings.Join(a.mihomoProtectedFields(), "\n#    ")
 	return strings.TrimRight(`# MSF 自定义 Mihomo config.yaml 模板
 # 使用说明：
 # 1. 下面这些字段和 MSF WebUI / MosDNS / 透明代理直接挂钩，除非您明确知道影响，否则不要删除或改端口：
-#    external-controller: :9090
-#    external-ui: ui
-#    port: 7890
-#    socks-port: 7891
-#    redir-port: 7877
-#    tproxy-port: 7896
-#    dns.listen: 0.0.0.0:6666
-#    profile.store-selected: true
+`, "\n") + "#    " + protected + strings.TrimRight(`
 # 2. 您可以自由修改 proxy-groups、proxy-providers、rule-providers、rules。
 # 3. 如果设置 secret，MSF 会从配置中读取它并用于连接 Mihomo 控制器。
 # 4. 保存后 MSF 会备份旧配置并重启 Mihomo。
@@ -564,7 +558,11 @@ func (a *App) mihomoCustomTemplateContent() string {
 `, "\n") + "\n" + body
 }
 
-func validateMihomoConfigContent(content string) mihomoConfigValidation {
+func (a *App) validateMihomoConfigContent(content string) mihomoConfigValidation {
+	return validateMihomoConfigContent(content, a.currentLinuxProxyMode())
+}
+
+func validateMihomoConfigContent(content string, proxyModes ...string) mihomoConfigValidation {
 	var cfg map[string]any
 	if err := yaml.Unmarshal([]byte(content), &cfg); err != nil {
 		return mihomoConfigValidation{Valid: false, Error: err.Error()}
@@ -586,8 +584,31 @@ func validateMihomoConfigContent(content string) mihomoConfigValidation {
 	check("external-ui", "ui")
 	check("port", 7890)
 	check("socks-port", 7891)
-	check("redir-port", 7877)
-	check("tproxy-port", 7896)
+	if isTUNProxyMode(setupPreflightProxyMode(proxyModes...)) {
+		if tun, ok := cfg["tun"].(map[string]any); ok {
+			if !isTruthy(fmtAny(tun["enable"])) {
+				warnings = append(warnings, "tun.enable 建议保持 true")
+			}
+			for _, key := range []string{"auto-route", "auto-detect-interface"} {
+				if !isTruthy(fmtAny(tun[key])) {
+					warnings = append(warnings, fmt.Sprintf("tun.%s 建议保持 true", key))
+				}
+			}
+			if isTruthy(fmtAny(tun["auto-redirect"])) {
+				warnings = append(warnings, "Docker TUN 模式建议保持 tun.auto-redirect=false，避免写宿主机 iptables/nftables")
+			}
+		} else {
+			warnings = append(warnings, "TUN 模式缺少 tun 配置块")
+		}
+		for _, key := range []string{"redir-port", "tproxy-port", "routing-mark"} {
+			if _, ok := cfg[key]; ok {
+				warnings = append(warnings, fmt.Sprintf("TUN 模式不需要 %s，建议删除", key))
+			}
+		}
+	} else {
+		check("redir-port", 7877)
+		check("tproxy-port", 7896)
+	}
 	if dns, ok := cfg["dns"].(map[string]any); ok {
 		if fmtAny(dns["listen"]) != "0.0.0.0:6666" {
 			warnings = append(warnings, "dns.listen 建议保持 0.0.0.0:6666，否则 MosDNS 可能无法转发到 Mihomo")
@@ -605,18 +626,29 @@ func validateMihomoConfigContent(content string) mihomoConfigValidation {
 	return mihomoConfigValidation{Valid: true, Warnings: warnings}
 }
 
-func mihomoProtectedFields() []string {
-	return []string{
+func (a *App) mihomoProtectedFields() []string {
+	fields := []string{
 		"external-controller: :9090",
 		"external-ui: ui",
 		"port: 7890",
 		"socks-port: 7891",
-		"redir-port: 7877",
-		"tproxy-port: 7896",
 		"dns.listen: 0.0.0.0:6666",
 		"profile.store-selected: true",
-		"secret 如用户设置，MSF 会读取并用于控制器认证",
 	}
+	if isTUNProxyMode(a.currentLinuxProxyMode()) {
+		fields = append(fields,
+			"tun.enable: true",
+			"tun.auto-route: true",
+			"tun.auto-detect-interface: true",
+			"tun.auto-redirect: false",
+		)
+	} else {
+		fields = append(fields,
+			"redir-port: 7877",
+			"tproxy-port: 7896",
+		)
+	}
+	return append(fields, "secret 如用户设置，MSF 会读取并用于控制器认证")
 }
 
 func (a *App) mihomoConfigSectionPayload(section string, runtime any) map[string]any {

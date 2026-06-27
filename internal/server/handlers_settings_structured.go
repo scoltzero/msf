@@ -185,7 +185,11 @@ func applySetupStringDefaults(cfg *SetupConfig) {
 		cfg.FakeIPRangeV6 = "f2b0::/18"
 	}
 	if cfg.LinuxProxyMode == "" {
-		cfg.LinuxProxyMode = "nft"
+		if IsDockerRuntime() {
+			cfg.LinuxProxyMode = "tun"
+		} else {
+			cfg.LinuxProxyMode = "nft"
+		}
 	}
 	if cfg.NFTProxyPolicy == "" {
 		cfg.NFTProxyPolicy = "direct_default"
@@ -366,7 +370,7 @@ func (a *App) applyStructuredSetupSection(cfg *SetupConfig, section string, raw 
 			regenerateRequired = true
 		case "linux_proxy_mode", "linuxProxyMode":
 			v := strings.ToLower(strings.TrimSpace(fmtAny(value)))
-			if !oneOf(v, "nft", "nftables", "tproxy", "redirect", "mixed", "off", "disabled", "none") {
+			if !oneOf(v, "nft", "nftables", "tproxy", "tun", "redirect", "mixed", "off", "disabled", "none") {
 				return false, false, false, fmt.Errorf("invalid linux_proxy_mode")
 			}
 			cfg.LinuxProxyMode = v

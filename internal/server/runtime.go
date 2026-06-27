@@ -77,8 +77,16 @@ func (a *App) latestSetupConfig() (SetupConfig, bool) {
 }
 
 func shouldRestoreNFT(cfg SetupConfig) bool {
-	mode := strings.ToLower(strings.TrimSpace(cfg.LinuxProxyMode))
-	return mode == "" || mode == "nft" || mode == "nftables" || mode == "tproxy"
+	return isNFTProxyMode(cfg.LinuxProxyMode)
+}
+
+func (a *App) currentLinuxProxyMode() string {
+	cfg, ok := a.latestSetupConfig()
+	if !ok {
+		cfg = SetupConfig{}
+	}
+	cfg.defaults()
+	return cfg.LinuxProxyMode
 }
 
 func boolSetting(ok bool) string {
