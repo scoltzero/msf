@@ -36,6 +36,7 @@ proxies:
 	if err != nil {
 		t.Fatal(err)
 	}
+	assertValidYAML(t, got)
 	text := string(got)
 	for _, bad := range []string{
 		"global-client-fingerprint",
@@ -62,6 +63,76 @@ proxies:
 	}
 }
 
+func TestEnsureGeneratedMihomoConfigCompatibilityRepairsOldGeneratedTunConfig(t *testing.T) {
+	app := newTestApp(t)
+	initializeTunSetupForCompatibilityTest(t, app)
+	configPath := filepath.Join(app.DataDir, "configs/mihomo/config.yaml")
+	if err := os.WriteFile(configPath, []byte(oldV037TunMihomoConfig()), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	app.ensureGeneratedMihomoConfigCompatibility()
+
+	got, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertValidYAML(t, got)
+	text := string(got)
+	for _, want := range []string{
+		"tun:",
+		"stack: system",
+		"auto-route: true",
+		"auto-detect-interface: true",
+		"strict-route: false",
+		"auto-redirect: false",
+		"dns-hijack: []",
+		"route-address:",
+		"- 28.0.0.0/8",
+		"- f2b0::/18",
+		"route-exclude-address:",
+		"- 192.168.0.0/16",
+		"proxy-server-nameserver:",
+		"- 223.5.5.5",
+		"- 119.29.29.29",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("repaired TUN config missing %q:\n%s", want, text)
+		}
+	}
+	for _, unexpected := range []string{"redir-port:", "tproxy-port:", "routing-mark:", "stack: mixed", "- any:53"} {
+		if strings.Contains(text, unexpected) {
+			t.Fatalf("repaired TUN config should not contain %q:\n%s", unexpected, text)
+		}
+	}
+}
+
+func TestEnsureGeneratedMihomoConfigCompatibilityDoesNotRewriteCustomTunConfig(t *testing.T) {
+	app := newTestApp(t)
+	initializeTunSetupForCompatibilityTest(t, app)
+	app.setMihomoConfigMode("custom")
+	configPath := filepath.Join(app.DataDir, "configs/mihomo/config.yaml")
+	if err := os.WriteFile(configPath, []byte(oldV037TunMihomoConfig()), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	app.ensureGeneratedMihomoConfigCompatibility()
+
+	got, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(got)
+	for _, want := range []string{"redir-port: 7877", "tproxy-port: 7896", "routing-mark: 1", "stack: mixed", "- any:53"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("custom TUN config should not be rewritten; missing %q:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "proxy-server-nameserver:") || strings.Contains(text, "route-address:") {
+		t.Fatalf("custom TUN config should not get generated TUN fields:\n%s", text)
+	}
+}
+
 func TestEnsureBaseLayoutDoesNotCreateMihomoGeoDataFiles(t *testing.T) {
 	app := newTestApp(t)
 
@@ -81,6 +152,58 @@ func TestEnsureBaseLayoutDoesNotCreateMihomoGeoDataFiles(t *testing.T) {
 	if !strings.Contains(string(cfg), "geo-auto-update: false") {
 		t.Fatalf("default Mihomo config should disable geo auto update:\n%s", string(cfg))
 	}
+}
+
+func initializeTunSetupForCompatibilityTest(t *testing.T, app *App) {
+	t.Helper()
+	body := map[string]any{
+		"username":           "root",
+		"password":           "test-password-123",
+		"confirmPassword":    "test-password-123",
+		"webPort":            "17777",
+		"selected_interface": "eth0",
+		"proxyCore":          "mihomo",
+		"mosdnsEnabled":      true,
+		"mihomo_core_type":   "meta",
+		"linux_proxy_mode":   "tun",
+		"enableIPv6":         true,
+		"auto_set_dns":       true,
+	}
+	res := requestJSON(t, app, http.MethodPost, "/api/v1/setup/initialize", "", body)
+	if res.Code != http.StatusOK {
+		t.Fatalf("initialize status=%d body=%s", res.Code, res.Body.String())
+	}
+}
+
+func oldV037TunMihomoConfig() string {
+	return `mode: rule
+log-level: info
+redir-port: 7877
+tproxy-port: 7896
+routing-mark: 1
+interface-name: eth0
+dns:
+  enable: true
+  listen: 0.0.0.0:6666
+  ipv6: true
+  enhanced-mode: fake-ip
+  fake-ip-range: 28.0.0.1/8
+  default-nameserver:
+    - 127.0.0.1:8888
+tun:
+  enable: true
+  stack: mixed
+  device: mihomo
+  auto-route: true
+  auto-detect-interface: true
+  auto-redirect: false
+  dns-hijack:
+    - any:53
+proxy-groups:
+  - {name: 节点选择, type: select, proxies: [DIRECT]}
+rules:
+  - MATCH,节点选择
+`
 }
 
 func TestMihomoOverviewDoesNotDialTProxyPort(t *testing.T) {

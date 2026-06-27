@@ -938,7 +938,7 @@ export function SetupPage() {
       if (privilegeResult.status === "fulfilled") {
         setPrivilege(privilegeResult.value);
         if (privilegeResult.value?.runtime?.docker) {
-          setForm((current) => ({ ...current, linux_proxy_mode: "tun" }));
+          setForm((current) => ({ ...current, linux_proxy_mode: "tun", enableIPv6: false }));
         }
       }
       if (systemResult.status === "fulfilled") setSystem(systemResult.value);
@@ -1592,7 +1592,11 @@ export function SetupPage() {
                         />
                         <ChoiceCard
                           title={isDockerRuntime ? "TUN 模式（Docker 推荐）" : "TUN 模式"}
-                          description="使用 Mihomo TUN 虚拟网卡处理流量，不由 MSF 写入 nftables 策略路由。"
+                          description={
+                            isDockerRuntime
+                              ? "需要 /dev/net/tun 与 NET_ADMIN；由 MosDNS 负责 DNS 分流，Mihomo TUN 接管 Fake-IP 路由。"
+                              : "需要 /dev/net/tun、NET_ADMIN 和正确 DNS 链路；Mihomo TUN 接管 Fake-IP 路由，不写 nftables 策略。"
+                          }
                           selected={form.linux_proxy_mode === "tun"}
                           onClick={() => update("linux_proxy_mode", "tun")}
                         />

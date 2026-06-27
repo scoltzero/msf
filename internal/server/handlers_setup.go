@@ -297,7 +297,11 @@ func decodeSetupConfigRequestWithMeta(r *http.Request, cfg *SetupConfig) (setupC
 	cfg.AutoSetDNS = setupBool(raw, true, "auto_set_dns", "autoSetDNS")
 	cfg.DNSOn = setupString(raw, "dns_on", "dnsOn")
 	cfg.DNSOff = setupString(raw, "dns_off", "dnsOff")
-	cfg.EnableIPv6 = setupBool(raw, true, "enable_ipv6", "enableIPv6")
+	enableIPv6Default := true
+	if IsDockerRuntime() && !setupHasValue(raw, "enable_ipv6", "enableIPv6") {
+		enableIPv6Default = false
+	}
+	cfg.EnableIPv6 = setupBool(raw, enableIPv6Default, "enable_ipv6", "enableIPv6")
 	cfg.FakeIPRangeV4 = setupString(raw, "fake_ip_range_v4", "fakeIPRangeV4")
 	cfg.FakeIPRangeV6 = setupString(raw, "fake_ip_range_v6", "fakeIPRangeV6")
 	cfg.LinuxProxyMode = setupString(raw, "linux_proxy_mode", "linuxProxyMode")

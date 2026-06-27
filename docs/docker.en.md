@@ -4,15 +4,15 @@
 
 Docker deployment is still experimental and is not the recommended installation path yet. It is intended for users who understand Docker, TUN, static routes, and side-router integration. For production or long-term use, prefer [Linux tarball/systemd](install/linux.md), [fnOS FPK](install/fnos-fpk.md), or [Unraid PLG](install/unraid-plg.md).
 
-Current release: `v0.3.7`
+Current release: `v0.3.8`
 
 Current Docker experimental image:
 
 ```text
-ghcr.io/scoltzero/msf:v0.3.7
+ghcr.io/scoltzero/msf:v0.3.8
 ```
 
-This experimental image is not pushed as `latest`. To pull or deploy the Docker experimental version, explicitly use the `v0.3.7` tag.
+This experimental image is not pushed as `latest`. To pull or deploy the Docker experimental version, explicitly use the `v0.3.8` tag.
 
 ## Current Status
 
@@ -45,7 +45,7 @@ MSF_DOCKER_NETWORK_MODE=host-tun
 MSF_DOCKER_CLEANUP_NETWORK_ON_EXIT=false
 ```
 
-In Docker TUN mode, the generated Mihomo config enables `tun.auto-route`, `tun.auto-detect-interface`, and `tun.dns-hijack`, and explicitly disables `tun.auto-redirect`. This means MSF does not write host `table inet msf`, `fwmark 1 table 100`, `ip rule`, or `ip route` entries.
+In Docker TUN mode, the generated Mihomo config enables `tun.auto-route`, `tun.auto-detect-interface`, and `tun.route-address`, explicitly keeps `tun.dns-hijack=[]` and `tun.auto-redirect=false`, and sets `dns.proxy-server-nameserver`. MosDNS remains responsible for DNS splitting, while Mihomo only takes over Fake-IP and required public targets. This means MSF does not write host `table inet msf`, `fwmark 1 table 100`, `ip rule`, or `ip route` entries.
 
 The data directory must be persisted:
 
@@ -67,7 +67,7 @@ The repository already provides `docker-compose.yml`. If you need to create the 
 ```yaml
 services:
   msf:
-    image: ghcr.io/scoltzero/msf:v0.3.7
+    image: ghcr.io/scoltzero/msf:v0.3.8
     container_name: msf
     network_mode: host
     cap_add:
@@ -95,7 +95,7 @@ docker compose up -d
 
 The default compose file uses:
 
-- Image: `ghcr.io/scoltzero/msf:v0.3.7`
+- Image: `ghcr.io/scoltzero/msf:v0.3.8`
 - Network: `host`
 - Data directory: `./msf-data:/opt/msf`
 - WebUI: `http://<host-ip>:7777`
@@ -126,7 +126,7 @@ docker run -d \
   -e MSF_DOCKER_NETWORK_MODE=host-tun \
   -e MSF_DATA_DIR=/opt/msf \
   -v "$PWD/msf-data:/opt/msf" \
-  ghcr.io/scoltzero/msf:v0.3.7
+  ghcr.io/scoltzero/msf:v0.3.8
 ```
 
 ## Quick Start: macvlan TUN
@@ -140,7 +140,7 @@ The repository already provides `docker-compose.macvlan.yml`. If you need to cre
 ```yaml
 services:
   msf:
-    image: ${MSF_IMAGE:-ghcr.io/scoltzero/msf:v0.3.7}
+    image: ${MSF_IMAGE:-ghcr.io/scoltzero/msf:v0.3.8}
     container_name: ${MSF_CONTAINER_NAME:-msf}
     cap_add:
       - NET_ADMIN
@@ -181,7 +181,7 @@ cp docker.env.example .env
 You can also copy this minimal macvlan compose `.env` example and save it as `.env`:
 
 ```text
-MSF_IMAGE=ghcr.io/scoltzero/msf:v0.3.7
+MSF_IMAGE=ghcr.io/scoltzero/msf:v0.3.8
 MSF_CONTAINER_NAME=msf
 MSF_DOCKER_DATA_DIR=./msf-data
 MSF_DOCKER_NETWORK_NAME=msf-macvlan
@@ -218,7 +218,7 @@ The script creates the `msf-macvlan` Docker network if it does not already exist
 The first Docker version supports manual Unraid Dockerman setup only. It does not provide a Community Applications container template.
 
 1. Enable custom networks in Unraid Docker settings, and choose `macvlan` or the custom network implementation recommended for your current system.
-2. Create a new container and set the image to `ghcr.io/scoltzero/msf:v0.3.7`.
+2. Create a new container and set the image to `ghcr.io/scoltzero/msf:v0.3.8`.
 3. Set Network Type to a custom LAN network such as `br0`.
 4. Set Fixed IP address to a static IPv4 address outside your DHCP pool, for example `192.168.1.10`.
 5. Add this to Extra Parameters or advanced parameters:
@@ -274,7 +274,7 @@ The first macvlan version only targets IPv4 access. See [Router integration over
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `MSF_IMAGE` | `ghcr.io/scoltzero/msf:v0.3.7` | Container image |
+| `MSF_IMAGE` | `ghcr.io/scoltzero/msf:v0.3.8` | Container image |
 | `MSF_CONTAINER_NAME` | `msf` | Container name |
 | `MSF_DOCKER_DATA_DIR` | `$PWD/msf-data` | Host data directory |
 | `MSF_DOCKER_NETWORK_MODE` | `host-tun` | `host-tun` or `macvlan-tun` |
@@ -321,6 +321,20 @@ lxc.mount.entry: /dev/net/tun dev/net/tun none bind,create=file
 ```
 
 Restart the LXC container after changing its config. LXC permission models differ by platform, so use a privileged LXC or a VM if the platform cannot expose TUN reliably.
+
+### v0.3.7 Docker TUN DNS / Fake-IP connection failures
+
+`v0.3.7` has a defect in the default Docker TUN config: Mihomo may resolve proxy server domains to Fake-IP addresses such as `28.0.0.x`, then fail to dial them. Logs may also show repeated `127.0.0.1:8888 connection refused` messages or proxy server domain connection timeouts.
+
+The fixed version unifies Linux TUN generation:
+
+- `tun.stack` is `system`.
+- `tun.dns-hijack` stays as an empty array so MosDNS continues DNS splitting.
+- `tun.route-address` includes the Fake-IP ranges and required public targets.
+- `tun.route-exclude-address` excludes LAN, loopback, link-local, and common China DNS addresses.
+- `dns.proxy-server-nameserver` uses `223.5.5.5` and `119.29.29.29` so proxy server domains are not polluted by Fake-IP.
+
+After upgrading to the fixed version, MSF automatically repairs the old TUN / DNS blocks at startup when you are still using generated config mode. If you switched Mihomo to custom config mode, MSF will not overwrite your file; adjust the fields above manually, or restore generated config from the WebUI and regenerate it.
 
 ### macvlan reports `invalid subinterface vlan name`
 
@@ -375,7 +389,7 @@ docker compose up -d
 Plain Docker:
 
 ```bash
-docker pull ghcr.io/scoltzero/msf:v0.3.7
+docker pull ghcr.io/scoltzero/msf:v0.3.8
 docker stop msf
 docker rm msf
 ./docker-run.sh

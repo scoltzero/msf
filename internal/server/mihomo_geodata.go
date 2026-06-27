@@ -23,6 +23,23 @@ func (a *App) ensureGeneratedMihomoConfigCompatibility() {
 	for old, next := range replacements {
 		updated = strings.ReplaceAll(updated, old, next)
 	}
+	if a.DB != nil {
+		if cfg, ok := a.latestSetupConfig(); ok {
+			cfg.defaults()
+			if isTUNProxyMode(cfg.LinuxProxyMode) {
+				_ = os.Remove(filepath.Join(a.DataDir, "configs/network/network.nft"))
+				if a.mihomoConfigMode() != "custom" {
+					updated = removeTopLevelYAMLKeys(updated, map[string]bool{
+						"redir-port":   true,
+						"tproxy-port":  true,
+						"routing-mark": true,
+					})
+					updated = replaceTopLevelYAMLBlock(updated, "tun", renderMihomoTunYAML(cfg))
+					updated = ensureMihomoProxyServerNameserver(updated, cfg)
+				}
+			}
+		}
+	}
 	if updated == original {
 		return
 	}

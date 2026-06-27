@@ -169,6 +169,9 @@ func (a *App) writeGeneratedConfigs(cfg SetupConfig) error {
 			return err
 		}
 	}
+	if isTUNProxyMode(cfg.LinuxProxyMode) {
+		_ = os.Remove(filepath.Join(a.DataDir, "configs/network/network.nft"))
+	}
 	if err := a.ensureMosDNSRuleFiles(); err != nil {
 		return err
 	}
@@ -239,7 +242,7 @@ func renderMihomoFallbackYAML(cfg SetupConfig) string {
 	providerYAML := renderProxyProvidersYAML(parseSubscriptionProviders(cfg.SubscriptionURLs), hasMihomoManualProxies(cfg.MihomoProxies))
 	ipv6 := boolYAML(cfg.EnableIPv6)
 	transparentYAML := renderMihomoTransparentProxyYAML(cfg)
-	tunYAML := renderMihomoTunYAML(isTUNProxyMode(cfg.LinuxProxyMode))
+	tunYAML := renderMihomoTunYAML(cfg)
 	return fmt.Sprintf(`# msf generated Mihomo config
 mode: rule
 log-level: info
@@ -284,6 +287,7 @@ dns:
     - +.lan
   default-nameserver:
     - 127.0.0.1:8888
+%s
 proxy-groups:
   - {name: 节点选择, type: select, proxies: [手动切换, 全球直连]}
   - {name: 手动切换, type: select, proxies: [DIRECT], include-all: true, include-all-proxies: true, include-all-providers: true}
@@ -298,7 +302,7 @@ rules:
   - IP-CIDR,8.8.8.8/32,节点选择
   - IP-CIDR,1.1.1.1/32,节点选择
   - MATCH,节点选择
-%s`, selectedInterface(cfg.SelectedInterface), ipv6, transparentYAML, tunYAML, ipv6, normalizeMihomoFakeIPv4Range(cfg.FakeIPRangeV4), providerYAML)
+%s`, selectedInterface(cfg.SelectedInterface), ipv6, transparentYAML, tunYAML, ipv6, normalizeMihomoFakeIPv4Range(cfg.FakeIPRangeV4), renderMihomoProxyServerNameserverYAML(cfg), providerYAML)
 }
 
 func renderMihomoTransparentProxyYAML(cfg SetupConfig) string {
@@ -308,20 +312,34 @@ func renderMihomoTransparentProxyYAML(cfg SetupConfig) string {
 	return "redir-port: 7877\ntproxy-port: 7896\nrouting-mark: 1"
 }
 
-func renderMihomoTunYAML(enabled bool) string {
-	if !enabled {
+func renderMihomoTunYAML(cfg SetupConfig) string {
+	if !isTUNProxyMode(cfg.LinuxProxyMode) {
 		return "tun:\n  enable: false"
 	}
-	return `tun:
+	var b strings.Builder
+	b.WriteString(`tun:
   enable: true
-  stack: mixed
+  stack: system
   device: mihomo
   auto-route: true
   auto-detect-interface: true
   strict-route: false
   auto-redirect: false
-  dns-hijack:
-    - any:53`
+  dns-hijack: []
+  route-address:
+`)
+	for _, item := range mihomoTunRouteAddresses(cfg) {
+		b.WriteString("    - ")
+		b.WriteString(item)
+		b.WriteByte('\n')
+	}
+	b.WriteString("  route-exclude-address:\n")
+	for _, item := range mihomoTunRouteExcludeAddresses(cfg) {
+		b.WriteString("    - ")
+		b.WriteString(item)
+		b.WriteByte('\n')
+	}
+	return strings.TrimRight(b.String(), "\n")
 }
 
 func applyMihomoProxyMode(content string, cfg SetupConfig) string {
@@ -331,9 +349,173 @@ func applyMihomoProxyMode(content string, cfg SetupConfig) string {
 			"tproxy-port":  true,
 			"routing-mark": true,
 		})
-		return replaceTopLevelYAMLBlock(content, "tun", renderMihomoTunYAML(true))
+		content = replaceTopLevelYAMLBlock(content, "tun", renderMihomoTunYAML(cfg))
+		return ensureMihomoProxyServerNameserver(content, cfg)
 	}
-	return replaceTopLevelYAMLBlock(content, "tun", renderMihomoTunYAML(false))
+	return replaceTopLevelYAMLBlock(content, "tun", renderMihomoTunYAML(cfg))
+}
+
+func mihomoTunRouteAddresses(cfg SetupConfig) []string {
+	routes := []string{
+		fakeIPv4RouteCIDR(cfg.FakeIPRangeV4),
+		"8.8.8.8/32",
+		"1.1.1.1/32",
+		"149.154.160.0/22",
+		"149.154.164.0/22",
+		"149.154.172.0/22",
+		"91.108.4.0/22",
+		"91.108.8.0/22",
+		"91.108.12.0/22",
+		"91.108.16.0/22",
+		"91.108.20.0/22",
+		"91.108.56.0/22",
+		"95.161.64.0/22",
+		"67.198.55.0/24",
+		"109.239.140.0/24",
+		"207.45.72.0/22",
+		"208.75.76.0/22",
+		"210.0.153.0/24",
+		"185.76.151.0/24",
+	}
+	if cfg.EnableIPv6 {
+		routes = append([]string{fakeIPv6RouteCIDR(cfg.FakeIPRangeV6)}, routes...)
+	}
+	return uniqueStrings(routes)
+}
+
+func mihomoTunRouteExcludeAddresses(cfg SetupConfig) []string {
+	routes := []string{
+		"127.0.0.0/8",
+		"10.0.0.0/8",
+		"172.16.0.0/12",
+		"192.168.0.0/16",
+		"169.254.0.0/16",
+		"223.5.5.5/32",
+		"223.6.6.6/32",
+		"114.114.114.114/32",
+		"119.29.29.29/32",
+		"119.28.28.28/32",
+	}
+	if cfg.EnableIPv6 {
+		routes = append(routes,
+			"::1/128",
+			"fc00::/7",
+			"fe80::/10",
+		)
+	}
+	return uniqueStrings(routes)
+}
+
+func uniqueStrings(values []string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	return out
+}
+
+func renderMihomoProxyServerNameserverYAML(cfg SetupConfig) string {
+	if !isTUNProxyMode(cfg.LinuxProxyMode) {
+		return ""
+	}
+	return "  proxy-server-nameserver:\n    - 223.5.5.5\n    - 119.29.29.29\n"
+}
+
+func ensureMihomoProxyServerNameserver(content string, cfg SetupConfig) string {
+	block := renderMihomoProxyServerNameserverYAML(cfg)
+	if block == "" {
+		return content
+	}
+	lines := strings.SplitAfter(content, "\n")
+	dnsStart := -1
+	for i, line := range lines {
+		if isTopLevelYAMLKeyLine(line, "dns") {
+			dnsStart = i
+			break
+		}
+	}
+	if dnsStart == -1 {
+		return strings.TrimRight(content, "\n") + "\ndns:\n" + block
+	}
+
+	dnsEnd := len(lines)
+	for i := dnsStart + 1; i < len(lines); i++ {
+		if startsTopLevelYAMLBlock(lines[i]) {
+			dnsEnd = i
+			break
+		}
+	}
+
+	filtered := make([]string, 0, len(lines)+3)
+	insertAt := dnsEnd
+	for i := 0; i < len(lines); i++ {
+		if i > dnsStart && i < dnsEnd && isIndentedYAMLKeyLine(lines[i], "proxy-server-nameserver") {
+			for i+1 < dnsEnd && isNestedYAMLLine(lines[i+1]) {
+				i++
+			}
+			continue
+		}
+		filtered = append(filtered, lines[i])
+	}
+
+	dnsEnd = len(filtered)
+	for i := dnsStart + 1; i < len(filtered); i++ {
+		if startsTopLevelYAMLBlock(filtered[i]) {
+			dnsEnd = i
+			break
+		}
+	}
+	insertAt = dnsEnd
+	for i := dnsStart + 1; i < dnsEnd; i++ {
+		if isIndentedYAMLKeyLine(filtered[i], "default-nameserver") {
+			insertAt = i + 1
+			for insertAt < dnsEnd && isNestedYAMLLine(filtered[insertAt]) {
+				insertAt++
+			}
+			break
+		}
+	}
+
+	out := make([]string, 0, len(filtered)+3)
+	out = append(out, filtered[:insertAt]...)
+	out = append(out, strings.SplitAfter(block, "\n")...)
+	out = append(out, filtered[insertAt:]...)
+	return strings.Join(out, "")
+}
+
+func startsTopLevelYAMLBlock(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" || strings.HasPrefix(trimmed, "#") || strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t") {
+		return false
+	}
+	return strings.Contains(trimmed, ":")
+}
+
+func isTopLevelYAMLKeyLine(line, key string) bool {
+	if strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t") {
+		return false
+	}
+	trimmed := strings.TrimSpace(line)
+	return trimmed == key+":" || strings.HasPrefix(trimmed, key+": ")
+}
+
+func isIndentedYAMLKeyLine(line, key string) bool {
+	if !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") {
+		return false
+	}
+	trimmed := strings.TrimSpace(line)
+	return trimmed == key+":" || strings.HasPrefix(trimmed, key+": ")
+}
+
+func isNestedYAMLLine(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	return trimmed == "" || strings.HasPrefix(line, "    ") || strings.HasPrefix(line, "\t")
 }
 
 func removeTopLevelYAMLKeys(content string, keys map[string]bool) string {

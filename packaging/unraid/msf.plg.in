@@ -13,12 +13,12 @@
   <CHANGES>
     <![CDATA[
 ### msf __PLUGIN_VERSION__
-- 新增 Docker TUN 实验运行时，支持 host 和 IPv4 macvlan 两种容器网络入口。
-- Docker runtime 默认使用 Mihomo TUN；普通 Linux / fnOS / Unraid 默认仍保持 nftables 透明代理模式。
-- 新增完整 Docker Compose、macvlan Compose、普通 docker-run.sh 示例和中英文 Docker 部署文档。
-- Docker TUN 不再生成宿主 `network.nft`，不检查 `7877` / `7896`，并禁用容器内自更新安装。
-- 新增 README FAQ 入口、53 端口占用 FAQ、架构原理图和英文架构图。
-- 补充 linux.do 社区徽章、项目鸣谢和 Gzh256 多版本测试验证致谢。
+- 统一修复 Linux TUN / Docker TUN 默认配置，避免节点服务器域名被 Fake-IP 污染为 `28.0.0.x` 后拨号失败。
+- TUN 模式改为 `stack: system`，保持 `dns-hijack: []`，由 MosDNS 继续负责 DNS 分流。
+- TUN 模式新增 `route-address`、`route-exclude-address` 和 `dns.proxy-server-nameserver` 默认值。
+- 已初始化的 v0.3.7 Docker TUN 生成配置升级后会在启动期自动修复；自定义 Mihomo 配置不会被自动覆盖。
+- 非 Docker 默认模式仍保持 nftables / TProxy / Redirect，普通 Linux、fnOS、Unraid 既有默认行为不变。
+- Docker 镜像额外发布 `ghcr.io/scoltzero/msf:v0.3.8`，不推送 `latest`。
     ]]>
   </CHANGES>
 

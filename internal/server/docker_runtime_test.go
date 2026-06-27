@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func TestDockerRuntimeEnvOverride(t *testing.T) {
@@ -77,19 +79,40 @@ func TestDockerRuntimeDefaultsToTunGeneratedConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	assertValidYAML(t, mihomo)
 	text := string(mihomo)
-	for _, want := range []string{"tun:", "enable: true", "auto-route: true", "auto-detect-interface: true", "auto-redirect: false", "dns-hijack:", "- any:53"} {
+	for _, want := range []string{
+		"tun:",
+		"enable: true",
+		"stack: system",
+		"auto-route: true",
+		"auto-detect-interface: true",
+		"strict-route: false",
+		"auto-redirect: false",
+		"dns-hijack: []",
+		"route-address:",
+		"- 28.0.0.0/8",
+		"- f2b0::/18",
+		"- 8.8.8.8/32",
+		"- 1.1.1.1/32",
+		"route-exclude-address:",
+		"- 192.168.0.0/16",
+		"- fc00::/7",
+		"proxy-server-nameserver:",
+		"- 223.5.5.5",
+		"- 119.29.29.29",
+	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("docker tun mihomo config missing %q:\n%s", want, text)
 		}
 	}
-	for _, unexpected := range []string{"redir-port:", "tproxy-port:", "routing-mark:"} {
+	for _, unexpected := range []string{"redir-port:", "tproxy-port:", "routing-mark:", "- any:53"} {
 		if strings.Contains(text, unexpected) {
 			t.Fatalf("docker tun mihomo config should not contain %q:\n%s", unexpected, text)
 		}
 	}
 	template := app.mihomoCustomTemplateContent()
-	for _, want := range []string{"tun.enable: true", "tun.auto-route: true", "tun.auto-detect-interface: true", "tun.auto-redirect: false"} {
+	for _, want := range []string{"tun.enable: true", "tun.stack: system", "tun.auto-route: true", "tun.auto-detect-interface: true", "tun.auto-redirect: false", "tun.dns-hijack: []", "tun.route-address 包含 Fake-IP 网段", "dns.proxy-server-nameserver"} {
 		if !strings.Contains(template, want) {
 			t.Fatalf("docker tun custom template missing %q:\n%s", want, template)
 		}
@@ -109,6 +132,26 @@ func TestDockerRuntimeDefaultsToTunGeneratedConfig(t *testing.T) {
 	}
 	if _, ok := fallbackConfig["tun"]; !ok {
 		t.Fatalf("docker tun fallback should expose tun config: %#v", fallbackConfig)
+	}
+	tunFallback, ok := fallbackConfig["tun"].(map[string]any)
+	if !ok {
+		t.Fatalf("docker tun fallback type = %T: %#v", fallbackConfig["tun"], fallbackConfig["tun"])
+	}
+	if tunFallback["stack"] != "system" {
+		t.Fatalf("docker tun fallback stack = %#v, want system", tunFallback["stack"])
+	}
+	if hijack, ok := tunFallback["dns-hijack"].([]string); !ok || len(hijack) != 0 {
+		t.Fatalf("docker tun fallback dns-hijack = %#v, want empty string list", tunFallback["dns-hijack"])
+	}
+	if !stringSliceContainsAny(tunFallback["route-address"], "28.0.0.0/8") {
+		t.Fatalf("docker tun fallback route-address missing fake-ip range: %#v", tunFallback["route-address"])
+	}
+	if !stringSliceContainsAny(tunFallback["route-exclude-address"], "192.168.0.0/16") {
+		t.Fatalf("docker tun fallback route-exclude-address missing LAN exclusion: %#v", tunFallback["route-exclude-address"])
+	}
+	dnsFallback, ok := fallbackConfig["dns"].(map[string]any)
+	if !ok || !stringSliceContainsAny(dnsFallback["proxy-server-nameserver"], "223.5.5.5") || !stringSliceContainsAny(dnsFallback["proxy-server-nameserver"], "119.29.29.29") {
+		t.Fatalf("docker tun fallback dns.proxy-server-nameserver missing: %#v", fallbackConfig["dns"])
 	}
 	for _, unexpected := range []string{"redir-port", "tproxy-port", "routing-mark"} {
 		if _, ok := fallbackConfig[unexpected]; ok {
@@ -131,6 +174,130 @@ func TestDockerRuntimeDefaultsToTunGeneratedConfig(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(app.DataDir, "configs/network/network.nft")); !os.IsNotExist(err) {
 		t.Fatalf("docker tun should not create network.nft, err=%v", err)
+	}
+}
+
+func TestDockerRuntimeDefaultsIPv6OffWhenOmitted(t *testing.T) {
+	t.Setenv("MSF_RUNTIME", "docker")
+	app := newTestApp(t)
+
+	body := map[string]any{
+		"username":           "root",
+		"password":           "test-password-123",
+		"confirmPassword":    "test-password-123",
+		"webPort":            "17777",
+		"selected_interface": "eth0",
+		"proxyCore":          "mihomo",
+		"mosdnsEnabled":      true,
+		"mihomo_core_type":   "meta",
+		"auto_set_dns":       true,
+	}
+	res := requestJSON(t, app, http.MethodPost, "/api/v1/setup/initialize", "", body)
+	if res.Code != http.StatusOK {
+		t.Fatalf("initialize status=%d body=%s", res.Code, res.Body.String())
+	}
+	cfg, ok := app.latestSetupConfig()
+	if !ok {
+		t.Fatal("missing setup config")
+	}
+	if cfg.EnableIPv6 {
+		t.Fatal("docker setup should default enable_ipv6 to false when omitted")
+	}
+	mihomo, err := os.ReadFile(filepath.Join(app.DataDir, "configs/mihomo/config.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertValidYAML(t, mihomo)
+	if strings.Contains(string(mihomo), "- f2b0::/18") {
+		t.Fatalf("docker default TUN route-address should not include IPv6 fake range when enableIPv6 is omitted:\n%s", string(mihomo))
+	}
+}
+
+func TestLinuxTunGeneratedConfigUsesUnifiedTunDefaults(t *testing.T) {
+	t.Setenv("MSF_RUNTIME", "native")
+	app := newTestApp(t)
+	body := map[string]any{
+		"username":           "root",
+		"password":           "test-password-123",
+		"confirmPassword":    "test-password-123",
+		"webPort":            "17777",
+		"selected_interface": "eth0",
+		"proxyCore":          "mihomo",
+		"mosdnsEnabled":      true,
+		"mihomo_core_type":   "meta",
+		"linux_proxy_mode":   "tun",
+		"enableIPv6":         true,
+		"auto_set_dns":       true,
+	}
+	res := requestJSON(t, app, http.MethodPost, "/api/v1/setup/initialize", "", body)
+	if res.Code != http.StatusOK {
+		t.Fatalf("initialize status=%d body=%s", res.Code, res.Body.String())
+	}
+	if got := app.setting(nftDesiredKey, ""); got != "false" {
+		t.Fatalf("linux tun should not request nft restore, got %q", got)
+	}
+	mihomo, err := os.ReadFile(filepath.Join(app.DataDir, "configs/mihomo/config.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertValidYAML(t, mihomo)
+	text := string(mihomo)
+	for _, want := range []string{"stack: system", "dns-hijack: []", "route-address:", "- 28.0.0.0/8", "- f2b0::/18", "route-exclude-address:", "proxy-server-nameserver:"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("linux tun mihomo config missing %q:\n%s", want, text)
+		}
+	}
+	for _, unexpected := range []string{"redir-port:", "tproxy-port:", "routing-mark:", "- any:53"} {
+		if strings.Contains(text, unexpected) {
+			t.Fatalf("linux tun mihomo config should not contain %q:\n%s", unexpected, text)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(app.DataDir, "configs/network/network.nft")); !os.IsNotExist(err) {
+		t.Fatalf("linux tun should not create network.nft, err=%v", err)
+	}
+}
+
+func TestLinuxNFTGeneratedConfigKeepsTransparentProxyDefaults(t *testing.T) {
+	t.Setenv("MSF_RUNTIME", "native")
+	app := newTestApp(t)
+	body := map[string]any{
+		"username":           "root",
+		"password":           "test-password-123",
+		"confirmPassword":    "test-password-123",
+		"webPort":            "17777",
+		"selected_interface": "eth0",
+		"proxyCore":          "mihomo",
+		"mosdnsEnabled":      true,
+		"mihomo_core_type":   "meta",
+		"linux_proxy_mode":   "nft",
+		"enableIPv6":         true,
+		"auto_set_dns":       true,
+	}
+	res := requestJSON(t, app, http.MethodPost, "/api/v1/setup/initialize", "", body)
+	if res.Code != http.StatusOK {
+		t.Fatalf("initialize status=%d body=%s", res.Code, res.Body.String())
+	}
+	if got := app.setting(nftDesiredKey, ""); got != "true" {
+		t.Fatalf("linux nft should request nft restore, got %q", got)
+	}
+	mihomo, err := os.ReadFile(filepath.Join(app.DataDir, "configs/mihomo/config.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertValidYAML(t, mihomo)
+	text := string(mihomo)
+	for _, want := range []string{"redir-port: 7877", "tproxy-port: 7896", "routing-mark: 1", "tun:", "enable: false"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("linux nft mihomo config missing %q:\n%s", want, text)
+		}
+	}
+	for _, unexpected := range []string{"proxy-server-nameserver:", "dns-hijack: []", "route-address:"} {
+		if strings.Contains(text, unexpected) {
+			t.Fatalf("linux nft mihomo config should not contain %q:\n%s", unexpected, text)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(app.DataDir, "configs/network/network.nft")); err != nil {
+		t.Fatalf("linux nft should create network.nft, err=%v", err)
 	}
 }
 
@@ -241,4 +408,30 @@ func flattenCommandArgs(cmds [][]string) []string {
 		out = append(out, strings.Join(cmd, " "))
 	}
 	return out
+}
+
+func stringSliceContainsAny(value any, want string) bool {
+	switch v := value.(type) {
+	case []string:
+		for _, item := range v {
+			if item == want {
+				return true
+			}
+		}
+	case []any:
+		for _, item := range v {
+			if item == want {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func assertValidYAML(t *testing.T, content []byte) {
+	t.Helper()
+	var parsed any
+	if err := yaml.Unmarshal(content, &parsed); err != nil {
+		t.Fatalf("generated YAML should parse: %v\n%s", err, string(content))
+	}
 }

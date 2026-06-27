@@ -471,6 +471,13 @@ func (a *App) mihomoControllerFallback(path string) (any, bool) {
 	clean := strings.Trim(path, "/")
 	switch clean {
 	case "configs":
+		setupCfg := SetupConfig{}
+		if a.DB != nil {
+			if cfg, ok := a.latestSetupConfig(); ok {
+				setupCfg = cfg
+			}
+		}
+		setupCfg.defaults()
 		cfg := map[string]any{
 			"mode":                "rule",
 			"port":                7890,
@@ -480,15 +487,21 @@ func (a *App) mihomoControllerFallback(path string) (any, bool) {
 			"allow-lan":           true,
 			"log-level":           "info",
 		}
-		if isTUNProxyMode(a.currentLinuxProxyMode()) {
+		if isTUNProxyMode(setupCfg.LinuxProxyMode) {
 			cfg["tun"] = map[string]any{
 				"enable":                true,
-				"stack":                 "mixed",
+				"stack":                 "system",
 				"device":                "mihomo",
 				"auto-route":            true,
 				"auto-detect-interface": true,
 				"auto-redirect":         false,
-				"dns-hijack":            []string{"any:53"},
+				"strict-route":          false,
+				"dns-hijack":            []string{},
+				"route-address":         mihomoTunRouteAddresses(setupCfg),
+				"route-exclude-address": mihomoTunRouteExcludeAddresses(setupCfg),
+			}
+			cfg["dns"] = map[string]any{
+				"proxy-server-nameserver": []string{"223.5.5.5", "119.29.29.29"},
 			}
 		} else {
 			cfg["redir-port"] = 7877

@@ -589,13 +589,25 @@ func validateMihomoConfigContent(content string, proxyModes ...string) mihomoCon
 			if !isTruthy(fmtAny(tun["enable"])) {
 				warnings = append(warnings, "tun.enable 建议保持 true")
 			}
+			if fmtAny(tun["stack"]) != "system" {
+				warnings = append(warnings, "tun.stack 建议保持 system，减少 Docker/Linux TUN 环境差异")
+			}
 			for _, key := range []string{"auto-route", "auto-detect-interface"} {
 				if !isTruthy(fmtAny(tun[key])) {
 					warnings = append(warnings, fmt.Sprintf("tun.%s 建议保持 true", key))
 				}
 			}
 			if isTruthy(fmtAny(tun["auto-redirect"])) {
-				warnings = append(warnings, "Docker TUN 模式建议保持 tun.auto-redirect=false，避免写宿主机 iptables/nftables")
+				warnings = append(warnings, "TUN 模式建议保持 tun.auto-redirect=false，避免写宿主机 iptables/nftables")
+			}
+			if value, ok := tun["dns-hijack"]; !ok || !yamlListEmpty(value) {
+				warnings = append(warnings, "TUN 模式建议保持 tun.dns-hijack=[]，由 MosDNS 继续负责 DNS 分流")
+			}
+			if value, ok := tun["route-address"]; !ok || !yamlListContains(value, "28.0.0.0/8") {
+				warnings = append(warnings, "TUN 模式建议在 tun.route-address 中包含 Fake-IP IPv4 网段 28.0.0.0/8")
+			}
+			if value, ok := tun["route-exclude-address"]; !ok || !yamlListContains(value, "192.168.0.0/16") {
+				warnings = append(warnings, "TUN 模式建议在 tun.route-exclude-address 中排除局域网网段")
 			}
 		} else {
 			warnings = append(warnings, "TUN 模式缺少 tun 配置块")
@@ -612,6 +624,11 @@ func validateMihomoConfigContent(content string, proxyModes ...string) mihomoCon
 	if dns, ok := cfg["dns"].(map[string]any); ok {
 		if fmtAny(dns["listen"]) != "0.0.0.0:6666" {
 			warnings = append(warnings, "dns.listen 建议保持 0.0.0.0:6666，否则 MosDNS 可能无法转发到 Mihomo")
+		}
+		if isTUNProxyMode(setupPreflightProxyMode(proxyModes...)) {
+			if value, ok := dns["proxy-server-nameserver"]; !ok || yamlListEmpty(value) {
+				warnings = append(warnings, "TUN 模式建议配置 dns.proxy-server-nameserver，避免节点域名被 Fake-IP 污染")
+			}
 		}
 	} else {
 		warnings = append(warnings, "缺少 dns.listen")
@@ -638,9 +655,13 @@ func (a *App) mihomoProtectedFields() []string {
 	if isTUNProxyMode(a.currentLinuxProxyMode()) {
 		fields = append(fields,
 			"tun.enable: true",
+			"tun.stack: system",
 			"tun.auto-route: true",
 			"tun.auto-detect-interface: true",
 			"tun.auto-redirect: false",
+			"tun.dns-hijack: []",
+			"tun.route-address 包含 Fake-IP 网段",
+			"dns.proxy-server-nameserver",
 		)
 	} else {
 		fields = append(fields,
@@ -649,6 +670,43 @@ func (a *App) mihomoProtectedFields() []string {
 		)
 	}
 	return append(fields, "secret 如用户设置，MSF 会读取并用于控制器认证")
+}
+
+func yamlListEmpty(value any) bool {
+	switch v := value.(type) {
+	case nil:
+		return true
+	case []any:
+		return len(v) == 0
+	case []string:
+		return len(v) == 0
+	default:
+		return strings.TrimSpace(fmtAny(v)) == "" || strings.TrimSpace(fmtAny(v)) == "[]"
+	}
+}
+
+func yamlListContains(value any, want string) bool {
+	switch v := value.(type) {
+	case []any:
+		for _, item := range v {
+			if strings.TrimSpace(fmtAny(item)) == want {
+				return true
+			}
+		}
+	case []string:
+		for _, item := range v {
+			if strings.TrimSpace(item) == want {
+				return true
+			}
+		}
+	default:
+		for _, item := range strings.Split(fmtAny(v), " ") {
+			if strings.Trim(strings.TrimSpace(item), "[],") == want {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (a *App) mihomoConfigSectionPayload(section string, runtime any) map[string]any {

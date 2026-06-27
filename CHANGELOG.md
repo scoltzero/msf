@@ -1,5 +1,37 @@
 # 更新日志
 
+## v0.3.8 - 2026-06-27
+
+### 中文
+
+#### 说明
+
+- 这是一次 Linux TUN / Docker TUN DNS 与 Fake-IP 路由修复发布。
+- 本版本 GitHub Release 资产数量与 v0.3.7 保持一致：Linux amd64/arm64 tarball、Unraid `.txz`/`.plg`，以及从同步后的 `fnos-fpk` 分支构建的 fnOS x86/arm `.fpk` 包，共 12 个 release assets。
+- Docker 镜像额外以 `ghcr.io/scoltzero/msf:v0.3.8` 发布，不推送 `latest`。
+
+#### 修复
+
+- 统一修复 Linux TUN 生成配置：`tun.stack` 改为 `system`，`tun.dns-hijack` 保持空数组，由 MosDNS 继续负责 DNS 分流，Mihomo 通过 `route-address` 接管 Fake-IP 和必要公网目标。
+- TUN 模式新增 `dns.proxy-server-nameserver`，避免节点服务器域名被 Fake-IP 污染后解析成 `28.0.0.x` 导致拨号失败。
+- TUN 模式新增 `route-exclude-address` 默认排除 loopback、LAN、link-local、ULA 和常见国内 DNS。
+- 修复已初始化的 v0.3.7 Docker TUN 生成配置升级后仍保留旧 TUN / DNS block 的问题；生成配置模式会在启动期自动修正，自定义 Mihomo 配置不会被自动覆盖。
+
+### English
+
+#### Notes
+
+- This is a Linux TUN / Docker TUN DNS and Fake-IP routing fix release.
+- GitHub Release assets remain aligned with v0.3.7: Linux amd64/arm64 tarballs, Unraid `.txz`/`.plg`, and fnOS x86/arm `.fpk` packages built from the synced `fnos-fpk` branch, for 12 release assets total.
+- The Docker image is additionally published as `ghcr.io/scoltzero/msf:v0.3.8`. The `latest` tag is not pushed.
+
+#### Fixed
+
+- Unified Linux TUN generated config: `tun.stack` now uses `system`, `tun.dns-hijack` stays empty so MosDNS continues DNS splitting, and Mihomo takes over Fake-IP plus required public targets through `route-address`.
+- Added `dns.proxy-server-nameserver` in TUN mode so proxy server domains are not resolved into Fake-IP addresses such as `28.0.0.x`.
+- Added default `route-exclude-address` entries for loopback, LAN, link-local, ULA, and common China DNS addresses.
+- Fixed already-initialized v0.3.7 Docker TUN generated configs keeping the old TUN / DNS blocks after upgrade; generated config mode is repaired at startup, while custom Mihomo config is not overwritten.
+
 ## v0.3.7 - 2026-06-27
 
 ### 中文
