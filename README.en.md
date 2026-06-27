@@ -6,6 +6,8 @@
 
 [中文 README](README.md)
 
+[FAQ](docs/faq.en.md)
+
 `msf` is an open-source reimplementation of the MSM-style management experience for the MosDNS + Mihomo workflow. It focuses on self-hosted DNS split routing, transparent proxy management, Mihomo management, and platform-native installs.
 
 Current release: `v0.3.6`

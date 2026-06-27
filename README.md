@@ -6,6 +6,8 @@
 
 [English README](README.en.md)
 
+[常见问题 FAQ](docs/faq.md)
+
 `msf` 是一个面向 MosDNS + Mihomo 工作流的 MSM 风格管理面板重构版。项目目标是提供可自部署、可审计的 DNS 分流、透明代理、Mihomo 管理和多平台安装体验。
 
 当前发布版本：`v0.3.6`
