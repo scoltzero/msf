@@ -13,12 +13,12 @@
   <CHANGES>
     <![CDATA[
 ### msf __PLUGIN_VERSION__
-- 登录页和 README 顶部加入动态 MSF Logo。
-- README / README.en 改为入口页，并拆分 Linux、fnOS FPK、Unraid PLG、Docker 安装文档。
-- 明确 Linux tarball/systemd 使用 `msf update` / `msf uninstall`；fnOS FPK、Unraid PLG 通过平台管理器更新卸载；Docker 仍为实验部署。
-- 初始化 53 端口预检不再把权限、capability 或探测异常误报为未知进程占用；非真实占用以警告展示。
-- MosDNS 启动前只在真实监听占用或 bind `EADDRINUSE` 时提前阻断，其他探测异常允许 MosDNS 直接尝试启动。
-- 服务 CPU 使用率按可用 vCPU / 逻辑 CPU 容量归一化，修复 PVE / 多 vCPU 环境首页 CPU 显示超过 100% 的问题。
+- 新增 Docker TUN 实验运行时，支持 host 和 IPv4 macvlan 两种容器网络入口。
+- Docker runtime 默认使用 Mihomo TUN；普通 Linux / fnOS / Unraid 默认仍保持 nftables 透明代理模式。
+- 新增完整 Docker Compose、macvlan Compose、普通 docker-run.sh 示例和中英文 Docker 部署文档。
+- Docker TUN 不再生成宿主 `network.nft`，不检查 `7877` / `7896`，并禁用容器内自更新安装。
+- 新增 README FAQ 入口、53 端口占用 FAQ、架构原理图和英文架构图。
+- 补充 linux.do 社区徽章、项目鸣谢和 Gzh256 多版本测试验证致谢。
     ]]>
   </CHANGES>
 

@@ -1,6 +1,6 @@
 services:
   msf:
-    image: ghcr.io/scoltzero/msf:v0.3.6-docker.1
+    image: ghcr.io/scoltzero/msf:v0.3.7
     container_name: msf
     network_mode: host
     cap_add:
