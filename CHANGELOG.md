@@ -1,5 +1,61 @@
 # 更新日志
 
+## Unreleased
+
+### 中文
+
+### English
+
+## v0.3.9 - 2026-06-30
+
+### 中文
+
+#### 说明
+
+- 这是一次 Docker host-tun 路由、Mihomo 用户配置管理和 YAML 编辑器体验修复发布。
+- 本版本 GitHub Release 资产数量与 v0.3.8 保持一致：Linux amd64/arm64 tarball、Unraid `.txz`/`.plg`，以及从同步后的 `fnos-fpk` 分支构建的 fnOS x86/arm `.fpk` 包，共 12 个 release assets。
+- Docker 镜像额外以 `ghcr.io/scoltzero/msf:v0.3.9` 发布，不推送 `latest`。
+
+#### 修复
+
+- Docker `host-tun` + Mihomo TUN 启动后自动补齐 FakeIP IPv4 路由，例如 `28.0.0.0/8 dev mihomo src 28.0.0.1`，避免客户端 FakeIP 流量到达 Docker 宿主机后没有进入 `mihomo` TUN。
+- Docker `host-tun` + Mihomo TUN 在显式启用 IPv6 时自动补齐 FakeIP IPv6 路由，例如 `f2b0::/18 dev mihomo src f2b0::1`；IPv4 / IPv6 任一路由修复失败都只写 warning，不阻断服务启动。
+- Docker `host-tun` + Mihomo TUN 会尝试关闭默认出口网卡的 `rp_filter`；失败时只写 warning，不阻断 Mihomo 启动。
+- Mihomo 配置管理不再把内部运行副本 `configs/mihomo/config.yaml` 当作用户配置展示；打开页面会优先显示正在应用的用户配置，没有用户配置时显示“默认配置”。
+- 默认 Mihomo 配置只允许修改 `proxy-providers` 并继续保持默认模式；其他 YAML 字段一旦保存会转为用户自定义配置。
+- 保存、覆盖或复制已应用的 Mihomo 用户配置时会同步内部运行副本，避免配置列表与实际运行配置漂移。
+- MosDNS、MSF 通用配置管理和 Mihomo 配置管理共用的 YAML 编辑器高亮对齐 VS Code Dark+ 风格，改善 key、字符串、数字、布尔、注释、锚点和 tag 的颜色识别。
+
+#### 说明
+
+- 程序不会自动重启 `firewalld`、`nftables` 或 `ufw`。如果防火墙服务会缓存或重放规则，仍需按 Docker 文档手动重启对应防火墙服务。
+- Docker IPv6 默认仍保持关闭；只有用户显式启用 IPv6 后才会生成并修复 `f2b0::/18`。
+- 内部 Mihomo 运行副本仍然存在并用于启动核心，只是不再作为普通配置文件让用户直接管理。
+
+### English
+
+#### Notes
+
+- This is a fix release for Docker host-tun routing, Mihomo user config management, and YAML editor usability.
+- GitHub Release assets remain aligned with v0.3.8: Linux amd64/arm64 tarballs, Unraid `.txz`/`.plg`, and fnOS x86/arm `.fpk` packages built from the synced `fnos-fpk` branch, for 12 release assets total.
+- The Docker image is additionally published as `ghcr.io/scoltzero/msf:v0.3.9`. The `latest` tag is not pushed.
+
+#### Fixed
+
+- Docker `host-tun` + Mihomo TUN now restores the FakeIP IPv4 route after Mihomo starts, for example `28.0.0.0/8 dev mihomo src 28.0.0.1`, so client FakeIP traffic reaching the Docker host can enter the `mihomo` TUN interface.
+- Docker `host-tun` + Mihomo TUN now restores the FakeIP IPv6 route when IPv6 is explicitly enabled, for example `f2b0::/18 dev mihomo src f2b0::1`; IPv4 and IPv6 route failures are logged as warnings and do not fail service startup.
+- Docker `host-tun` + Mihomo TUN now tries to disable `rp_filter` on the default egress interface; failures are logged as warnings and do not fail Mihomo startup.
+- Mihomo config management no longer exposes the internal runtime copy `configs/mihomo/config.yaml` as a user config. The page opens the applied user config first, or shows “Default config” when no user config is applied.
+- Default Mihomo config mode now only permits `proxy-providers` edits while staying in generated mode; saving any other YAML field becomes a user custom config.
+- Saving, overwriting, or copying the applied Mihomo user config now syncs the internal runtime copy, avoiding drift between the config list and the running config.
+- The shared YAML editor used by MosDNS, generic MSF config management, and Mihomo config management now uses VS Code Dark+ style highlighting for keys, strings, numbers, booleans, comments, anchors, and tags.
+
+#### Notes
+
+- MSF does not automatically restart `firewalld`, `nftables`, or `ufw`. If a firewall service caches or replays rules, restart the active firewall service manually as documented in the Docker guide.
+- Docker IPv6 remains disabled by default; `f2b0::/18` is generated and repaired only after the user explicitly enables IPv6.
+- The internal Mihomo runtime copy still exists and is used to start the core; it is just no longer directly managed as a normal user-facing config file.
+
 ## v0.3.8 - 2026-06-27
 
 ### 中文
@@ -16,6 +72,7 @@
 - TUN 模式新增 `dns.proxy-server-nameserver`，避免节点服务器域名被 Fake-IP 污染后解析成 `28.0.0.x` 导致拨号失败。
 - TUN 模式新增 `route-exclude-address` 默认排除 loopback、LAN、link-local、ULA 和常见国内 DNS。
 - 修复已初始化的 v0.3.7 Docker TUN 生成配置升级后仍保留旧 TUN / DNS block 的问题；生成配置模式会在启动期自动修正，自定义 Mihomo 配置不会被自动覆盖。
+- 补充 Docker `host-tun` 网关部署的 FakeIP 路由说明：如果宿主机只生成 `28.0.0.0/30 dev mihomo`，需要额外把 `28.0.0.0/8` 路由到 `mihomo`，并关闭出口网卡 `rp_filter`。Docker 文档已加入临时验证命令、systemd 持久化方案和防火墙重启防呆命令。
 
 ### English
 
@@ -31,6 +88,7 @@
 - Added `dns.proxy-server-nameserver` in TUN mode so proxy server domains are not resolved into Fake-IP addresses such as `28.0.0.x`.
 - Added default `route-exclude-address` entries for loopback, LAN, link-local, ULA, and common China DNS addresses.
 - Fixed already-initialized v0.3.7 Docker TUN generated configs keeping the old TUN / DNS blocks after upgrade; generated config mode is repaired at startup, while custom Mihomo config is not overwritten.
+- Documented the Docker `host-tun` gateway FakeIP route workaround: if the host only creates `28.0.0.0/30 dev mihomo`, route the full `28.0.0.0/8` range to `mihomo` and disable `rp_filter` on the egress interface. The Docker docs now include temporary verification commands, a systemd persistence setup, and a firewall restart guardrail.
 
 ## v0.3.7 - 2026-06-27
 

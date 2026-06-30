@@ -54,6 +54,9 @@ func (a *App) handleConfigFilePut(w http.ResponseWriter, r *http.Request) {
 		req.Path = req.FilePath
 	}
 	req.Path = normalizeConfigRel(req.Path)
+	if rejectMihomoRuntimeConfigMutation(w, req.Path) {
+		return
+	}
 	historyID, err := a.saveConfigFileWithHistory(req.Path, req.Content, req.Comment, currentUsername(r))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "write_failed", err.Error())
@@ -70,6 +73,12 @@ func (a *App) handleConfigFileCreate(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) handleConfigFileDelete(w http.ResponseWriter, r *http.Request) {
 	rel := normalizeConfigRel(r.URL.Query().Get("path"))
+	if rejectMihomoRuntimeConfigMutation(w, rel) {
+		return
+	}
+	if a.rejectAppliedMihomoUserConfigRemoval(w, rel) {
+		return
+	}
 	path, err := a.safePath(rel)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "path_error", err.Error())
@@ -129,6 +138,9 @@ func (a *App) handleConfigCopy(w http.ResponseWriter, r *http.Request) {
 	}
 	req.Source = normalizeConfigRel(req.Source)
 	req.Target = normalizeConfigRel(req.Target)
+	if rejectMihomoRuntimeConfigMutation(w, req.Target) {
+		return
+	}
 	src, err := a.safePath(req.Source)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "path_error", err.Error())
@@ -149,9 +161,32 @@ func (a *App) handleConfigCopy(w http.ResponseWriter, r *http.Request) {
 		a.createConfigHistory(serviceFromPath(req.Target), req.Target, string(old), "auto backup before copy overwrite", currentUsername(r))
 		_ = a.DB.QueryRow(`select last_insert_rowid()`).Scan(&historyID)
 	}
+	if a.isAppliedMihomoUserConfigRel(req.Target) {
+		b, err := os.ReadFile(src)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "copy_failed", err.Error())
+			return
+		}
+		validation := a.validateMihomoConfigContent(string(b))
+		if !validation.Valid {
+			writeError(w, http.StatusBadRequest, "copy_failed", validation.Error)
+			return
+		}
+	}
 	if err := copyFile(src, dst, info.Mode()); err != nil {
 		writeError(w, http.StatusBadRequest, "copy_failed", err.Error())
 		return
+	}
+	if a.isAppliedMihomoUserConfigRel(req.Target) {
+		content, err := a.readTextFile(req.Target)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "copy_failed", err.Error())
+			return
+		}
+		if err := a.syncMihomoActiveConfigFromAppliedUserConfig(req.Target, content, currentUsername(r)); err != nil {
+			writeError(w, http.StatusBadRequest, "copy_failed", err.Error())
+			return
+		}
 	}
 	result := configWriteResult(req.Target, historyID)
 	result["success"] = true
@@ -177,6 +212,12 @@ func (a *App) handleConfigRename(w http.ResponseWriter, r *http.Request) {
 	}
 	req.Source = normalizeConfigRel(req.Source)
 	req.Target = normalizeConfigRel(req.Target)
+	if rejectMihomoRuntimeConfigMutation(w, req.Source) || rejectMihomoRuntimeConfigMutation(w, req.Target) {
+		return
+	}
+	if a.rejectAppliedMihomoUserConfigRemoval(w, req.Source) {
+		return
+	}
 	src, err := a.safePath(req.Source)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "path_error", err.Error())
@@ -266,6 +307,9 @@ func (a *App) handleConfigUpload(w http.ResponseWriter, r *http.Request) {
 			rel = filepath.ToSlash(filepath.Join("configs", header.Filename))
 		}
 		rel = normalizeConfigRel(rel)
+		if rejectMihomoRuntimeConfigMutation(w, rel) {
+			return
+		}
 		path, err := a.safePath(rel)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "path_error", err.Error())
@@ -295,6 +339,9 @@ func (a *App) handleConfigUpload(w http.ResponseWriter, r *http.Request) {
 		rel = "configs/uploaded-" + strconv.FormatInt(time.Now().Unix(), 10)
 	}
 	rel = normalizeConfigRel(rel)
+	if rejectMihomoRuntimeConfigMutation(w, rel) {
+		return
+	}
 	path, err := a.safePath(rel)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "path_error", err.Error())
@@ -435,6 +482,9 @@ func (a *App) handleHistoryRollback(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "history not found")
 		return
 	}
+	if rejectMihomoRuntimeConfigMutation(w, path) {
+		return
+	}
 	historyID, err := a.saveConfigFileWithHistory(path, content, "auto backup before rollback to history "+id, currentUsername(r))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "rollback_failed", err.Error())
@@ -554,7 +604,27 @@ func (a *App) handleConfigRestore(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "restore_failed", err.Error())
 		return
 	}
+	if err := a.reconcileAppliedMihomoUserConfig(); err != nil {
+		writeError(w, http.StatusBadRequest, "restore_failed", err.Error())
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"success": true, "restart_required": true, "affected_service": "all", "data": map[string]any{"restored": name, "restart_required": true}})
+}
+
+func rejectMihomoRuntimeConfigMutation(w http.ResponseWriter, rel string) bool {
+	if !isMihomoActiveConfigRel(rel) {
+		return false
+	}
+	writeError(w, http.StatusBadRequest, "protected_runtime_config", "configs/mihomo/config.yaml is an internal runtime copy; edit or apply a Mihomo user config instead")
+	return true
+}
+
+func (a *App) rejectAppliedMihomoUserConfigRemoval(w http.ResponseWriter, rel string) bool {
+	if !a.isAppliedMihomoUserConfigRel(rel) {
+		return false
+	}
+	writeError(w, http.StatusBadRequest, "protected_applied_user_config", "the applied Mihomo user config cannot be deleted or renamed from generic config management; apply another config or restore the default first")
+	return true
 }
 
 func zipDir(root string) ([]byte, error) {

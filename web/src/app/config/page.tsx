@@ -15,6 +15,9 @@ interface FileNode {
   children?: FileNode[];
 }
 
+const MIHOMO_RUNTIME_CONFIG = "configs/mihomo/config.yaml";
+const DEFAULT_SELECTED = "configs/app.yaml";
+
 function flatten(nodes: FileNode[], depth = 0): Array<FileNode & { depth: number }> {
   return nodes.flatMap((node) => [
     { ...node, depth },
@@ -25,14 +28,17 @@ function flatten(nodes: FileNode[], depth = 0): Array<FileNode & { depth: number
 export default function ConfigPage() {
   const { toasts, showToast } = useToaster();
   const [tree, setTree] = useState<FileNode[]>([]);
-  const [selected, setSelected] = useState("configs/mihomo/config.yaml");
+  const [selected, setSelected] = useState(DEFAULT_SELECTED);
   const [content, setContent] = useState("");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [validation, setValidation] = useState("");
 
   const files = useMemo(
-    () => flatten(tree).filter((node) => (node.type || "file") === "file" || !node.children?.length),
+    () => flatten(tree).filter((node) => {
+      const path = node.path || node.name || "";
+      return path !== MIHOMO_RUNTIME_CONFIG && ((node.type || "file") === "file" || !node.children?.length);
+    }),
     [tree]
   );
 
@@ -65,6 +71,10 @@ export default function ConfigPage() {
   }, []);
 
   const save = async () => {
+    if (selected === MIHOMO_RUNTIME_CONFIG) {
+      showToast("运行配置不可在配置管理中直接保存");
+      return;
+    }
     setSaving(true);
     try {
       await api("/api/v1/config/file", {

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -295,6 +296,11 @@ func (a *App) saveMihomoUserConfig(name, content string, overwrite bool, usernam
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		return nil, validation, err
 	}
+	if a.isAppliedMihomoUserConfigRel(rel) {
+		if err := a.syncMihomoActiveConfigFromAppliedUserConfig(rel, content, username); err != nil {
+			return nil, validation, err
+		}
+	}
 	item := a.mihomoUserConfigItem(rel)
 	return item, validation, nil
 }
@@ -407,6 +413,70 @@ func (a *App) mihomoUserConfigRel(name, relOrPath string) (string, error) {
 	return filepath.ToSlash(filepath.Join(mihomoUserConfigsRelDir, cleanName)), nil
 }
 
+func isMihomoActiveConfigRel(rel string) bool {
+	return normalizeConfigRel(rel) == mihomoActiveConfigRelPath
+}
+
+func isMihomoUserConfigRel(rel string) bool {
+	rel = normalizeConfigRel(rel)
+	return strings.HasPrefix(rel, mihomoUserConfigsRelDir+"/")
+}
+
+func (a *App) appliedMihomoUserConfigRel() (string, bool) {
+	applied := strings.TrimSpace(a.setting(mihomoAppliedUserConfigKey, ""))
+	if applied == "" {
+		return "", false
+	}
+	rel, err := a.mihomoUserConfigRel("", applied)
+	if err != nil {
+		return "", false
+	}
+	return rel, true
+}
+
+func (a *App) isAppliedMihomoUserConfigRel(rel string) bool {
+	applied, ok := a.appliedMihomoUserConfigRel()
+	return ok && normalizeConfigRel(rel) == applied
+}
+
+func (a *App) syncMihomoActiveConfigFromAppliedUserConfig(rel, content, username string) error {
+	if !a.isAppliedMihomoUserConfigRel(rel) {
+		return nil
+	}
+	if err := a.ensureMihomoGeneratedBackup(); err != nil {
+		return err
+	}
+	if username == "" {
+		username = "system"
+	}
+	if old, err := a.readTextFile(mihomoActiveConfigRelPath); err == nil {
+		a.createConfigHistory("mihomo", mihomoActiveConfigRelPath, old, "auto backup before active Mihomo config sync", username)
+	}
+	if err := a.writeTextFileDirect(mihomoActiveConfigRelPath, content); err != nil {
+		return err
+	}
+	a.setMihomoConfigMode("custom")
+	a.setSetting(mihomoAppliedUserConfigKey, normalizeConfigRel(rel))
+	return nil
+}
+
+func (a *App) reconcileAppliedMihomoUserConfig() error {
+	rel, ok := a.appliedMihomoUserConfigRel()
+	if !ok {
+		return nil
+	}
+	content, err := a.readTextFile(rel)
+	if err != nil {
+		a.setSetting(mihomoAppliedUserConfigKey, "")
+		return nil
+	}
+	if validation := a.validateMihomoConfigContent(content); !validation.Valid {
+		a.setSetting(mihomoAppliedUserConfigKey, "")
+		return nil
+	}
+	return a.syncMihomoActiveConfigFromAppliedUserConfig(rel, content, "system")
+}
+
 func (a *App) nextMihomoUserConfigName() string {
 	dir, err := a.safePath(mihomoUserConfigsRelDir)
 	if err != nil {
@@ -459,10 +529,18 @@ func (a *App) mihomoConfigModePayload() map[string]any {
 	backupRel := a.mihomoGeneratedBackupPath()
 	backupPath, err := a.safePath(backupRel)
 	backupExists := err == nil && fileExists(backupPath)
+	activePath, hasActive := a.appliedMihomoUserConfigRel()
+	activeName := ""
+	if hasActive {
+		activeName = filepath.Base(activePath)
+	}
 	return map[string]any{
 		"mode":              a.mihomoConfigMode(),
 		"backup_path":       backupRel,
 		"backup_exists":     backupExists,
+		"active_path":       activePath,
+		"active_name":       activeName,
+		"is_default":        !hasActive && a.mihomoConfigMode() == "generated",
 		"protected_fields":  a.mihomoProtectedFields(),
 		"protected_warning": "自定义配置请保留这些字段，否则 WebUI、MosDNS 转发或透明代理可能无法正常工作。",
 	}
@@ -515,6 +593,65 @@ func (a *App) ensureMihomoGeneratedBackup() error {
 		return err
 	}
 	return os.WriteFile(backupPath, []byte(content), 0644)
+}
+
+func mihomoConfigSectionsDefaultSafe(sections []string) bool {
+	if len(sections) == 0 {
+		return false
+	}
+	for _, section := range sections {
+		if section != "proxy-providers" {
+			return false
+		}
+	}
+	return true
+}
+
+func mihomoConfigOnlyProxyProvidersChanged(oldContent, newContent string) (bool, error) {
+	oldMap, err := mihomoConfigTopMap(oldContent)
+	if err != nil {
+		return false, err
+	}
+	newMap, err := mihomoConfigTopMap(newContent)
+	if err != nil {
+		return false, err
+	}
+	delete(oldMap, "proxy-providers")
+	delete(newMap, "proxy-providers")
+	return reflect.DeepEqual(oldMap, newMap), nil
+}
+
+func mihomoConfigTopMap(content string) (map[string]any, error) {
+	var cfg map[string]any
+	if err := yaml.Unmarshal([]byte(content), &cfg); err != nil {
+		return nil, err
+	}
+	if cfg == nil {
+		return map[string]any{}, nil
+	}
+	return cfg, nil
+}
+
+func (a *App) validateMihomoActiveConfigWrite(content string) (mihomoConfigValidation, bool, string, error) {
+	validation := a.validateMihomoConfigContent(content)
+	if !validation.Valid {
+		return validation, false, "", nil
+	}
+	if a.mihomoConfigMode() != "generated" {
+		return validation, true, "", nil
+	}
+	oldContent, err := a.readTextFile(mihomoActiveConfigRelPath)
+	if err != nil {
+		return validation, false, "read_failed", err
+	}
+	allowed, err := mihomoConfigOnlyProxyProvidersChanged(oldContent, content)
+	if err != nil {
+		return validation, false, "bad_request", err
+	}
+	if !allowed {
+		return validation, false, "default_config_requires_user_config", fmt.Errorf("default Mihomo config only allows proxy-providers changes; save as a user config for other fields")
+	}
+	return validation, false, "", nil
 }
 
 func (a *App) defaultMihomoConfigForRestore() (string, string, error) {

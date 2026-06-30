@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"errors"
 	"io"
 	"net/http"
 	"os"
@@ -250,6 +251,18 @@ func (a *App) saveConfigFileWithHistory(rel, content, comment, username string) 
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return 0, err
 	}
+	if isMihomoActiveConfigRel(rel) || a.isAppliedMihomoUserConfigRel(rel) {
+		validation := a.validateMihomoConfigContent(content)
+		if !validation.Valid {
+			return 0, errors.New(validation.Error)
+		}
+	}
+	if isMihomoActiveConfigRel(rel) {
+		if err := a.ensureMihomoGeneratedBackup(); err != nil {
+			return 0, err
+		}
+		a.setMihomoConfigMode("custom")
+	}
 	var historyID int64
 	if old, err := os.ReadFile(path); err == nil {
 		if username == "" {
@@ -266,7 +279,19 @@ func (a *App) saveConfigFileWithHistory(rel, content, comment, username string) 
 		}
 		historyID, _ = res.LastInsertId()
 	}
-	return historyID, os.WriteFile(path, []byte(content), 0644)
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		return historyID, err
+	}
+	if isMihomoActiveConfigRel(rel) {
+		if err := a.syncAppliedMihomoUserConfigAs(content, username); err != nil {
+			return historyID, err
+		}
+	} else if a.isAppliedMihomoUserConfigRel(rel) {
+		if err := a.syncMihomoActiveConfigFromAppliedUserConfig(rel, content, username); err != nil {
+			return historyID, err
+		}
+	}
+	return historyID, nil
 }
 
 func configWriteResult(rel string, historyID int64) map[string]any {

@@ -1816,8 +1816,11 @@ func TestMihomoProviderConfigManagementCreatesHistory(t *testing.T) {
 		"url":      "https://example.com/sub.yaml",
 		"interval": 3600,
 	})
-	if put.Code != http.StatusOK || !strings.Contains(put.Body.String(), `"restart_required":false`) || !strings.Contains(put.Body.String(), `"mode":"custom"`) {
+	if put.Code != http.StatusOK || !strings.Contains(put.Body.String(), `"restart_required":false`) || !strings.Contains(put.Body.String(), `"mode":"generated"`) {
 		t.Fatalf("proxy provider put status=%d body=%s", put.Code, put.Body.String())
+	}
+	if mode := app.mihomoConfigMode(); mode != "generated" {
+		t.Fatalf("proxy provider edits should keep generated mode, got %q", mode)
 	}
 	cfg, err := os.ReadFile(filepath.Join(app.DataDir, "configs/mihomo/config.yaml"))
 	if err != nil {
@@ -1825,6 +1828,13 @@ func TestMihomoProviderConfigManagementCreatesHistory(t *testing.T) {
 	}
 	if !strings.Contains(string(cfg), "airport:") || !strings.Contains(string(cfg), "https://example.com/sub.yaml") {
 		t.Fatalf("proxy provider not persisted:\n%s", string(cfg))
+	}
+	fileProvider := requestJSON(t, app, http.MethodPut, "/api/v1/mihomo/proxy-providers/msf_manual", token, map[string]any{
+		"type": "file",
+		"path": "./proxy_providers/msf_manual.yaml",
+	})
+	if fileProvider.Code != http.StatusOK || !strings.Contains(fileProvider.Body.String(), `"restart_required":false`) {
+		t.Fatalf("file proxy provider without url should save: status=%d body=%s", fileProvider.Code, fileProvider.Body.String())
 	}
 	update := requestJSON(t, app, http.MethodPost, "/api/v1/mihomo/proxy-providers/airport/update", token, nil)
 	if update.Code != http.StatusOK || !strings.Contains(update.Body.String(), `"healthcheck":true`) {
@@ -1836,6 +1846,9 @@ func TestMihomoProviderConfigManagementCreatesHistory(t *testing.T) {
 	})
 	if rulePut.Code != http.StatusOK || !strings.Contains(rulePut.Body.String(), `"restart_required":false`) || !strings.Contains(rulePut.Body.String(), `"mode":"custom"`) {
 		t.Fatalf("rule provider put status=%d body=%s", rulePut.Code, rulePut.Body.String())
+	}
+	if mode := app.mihomoConfigMode(); mode != "custom" {
+		t.Fatalf("rule provider edits should switch to custom mode, got %q", mode)
 	}
 	list := requestJSON(t, app, http.MethodGet, "/api/v1/mihomo/providers", token, nil)
 	if list.Code != http.StatusOK || !strings.Contains(list.Body.String(), `"name":"airport"`) || !strings.Contains(list.Body.String(), `"name":"directlist"`) {
@@ -1851,6 +1864,32 @@ func TestMihomoProviderConfigManagementCreatesHistory(t *testing.T) {
 	del := requestJSON(t, app, http.MethodDelete, "/api/v1/mihomo/proxy-providers/airport", token, nil)
 	if del.Code != http.StatusOK || !strings.Contains(del.Body.String(), `"restart_required":false`) {
 		t.Fatalf("proxy provider delete status=%d body=%s", del.Code, del.Body.String())
+	}
+}
+
+func TestMihomoDefaultConfigOnlyAllowsProxyProviderEdits(t *testing.T) {
+	app := newTestApp(t)
+	token := tokenForRole(t, app, "admin")
+	original, err := app.readTextFile(mihomoActiveConfigRelPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	providerYAML := "proxy-providers:\n  airport:\n    type: http\n    url: https://example.com/sub.yaml\n    interval: 3600\n    path: ./proxy_providers/airport.yaml\n"
+	providerOnly := replaceMihomoProxyProviders(original, providerYAML)
+	providerPut := requestJSON(t, app, http.MethodPut, "/api/v1/mihomo/config/config.yaml", token, map[string]any{"content": providerOnly})
+	if providerPut.Code != http.StatusOK || !strings.Contains(providerPut.Body.String(), `"mode":"generated"`) {
+		t.Fatalf("provider-only default config put status=%d body=%s", providerPut.Code, providerPut.Body.String())
+	}
+	if mode := app.mihomoConfigMode(); mode != "generated" {
+		t.Fatalf("provider-only default config save should keep generated mode, got %q", mode)
+	}
+	changedMode := strings.Replace(providerOnly, "mode: rule", "mode: global", 1)
+	nonProviderPut := requestJSON(t, app, http.MethodPut, "/api/v1/mihomo/config/config.yaml", token, map[string]any{"content": changedMode})
+	if nonProviderPut.Code != http.StatusBadRequest || !strings.Contains(nonProviderPut.Body.String(), "default_config_requires_user_config") {
+		t.Fatalf("non-provider default config put should be rejected: status=%d body=%s", nonProviderPut.Code, nonProviderPut.Body.String())
+	}
+	if mode := app.mihomoConfigMode(); mode != "generated" {
+		t.Fatalf("rejected default config save should keep generated mode, got %q", mode)
 	}
 }
 
@@ -1882,12 +1921,77 @@ func TestMihomoCustomConfigModeProtectsGeneratedConfigAndRestoresBackup(t *testi
 	if applied.Code != http.StatusOK || !strings.Contains(applied.Body.String(), `"mode":"custom"`) || !strings.Contains(applied.Body.String(), `"restarted":false`) {
 		t.Fatalf("apply user config status=%d body=%s", applied.Code, applied.Body.String())
 	}
+	userConfigs := requestJSON(t, app, http.MethodGet, "/api/v1/mihomo/user-configs", token, nil)
+	if userConfigs.Code != http.StatusOK || !strings.Contains(userConfigs.Body.String(), `"active_path":"configs/mihomo/user_configs/custom.yaml"`) || !strings.Contains(userConfigs.Body.String(), `"active":true`) {
+		t.Fatalf("user configs should expose applied config: status=%d body=%s", userConfigs.Code, userConfigs.Body.String())
+	}
+	modePayload := requestJSON(t, app, http.MethodGet, "/api/v1/mihomo/config/mode", token, nil)
+	if modePayload.Code != http.StatusOK || !strings.Contains(modePayload.Body.String(), `"active_path":"configs/mihomo/user_configs/custom.yaml"`) || !strings.Contains(modePayload.Body.String(), `"active_name":"custom.yaml"`) || !strings.Contains(modePayload.Body.String(), `"is_default":false`) {
+		t.Fatalf("mode payload should expose active user config: status=%d body=%s", modePayload.Code, modePayload.Body.String())
+	}
 	backupPath, err := app.safePath(mihomoGeneratedBackupRelPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(backupPath); err != nil {
 		t.Fatalf("generated config backup should exist: %v", err)
+	}
+	saveApplied := requestJSON(t, app, http.MethodPut, "/api/v1/mihomo/user-configs", token, map[string]any{"name": "custom.yaml", "content": testMihomoConfigYAML("SavedApplied"), "overwrite": true})
+	if saveApplied.Code != http.StatusOK || !strings.Contains(saveApplied.Body.String(), `"success":true`) {
+		t.Fatalf("saving applied user config should pass: status=%d body=%s", saveApplied.Code, saveApplied.Body.String())
+	}
+	activeAfterSave, err := app.readTextFile(mihomoActiveConfigRelPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(activeAfterSave, "SavedApplied") || strings.Contains(activeAfterSave, "Custom") {
+		t.Fatalf("saving applied user config should sync active runtime config:\n%s", activeAfterSave)
+	}
+	genericSaveApplied := requestJSON(t, app, http.MethodPut, "/api/v1/config/file", token, map[string]any{"path": "configs/mihomo/user_configs/custom.yaml", "content": testMihomoConfigYAML("GenericApplied"), "comment": "generic save applied user config"})
+	if genericSaveApplied.Code != http.StatusOK {
+		t.Fatalf("generic save of applied user config should pass: status=%d body=%s", genericSaveApplied.Code, genericSaveApplied.Body.String())
+	}
+	activeAfterGenericSave, err := app.readTextFile(mihomoActiveConfigRelPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(activeAfterGenericSave, "GenericApplied") || strings.Contains(activeAfterGenericSave, "SavedApplied") {
+		t.Fatalf("generic save of applied user config should sync active runtime config:\n%s", activeAfterGenericSave)
+	}
+	if err := app.writeTextFile("configs/mihomo/user_configs/copy-source.yaml", testMihomoConfigYAML("CopiedApplied")); err != nil {
+		t.Fatal(err)
+	}
+	copyApplied := requestJSON(t, app, http.MethodPost, "/api/v1/config/copy", token, map[string]any{"source": "configs/mihomo/user_configs/copy-source.yaml", "target": "configs/mihomo/user_configs/custom.yaml"})
+	if copyApplied.Code != http.StatusOK {
+		t.Fatalf("copy over applied user config should pass: status=%d body=%s", copyApplied.Code, copyApplied.Body.String())
+	}
+	activeAfterCopy, err := app.readTextFile(mihomoActiveConfigRelPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(activeAfterCopy, "CopiedApplied") || strings.Contains(activeAfterCopy, "GenericApplied") {
+		t.Fatalf("copy over applied user config should sync active runtime config:\n%s", activeAfterCopy)
+	}
+	deleteApplied := requestJSON(t, app, http.MethodDelete, "/api/v1/config/file?path=configs/mihomo/user_configs/custom.yaml", token, nil)
+	if deleteApplied.Code != http.StatusBadRequest || !strings.Contains(deleteApplied.Body.String(), "protected_applied_user_config") {
+		t.Fatalf("generic delete of applied user config should be protected: status=%d body=%s", deleteApplied.Code, deleteApplied.Body.String())
+	}
+	renameApplied := requestJSON(t, app, http.MethodPost, "/api/v1/config/rename", token, map[string]any{"source": "configs/mihomo/user_configs/custom.yaml", "target": "configs/mihomo/user_configs/renamed.yaml"})
+	if renameApplied.Code != http.StatusBadRequest || !strings.Contains(renameApplied.Body.String(), "protected_applied_user_config") {
+		t.Fatalf("generic rename of applied user config should be protected: status=%d body=%s", renameApplied.Code, renameApplied.Body.String())
+	}
+	if err := app.writeTextFileDirect(mihomoActiveConfigRelPath, testMihomoConfigYAML("RuntimeDrift")); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.EnsureBaseLayout(); err != nil {
+		t.Fatal(err)
+	}
+	activeAfterReconcile, err := app.readTextFile(mihomoActiveConfigRelPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(activeAfterReconcile, "CopiedApplied") || strings.Contains(activeAfterReconcile, "RuntimeDrift") {
+		t.Fatalf("startup reconcile should restore runtime config from applied user config:\n%s", activeAfterReconcile)
 	}
 
 	cfg := SetupConfig{
@@ -1903,8 +2007,59 @@ func TestMihomoCustomConfigModeProtectsGeneratedConfigAndRestoresBackup(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(active, "Custom") || strings.Contains(active, "https://example.com/sub.yaml") {
+	if !strings.Contains(active, "CopiedApplied") || strings.Contains(active, "https://example.com/sub.yaml") {
 		t.Fatalf("custom config should not be overwritten by generated writes:\n%s", active)
+	}
+
+	syncedProvider := requestJSON(t, app, http.MethodPut, "/api/v1/mihomo/proxy-providers/synced", token, map[string]any{
+		"url":      "https://example.com/synced.yaml",
+		"interval": 3600,
+	})
+	if syncedProvider.Code != http.StatusOK || !strings.Contains(syncedProvider.Body.String(), `"restart_required":false`) {
+		t.Fatalf("synced proxy provider put status=%d body=%s", syncedProvider.Code, syncedProvider.Body.String())
+	}
+	active, err = app.readTextFile(mihomoActiveConfigRelPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	userConfig, err := app.readTextFile("configs/mihomo/user_configs/custom.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for path, text := range map[string]string{
+		mihomoActiveConfigRelPath:                 active,
+		"configs/mihomo/user_configs/custom.yaml": userConfig,
+	} {
+		if !strings.Contains(text, "synced:") || !strings.Contains(text, "https://example.com/synced.yaml") {
+			t.Fatalf("synced provider missing from %s:\n%s", path, text)
+		}
+	}
+	var userHistoryCount int
+	if err := app.DB.QueryRow(`select count(*) from config_histories where service='mihomo' and file_path='configs/mihomo/user_configs/custom.yaml'`).Scan(&userHistoryCount); err != nil {
+		t.Fatal(err)
+	}
+	if userHistoryCount == 0 {
+		t.Fatal("expected applied user config sync to create history")
+	}
+	deletedProvider := requestJSON(t, app, http.MethodDelete, "/api/v1/mihomo/proxy-providers/synced", token, nil)
+	if deletedProvider.Code != http.StatusOK || !strings.Contains(deletedProvider.Body.String(), `"restart_required":false`) {
+		t.Fatalf("synced proxy provider delete status=%d body=%s", deletedProvider.Code, deletedProvider.Body.String())
+	}
+	active, err = app.readTextFile(mihomoActiveConfigRelPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	userConfig, err = app.readTextFile("configs/mihomo/user_configs/custom.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for path, text := range map[string]string{
+		mihomoActiveConfigRelPath:                 active,
+		"configs/mihomo/user_configs/custom.yaml": userConfig,
+	} {
+		if strings.Contains(text, "synced:") || strings.Contains(text, "https://example.com/synced.yaml") {
+			t.Fatalf("synced provider should be deleted from %s:\n%s", path, text)
+		}
 	}
 
 	groups := requestJSON(t, app, http.MethodPut, "/api/v1/mihomo/proxy-groups-config", token, map[string]any{
@@ -1924,7 +2079,7 @@ func TestMihomoCustomConfigModeProtectsGeneratedConfigAndRestoresBackup(t *testi
 	}
 
 	restored := requestJSON(t, app, http.MethodPost, "/api/v1/mihomo/config/restore-default?restart=false", token, nil)
-	if restored.Code != http.StatusOK || !strings.Contains(restored.Body.String(), `"mode":"generated"`) {
+	if restored.Code != http.StatusOK || !strings.Contains(restored.Body.String(), `"mode":"generated"`) || !strings.Contains(restored.Body.String(), `"active_path":""`) || !strings.Contains(restored.Body.String(), `"is_default":true`) {
 		t.Fatalf("restore default status=%d body=%s", restored.Code, restored.Body.String())
 	}
 	restoredText, err := app.readTextFile(mihomoActiveConfigRelPath)
@@ -1951,6 +2106,7 @@ func TestMihomoConfigAndLogPanelCompatibility(t *testing.T) {
 	if config.Code != http.StatusOK || !strings.Contains(config.Body.String(), "proxy-providers:") || !strings.Contains(config.Body.String(), "RULE-SET,Google,谷歌服务") {
 		t.Fatalf("mihomo raw config should expose complete config.yaml: status=%d body=%s", config.Code, config.Body.String())
 	}
+	app.setMihomoConfigMode("custom")
 	put := requestJSON(t, app, http.MethodPut, "/api/v1/mihomo/config/config.yaml", token, map[string]any{"content": "mode: rule\nmixed-port: 7892\n"})
 	if put.Code != http.StatusOK || !strings.Contains(put.Body.String(), `"restart_required":true`) {
 		t.Fatalf("mihomo config path put status=%d body=%s", put.Code, put.Body.String())
@@ -2120,12 +2276,19 @@ func TestBasicManagementServiceLogsAndConfigAPIs(t *testing.T) {
 	if stats.Code != http.StatusOK || !strings.Contains(stats.Body.String(), `"total":`) || !strings.Contains(stats.Body.String(), `"service":"msf"`) {
 		t.Fatalf("msf log stats should include default app log lines: status=%d body=%s", stats.Code, stats.Body.String())
 	}
-	put := requestJSON(t, app, http.MethodPut, "/api/v1/config/file", token, map[string]any{"path": "configs/mihomo/config.yaml", "content": "mode: rule\n", "comment": "test save"})
+	protectedPut := requestJSON(t, app, http.MethodPut, "/api/v1/config/file", token, map[string]any{"path": "configs/mihomo/config.yaml", "content": "mode: rule\n", "comment": "test save"})
+	if protectedPut.Code != http.StatusBadRequest || !strings.Contains(protectedPut.Body.String(), "protected_runtime_config") {
+		t.Fatalf("runtime Mihomo config should be protected in generic config API: status=%d body=%s", protectedPut.Code, protectedPut.Body.String())
+	}
+	if err := app.writeTextFile("configs/mihomo/user_configs/history.yaml", testMihomoConfigYAML("History")); err != nil {
+		t.Fatal(err)
+	}
+	put := requestJSON(t, app, http.MethodPut, "/api/v1/config/file", token, map[string]any{"path": "configs/mihomo/user_configs/history.yaml", "content": testMihomoConfigYAML("HistorySaved"), "comment": "test save"})
 	if put.Code != http.StatusOK || !strings.Contains(put.Body.String(), "history_id") || !strings.Contains(put.Body.String(), "restart_required") {
 		t.Fatalf("config save response incomplete: status=%d body=%s", put.Code, put.Body.String())
 	}
 	history := requestJSON(t, app, http.MethodGet, "/api/v1/history?service=mihomo&page=1&page_size=1", token, nil)
-	if history.Code != http.StatusOK || !strings.Contains(history.Body.String(), "pagination") || !strings.Contains(history.Body.String(), "configs/mihomo/config.yaml") {
+	if history.Code != http.StatusOK || !strings.Contains(history.Body.String(), "pagination") || !strings.Contains(history.Body.String(), "configs/mihomo/user_configs/history.yaml") {
 		t.Fatalf("history filter response mismatch: status=%d body=%s", history.Code, history.Body.String())
 	}
 }
@@ -2336,8 +2499,11 @@ func TestAPITokenScopesRestrictEffectivePermissions(t *testing.T) {
 		t.Fatalf("read token should not update config, status=%d body=%s", res.Code, res.Body.String())
 	}
 	operateToken := createAPITokenForTest(t, app, admin, map[string]any{"name": "operate-token", "scope": "operate"})
-	if res := requestJSON(t, app, http.MethodPut, "/api/v1/config/file", operateToken, map[string]any{"path": "configs/mihomo/config.yaml", "content": "mode: rule\n"}); res.Code != http.StatusOK {
+	if res := requestJSON(t, app, http.MethodPut, "/api/v1/config/file", operateToken, map[string]any{"path": "configs/mihomo/user_configs/token.yaml", "content": testMihomoConfigYAML("Token")}); res.Code != http.StatusOK {
 		t.Fatalf("operate token should update config, status=%d body=%s", res.Code, res.Body.String())
+	}
+	if res := requestJSON(t, app, http.MethodPut, "/api/v1/config/file", operateToken, map[string]any{"path": "configs/mihomo/config.yaml", "content": "mode: rule\n"}); res.Code != http.StatusBadRequest {
+		t.Fatalf("runtime Mihomo config should be protected for operate token, status=%d body=%s", res.Code, res.Body.String())
 	}
 	if res := requestJSON(t, app, http.MethodPut, "/api/v1/settings", operateToken, map[string]any{"theme": "dark"}); res.Code != http.StatusForbidden {
 		t.Fatalf("operate token should not update settings, status=%d body=%s", res.Code, res.Body.String())
@@ -2349,7 +2515,7 @@ func TestAPITokenScopesRestrictEffectivePermissions(t *testing.T) {
 	if res := requestJSON(t, app, http.MethodPut, "/api/v1/settings", operatorAdminScope, map[string]any{"theme": "dark"}); res.Code != http.StatusForbidden {
 		t.Fatalf("operator-owned admin-scope token should not exceed operator role, status=%d body=%s", res.Code, res.Body.String())
 	}
-	if res := requestJSON(t, app, http.MethodPut, "/api/v1/config/file", operatorAdminScope, map[string]any{"path": "configs/mihomo/config.yaml", "content": "mode: global\n"}); res.Code != http.StatusOK {
+	if res := requestJSON(t, app, http.MethodPut, "/api/v1/config/file", operatorAdminScope, map[string]any{"path": "configs/mihomo/user_configs/operator.yaml", "content": testMihomoConfigYAML("Operator")}); res.Code != http.StatusOK {
 		t.Fatalf("operator-owned admin-scope token should keep operator config permission, status=%d body=%s", res.Code, res.Body.String())
 	}
 }

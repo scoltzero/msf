@@ -84,6 +84,7 @@ func (sm *ServiceManager) Start(ctx context.Context, name string) (ServiceStatus
 	}
 	if st := sm.Status(name); st.Running {
 		sm.setDesired(name, true)
+		sm.app.afterServiceStart(name)
 		return st, nil
 	}
 	if _, err := os.Stat(spec.Binary); err != nil {
@@ -136,6 +137,7 @@ func (sm *ServiceManager) Start(ctx context.Context, name string) (ServiceStatus
 	st := sm.Status(name)
 	if st.Running {
 		sm.setDesired(name, true)
+		sm.app.afterServiceStart(name)
 		return st, nil
 	}
 	if lines, err := tailFile(spec.Stderr, 8); err == nil && len(lines) > 0 {

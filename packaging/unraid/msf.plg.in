@@ -13,12 +13,12 @@
   <CHANGES>
     <![CDATA[
 ### msf __PLUGIN_VERSION__
-- 统一修复 Linux TUN / Docker TUN 默认配置，避免节点服务器域名被 Fake-IP 污染为 `28.0.0.x` 后拨号失败。
-- TUN 模式改为 `stack: system`，保持 `dns-hijack: []`，由 MosDNS 继续负责 DNS 分流。
-- TUN 模式新增 `route-address`、`route-exclude-address` 和 `dns.proxy-server-nameserver` 默认值。
-- 已初始化的 v0.3.7 Docker TUN 生成配置升级后会在启动期自动修复；自定义 Mihomo 配置不会被自动覆盖。
-- 非 Docker 默认模式仍保持 nftables / TProxy / Redirect，普通 Linux、fnOS、Unraid 既有默认行为不变。
-- Docker 镜像额外发布 `ghcr.io/scoltzero/msf:v0.3.8`，不推送 `latest`。
+- Docker host-tun 启动 Mihomo TUN 后会自动补齐 FakeIP IPv4 / IPv6 路由，并尝试关闭出口网卡 `rp_filter`。
+- Mihomo 配置管理不再展示内部运行副本 `config.yaml`，打开页面会优先显示已应用用户配置或“默认配置”。
+- 默认 Mihomo 配置只允许修改 `proxy-providers`；其他 YAML 字段保存后会进入用户自定义配置。
+- 保存、覆盖或复制已应用的 Mihomo 用户配置时会同步内部运行副本，避免配置列表与实际运行配置漂移。
+- MosDNS、MSF 通用配置和 Mihomo 配置管理共用的 YAML 编辑器高亮对齐 VS Code Dark+ 风格。
+- Docker 镜像额外发布 `ghcr.io/scoltzero/msf:v0.3.9`，不推送 `latest`。
     ]]>
   </CHANGES>
 

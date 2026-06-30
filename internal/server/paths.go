@@ -63,6 +63,17 @@ func (a *App) writeTextFile(rel, content string) error {
 	return os.WriteFile(path, []byte(content), 0644)
 }
 
+func (a *App) writeTextFileDirect(rel, content string) error {
+	path, err := a.safePath(rel)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(content), 0644)
+}
+
 func serviceFromPath(path string) string {
 	switch {
 	case strings.Contains(path, "mosdns"):

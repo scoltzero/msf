@@ -23,7 +23,7 @@ import {
 import { AppShell } from "@/components/AppShell";
 import { useToaster, ToastStack } from "@/components/Toaster";
 import { YamlEditor } from "@/components/mihomo/YamlEditor";
-import { api, apiList, formatBytes, formatPercent } from "@/lib/api";
+import { ApiError, api, apiList, formatBytes, formatPercent } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const DEFAULT_PATH = "configs/mihomo/config.yaml";
@@ -60,6 +60,9 @@ interface ConfigModeInfo {
   mode?: "generated" | "custom";
   backup_path?: string;
   backup_exists?: boolean;
+  active_path?: string;
+  active_name?: string;
+  is_default?: boolean;
   protected_fields?: string[];
   protected_warning?: string;
 }
@@ -124,6 +127,14 @@ function cpuText(status: ServiceStatus | null) {
   return formatPercent(status.cpu_percent ?? status.cpu);
 }
 
+function configDisplayName(path: string, modeInfo: ConfigModeInfo) {
+  if (path === DEFAULT_PATH) {
+    if (modeInfo.active_name) return modeInfo.active_name;
+    return modeInfo.is_default === false ? "用户自定义配置" : "默认配置";
+  }
+  return fileName(path);
+}
+
 export default function MihomoConfigPage() {
   const { toasts, showToast } = useToaster();
   const [content, setContent] = useState("");
@@ -142,6 +153,11 @@ export default function MihomoConfigPage() {
   const fileRef = useRef<HTMLInputElement>(null);
 
   const running = isRunning(status);
+  const activeUserPath = useMemo(() => {
+    const activeFile = files.find((file) => file.active);
+    return modeInfo.active_path || (activeFile ? configPathFor(activeFile) : "");
+  }, [files, modeInfo.active_path]);
+  const currentConfigName = useMemo(() => configDisplayName(path, modeInfo), [modeInfo, path]);
 
   const loadStatus = useCallback(async () => {
     try {
@@ -161,28 +177,42 @@ export default function MihomoConfigPage() {
       const payload = await api<any>("/api/v1/mihomo/user-configs");
       const data = payload.data || payload;
       setSuggestedName(String(data.suggested_name || payload.suggested_name || "user_config_0.yaml"));
+      const activePath = String(data.active_path || payload.active_path || "");
       const fileRows = apiList<ConfigFile>(data, ["items", "files"]);
       if (fileRows.length > 0) {
-        setFiles(fileRows);
-        return;
+        const items = fileRows.map((file) => {
+          const itemPath = configPathFor(file);
+          return { ...file, active: Boolean(file.active) || itemPath === activePath };
+        });
+        setFiles(items);
+        return { files: items, activePath };
       }
       const names = apiList<string>(data, ["configs"]);
-      setFiles(names.map((name) => ({ name, path: configPathFor(name) })));
+      const items = names.map((name) => {
+        const itemPath = configPathFor(name);
+        return { name, path: itemPath, active: itemPath === activePath };
+      });
+      setFiles(items);
+      return { files: items, activePath };
     } catch (err) {
       showToast(err instanceof Error ? err.message : String(err));
+      return { files: [] as ConfigFile[], activePath: "" };
     }
   }, [showToast]);
 
   const loadMode = useCallback(async () => {
     try {
       const payload = await api<any>("/api/v1/mihomo/config/mode");
-      setModeInfo((payload.data || payload) as ConfigModeInfo);
+      const info = (payload.data || payload) as ConfigModeInfo;
+      setModeInfo(info);
+      return info;
     } catch (err) {
       showToast(err instanceof Error ? err.message : String(err));
+      return {} as ConfigModeInfo;
     }
   }, [showToast]);
 
-  const loadConfig = useCallback(async (nextPath = path) => {
+  const loadConfig = useCallback(async (nextPath = DEFAULT_PATH) => {
     setLoading(true);
     try {
       const payload = await api<any>(`/api/v1/mihomo/config?path=${encodeURIComponent(nextPath)}`);
@@ -196,11 +226,14 @@ export default function MihomoConfigPage() {
     } finally {
       setLoading(false);
     }
-  }, [path, showToast]);
+  }, [showToast]);
 
-  const reloadAll = useCallback(async () => {
-    await Promise.all([loadConfig(path), loadFiles(), loadStatus(), loadMode()]);
-  }, [loadConfig, loadFiles, loadMode, loadStatus, path]);
+  const reloadAll = useCallback(async (preferredPath?: string) => {
+    const [filesResult, modeResult] = await Promise.all([loadFiles(), loadMode()]);
+    const activePath = modeResult.active_path || filesResult.activePath;
+    const nextPath = preferredPath || activePath || DEFAULT_PATH;
+    await Promise.all([loadConfig(nextPath), loadStatus()]);
+  }, [loadConfig, loadFiles, loadMode, loadStatus]);
 
   useEffect(() => {
     void reloadAll();
@@ -229,12 +262,14 @@ export default function MihomoConfigPage() {
       body: JSON.stringify({ path: targetPath, restart: true }),
     });
     const validation = payload.data?.validation as ConfigValidation | undefined;
+    const modePayload = payload.data?.mode as ConfigModeInfo | undefined;
+    if (modePayload) setModeInfo(modePayload);
     setWarnings(validation?.warnings || []);
-    await Promise.all([loadFiles(), loadStatus(), loadMode()]);
+    await Promise.all([loadConfig(targetPath), loadFiles(), loadStatus(), loadMode()]);
     showToast((validation?.warnings || []).length > 0 ? "配置已应用并重启，但存在关键字段告警" : "配置已应用并重启 Mihomo");
-  }, [loadFiles, loadMode, loadStatus, showToast]);
+  }, [loadConfig, loadFiles, loadMode, loadStatus, showToast]);
 
-  const save = useCallback(async (applyAfterSave = false) => {
+  const saveUserConfig = useCallback(async (applyAfterSave = false) => {
     const name = promptConfigName();
     if (!name) return;
     setSaving(true);
@@ -254,7 +289,9 @@ export default function MihomoConfigPage() {
       setDirty(false);
       setPath(savedPath);
       showToast(nextWarnings.length > 0 ? "用户配置已保存，但存在关键字段告警" : "用户配置已保存");
-      await loadFiles();
+      const modePayload = payload.data?.mode as ConfigModeInfo | undefined;
+      if (modePayload) setModeInfo(modePayload);
+      await Promise.all([loadFiles(), loadMode()]);
       if (applyAfterSave) {
         await applyUserConfigPath(savedPath);
       }
@@ -263,7 +300,46 @@ export default function MihomoConfigPage() {
     } finally {
       setSaving(false);
     }
-  }, [applyUserConfigPath, content, loadFiles, promptConfigName, showToast]);
+  }, [applyUserConfigPath, content, loadFiles, loadMode, promptConfigName, showToast]);
+
+  const saveDefaultConfig = useCallback(async (applyAfterSave = false) => {
+    setSaving(true);
+    try {
+      const payload = await api<any>("/api/v1/mihomo/config", {
+        method: "PUT",
+        body: JSON.stringify({ path: DEFAULT_PATH, content, restart: applyAfterSave }),
+      });
+      if (payload.success === false) {
+        showToast(payload.error || "配置保存失败");
+        return;
+      }
+      const validation = payload.data?.validation as ConfigValidation | undefined;
+      const modePayload = payload.data?.mode as ConfigModeInfo | undefined;
+      if (modePayload) setModeInfo(modePayload);
+      setWarnings(validation?.warnings || []);
+      setDirty(false);
+      setPath(DEFAULT_PATH);
+      await Promise.all([loadFiles(), loadStatus(), loadMode()]);
+      showToast(applyAfterSave ? "默认配置已保存并重启 Mihomo" : "默认配置已保存");
+    } catch (err) {
+      if (err instanceof ApiError && err.code === "default_config_requires_user_config") {
+        showToast("默认配置只允许修改节点供应商，请保存为用户配置");
+        await saveUserConfig(applyAfterSave);
+        return;
+      }
+      showToast(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
+  }, [content, loadFiles, loadMode, loadStatus, saveUserConfig, showToast]);
+
+  const save = useCallback(async (applyAfterSave = false) => {
+    if (path === DEFAULT_PATH) {
+      await saveDefaultConfig(applyAfterSave);
+      return;
+    }
+    await saveUserConfig(applyAfterSave);
+  }, [path, saveDefaultConfig, saveUserConfig]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -308,7 +384,7 @@ export default function MihomoConfigPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = fileName(path);
+    a.download = path === DEFAULT_PATH ? "default_config.yaml" : fileName(path);
     a.click();
     URL.revokeObjectURL(url);
     showToast("配置已下载");
@@ -356,7 +432,7 @@ export default function MihomoConfigPage() {
     try {
       await api("/api/v1/mihomo/config/restore-default", { method: "POST" });
       showToast("已恢复预设配置并重启 Mihomo");
-      await reloadAll();
+      await reloadAll(DEFAULT_PATH);
     } catch (err) {
       showToast(err instanceof Error ? err.message : String(err));
     } finally {
@@ -408,16 +484,17 @@ export default function MihomoConfigPage() {
     try {
       await api(`/api/v1/mihomo/user-configs/${encodeURIComponent(name)}`, { method: "DELETE" });
       if (targetPath === path) {
-        await loadConfig(DEFAULT_PATH);
+        await reloadAll(DEFAULT_PATH);
+      } else {
+        await loadFiles();
       }
-      await loadFiles();
       showToast("用户配置已删除");
     } catch (err) {
       showToast(err instanceof Error ? err.message : "删除配置失败");
     } finally {
       setActing(false);
     }
-  }, [loadConfig, loadFiles, path, showToast]);
+  }, [loadFiles, path, reloadAll, showToast]);
 
   const serviceInfo = useMemo(() => [
     ["版本", version || status?.version || "-"],
@@ -446,14 +523,6 @@ export default function MihomoConfigPage() {
               >
                 <span className={cn("h-1.5 w-1.5 rounded-full", running ? "bg-green-500 animate-pulse" : "bg-muted-foreground")} />
                 {serviceStatusText(status)}
-              </span>
-              <span
-                className={cn(
-                  "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
-                  modeInfo.mode === "custom" ? "bg-amber-500/10 text-amber-600 dark:text-amber-400" : "bg-blue-500/10 text-blue-600 dark:text-blue-400"
-                )}
-              >
-                {modeInfo.mode === "custom" ? "自定义配置" : "系统预设"}
               </span>
             </div>
             <div className="ml-auto flex items-center gap-1.5">
@@ -484,7 +553,7 @@ export default function MihomoConfigPage() {
             ))}
           </div>
           <div className="mt-3 rounded-lg bg-muted/40 px-3 py-2 font-mono text-xs text-muted-foreground">
-            {path === DEFAULT_PATH ? "当前运行配置（内部 config.yaml）" : path}
+            当前配置：{currentConfigName}
           </div>
           {modeInfo.protected_warning && (
             <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs leading-5 text-amber-700 dark:text-amber-300">
@@ -508,7 +577,7 @@ export default function MihomoConfigPage() {
               <button onClick={restoreDefault} disabled={acting} className="rounded-lg border border-border/60 p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50" aria-label="恢复预设" title="恢复 MSF 预设配置">
                 <RotateCcw className="h-4 w-4" />
               </button>
-              <button onClick={() => void reloadAll()} disabled={loading} className="rounded-lg border border-border/60 p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50" aria-label="刷新配置" title="刷新配置">
+              <button onClick={() => void reloadAll(path)} disabled={loading} className="rounded-lg border border-border/60 p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50" aria-label="刷新配置" title="刷新配置">
                 <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
               </button>
               <button onClick={copy} disabled={!content} className="rounded-lg border border-border/60 p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50" aria-label="复制配置" title="复制配置">
@@ -556,7 +625,7 @@ export default function MihomoConfigPage() {
           )}
 
           <div className="flex flex-wrap items-center gap-2 border-t border-border/50 px-4 py-3">
-            <p className="font-mono text-xs text-muted-foreground">{path === DEFAULT_PATH ? "当前运行配置" : fileName(path)}</p>
+            <p className="font-mono text-xs text-muted-foreground">{currentConfigName}</p>
             <div className="ml-auto flex items-center gap-2">
               <button onClick={validate} disabled={!content} className="flex items-center gap-1.5 rounded-lg border border-border/60 px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50">
                 <CheckCircle2 className="h-4 w-4" />
@@ -597,13 +666,18 @@ export default function MihomoConfigPage() {
               )}
               {files.map((file) => {
                 const itemPath = configPathFor(file);
-                const active = itemPath === path;
+                const applied = Boolean(file.active) || itemPath === activeUserPath;
+                const selected = itemPath === path;
                 return (
                   <div
                     key={itemPath}
                     className={cn(
-                      "flex items-center gap-2 rounded-lg px-3 py-2 transition-colors",
-                      active ? "bg-primary/10 text-primary" : "bg-muted/40 text-foreground hover:bg-muted"
+                      "flex items-center gap-2 rounded-lg border px-3 py-2 transition-colors",
+                      applied
+                        ? "border-primary/30 bg-primary/10 text-primary"
+                        : selected
+                          ? "border-border bg-muted/70 text-foreground"
+                          : "border-transparent bg-muted/40 text-foreground hover:bg-muted"
                     )}
                   >
                     <button
@@ -612,7 +686,7 @@ export default function MihomoConfigPage() {
                     >
                       <div className="truncate font-mono text-sm">{file.name || fileName(itemPath)}</div>
                       <div className="mt-0.5 flex items-center gap-2 text-[11px] text-muted-foreground">
-                        {file.active && <span className="text-green-500">已应用</span>}
+                        {applied && <span className="text-green-500">已应用</span>}
                         {file.modified && <span>{file.modified}</span>}
                       </div>
                     </button>
@@ -644,7 +718,7 @@ export default function MihomoConfigPage() {
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm animate-fade-in">
           <div className="flex h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl animate-scale-in">
             <div className="flex items-center gap-3 border-b border-border/50 px-4 py-3">
-              <h3 className="font-semibold text-foreground">{path === DEFAULT_PATH ? "当前运行配置" : fileName(path)}</h3>
+              <h3 className="font-semibold text-foreground">{currentConfigName}</h3>
               {dirty && <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400">未保存</span>}
               <button onClick={() => setFullscreen(false)} className="ml-auto rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="关闭">
                 <X className="h-4 w-4" />

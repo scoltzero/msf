@@ -78,6 +78,8 @@ interface Provider {
 interface ProviderSource {
   name: string;
   url: string;
+  type: string;
+  vehicleType: string;
 }
 
 interface ProxyGroupDraft {
@@ -453,7 +455,13 @@ function normalizeProviderSources(payload: any): ProviderSource[] {
   const data = apiData<any>(payload, payload);
   const items = apiList<any>(data, ["items", "data"]);
   return items
-    .map((item) => ({ name: stringValue(item.name), url: stringValue(item.url) }))
+    .map((item) => ({
+      name: stringValue(item.name),
+      url: stringValue(item.url),
+      type: stringValue(item.type).toLowerCase(),
+      vehicleType: providerVehicleType(item),
+    }))
+    .filter((item) => item.name !== "msf_manual" && item.type !== "file" && item.vehicleType !== "file")
     .filter((item) => item.name || item.url);
 }
 
@@ -1198,7 +1206,9 @@ export default function MihomoProxiesPage() {
   };
 
   const saveSources = async (restart: boolean) => {
-    const cleaned = sources.map((source) => ({ name: source.name.trim(), url: source.url.trim() })).filter((source) => source.name || source.url);
+    const cleaned = sources
+      .map((source) => ({ ...source, name: source.name.trim(), url: source.url.trim() }))
+      .filter((source) => source.name || source.url);
     if (cleaned.some((source) => !source.name || !source.url)) {
       showToast("供应商名称和 URL 不能为空");
       return;
@@ -1766,7 +1776,7 @@ export default function MihomoProxiesPage() {
 
             <div className="mt-4 flex items-center justify-between gap-2">
               <button
-                onClick={() => setSources((arr) => [...arr, { name: "", url: "" }])}
+                onClick={() => setSources((arr) => [...arr, { name: "", url: "", type: "http", vehicleType: "" }])}
                 className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-input bg-background text-sm font-medium hover:bg-muted transition-colors"
               >
                 <Plus className="h-4 w-4" />

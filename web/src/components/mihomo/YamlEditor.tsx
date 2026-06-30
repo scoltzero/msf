@@ -4,7 +4,7 @@ import { useEffect, useRef, type CSSProperties } from "react";
 import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap } from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { yaml } from "@codemirror/lang-yaml";
-import { bracketMatching, defaultHighlightStyle, foldGutter, indentOnInput, syntaxHighlighting } from "@codemirror/language";
+import { bracketMatching, foldGutter, HighlightStyle, indentOnInput, syntaxHighlighting } from "@codemirror/language";
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
 import { EditorState } from "@codemirror/state";
 import {
@@ -16,12 +16,27 @@ import {
   keymap,
   lineNumbers,
 } from "@codemirror/view";
-import { oneDark } from "@codemirror/theme-one-dark";
+import { tags as t } from "@lezer/highlight";
 
 function maxHeightValue(value: CSSProperties["maxHeight"]) {
   if (typeof value === "number") return `${value}px`;
   return value == null ? "460px" : String(value);
 }
+
+const vscodeDarkYamlHighlight = HighlightStyle.define([
+  { tag: t.comment, color: "#6A9955", fontStyle: "italic" },
+  { tag: [t.string, t.special(t.string)], color: "#CE9178" },
+  { tag: [t.number, t.integer, t.float], color: "#B5CEA8" },
+  { tag: [t.bool, t.null], color: "#569CD6" },
+  { tag: [t.propertyName, t.definition(t.propertyName), t.labelName], color: "#9CDCFE" },
+  { tag: [t.keyword, t.atom], color: "#569CD6" },
+  { tag: [t.variableName, t.definition(t.variableName)], color: "#4EC9B0" },
+  { tag: [t.name, t.tagName], color: "#4EC9B0" },
+  { tag: [t.className, t.typeName], color: "#4EC9B0" },
+  { tag: [t.operator, t.punctuation, t.separator], color: "#D4D4D4" },
+  { tag: [t.bracket, t.squareBracket, t.brace, t.paren], color: "#D4D4D4" },
+  { tag: [t.invalid], color: "#F44747", textDecoration: "underline" },
+]);
 
 export function YamlEditor({
   value,
@@ -65,8 +80,7 @@ export function YamlEditor({
           autocompletion(),
           highlightSelectionMatches(),
           yaml(),
-          syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
-          oneDark,
+          syntaxHighlighting(vscodeDarkYamlHighlight, { fallback: true }),
           keymap.of([
             indentWithTab,
             ...closeBracketsKeymap,

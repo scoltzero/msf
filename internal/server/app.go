@@ -133,7 +133,10 @@ func (a *App) EnsureBaseLayout() error {
 	if err := cloudflareredirect.EnsureDefaultConfig(a.DataDir); err != nil {
 		return err
 	}
-	return a.ensureCompatibilityLayout()
+	if err := a.ensureCompatibilityLayout(); err != nil {
+		return err
+	}
+	return a.reconcileAppliedMihomoUserConfig()
 }
 
 func (a *App) Router() http.Handler {
