@@ -13,12 +13,10 @@
   <CHANGES>
     <![CDATA[
 ### msf __PLUGIN_VERSION__
-- Docker host-tun 启动 Mihomo TUN 后会自动补齐 FakeIP IPv4 / IPv6 路由，并尝试关闭出口网卡 `rp_filter`。
-- Mihomo 配置管理不再展示内部运行副本 `config.yaml`，打开页面会优先显示已应用用户配置或“默认配置”。
-- 默认 Mihomo 配置只允许修改 `proxy-providers`；其他 YAML 字段保存后会进入用户自定义配置。
-- 保存、覆盖或复制已应用的 Mihomo 用户配置时会同步内部运行副本，避免配置列表与实际运行配置漂移。
-- MosDNS、MSF 通用配置和 Mihomo 配置管理共用的 YAML 编辑器高亮对齐 VS Code Dark+ 风格。
-- Docker 镜像额外发布 `ghcr.io/scoltzero/msf:v0.3.9`，不推送 `latest`。
+- 修复 Mihomo 代理供应商管理与已应用用户配置的同步语义。
+- “管理代理供应商”保存后只同步 `proxy-providers` 引用字段，不再用内部运行副本整份覆盖用户配置。
+- 订阅下载后的供应商文件内容继续保存在 `configs/mihomo/proxy_providers/*.yaml`，不会被合并进用户配置 YAML。
+- Docker 镜像额外发布 `ghcr.io/scoltzero/msf:v0.3.9.1`，不推送 `latest`。
     ]]>
   </CHANGES>
 

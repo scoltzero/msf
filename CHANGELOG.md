@@ -6,6 +6,36 @@
 
 ### English
 
+## v0.3.9.1 - 2026-06-30
+
+### 中文
+
+#### 说明
+
+- 这是 `v0.3.9` 的小修补发布，用于修正 Mihomo 代理供应商管理与用户配置同步语义。
+- 本版本 GitHub Release 资产数量与 v0.3.9 保持一致：Linux amd64/arm64 tarball、Unraid `.txz`/`.plg`，以及从同步后的 `fnos-fpk` 分支构建的 fnOS x86/arm `.fpk` 包，共 12 个 release assets。
+- Docker 镜像额外以 `ghcr.io/scoltzero/msf:v0.3.9.1` 发布，不推送 `latest`。
+
+#### 修复
+
+- Mihomo“管理代理供应商”保存后，只把用户修改的 `proxy-providers` 引用字段同步到已应用的用户配置。
+- 订阅下载后的供应商文件内容继续保存在 `configs/mihomo/proxy_providers/*.yaml` 并由 `proxy-providers` 引用，不再把下载后的节点内容合并进用户配置 YAML。
+- 代理供应商、规则供应商和代理分组等面板保存配置 section 时，不再用内部运行副本 `configs/mihomo/config.yaml` 整份覆盖用户配置，避免运行态内容污染用户配置。
+
+### English
+
+#### Notes
+
+- This is a small patch release for `v0.3.9`, fixing Mihomo proxy provider management and applied user config synchronization semantics.
+- GitHub Release assets remain aligned with v0.3.9: Linux amd64/arm64 tarballs, Unraid `.txz`/`.plg`, and fnOS x86/arm `.fpk` packages built from the synced `fnos-fpk` branch, for 12 release assets total.
+- The Docker image is additionally published as `ghcr.io/scoltzero/msf:v0.3.9.1`. The `latest` tag is not pushed.
+
+#### Fixed
+
+- Saving Mihomo proxy providers now syncs only the user-edited `proxy-providers` reference section into the applied user config.
+- Downloaded subscription provider contents remain in `configs/mihomo/proxy_providers/*.yaml` and are referenced by `proxy-providers`; downloaded node contents are no longer merged into the user config YAML.
+- Config section saves from provider, rule-provider, and proxy-group panels no longer overwrite the applied user config with the entire internal runtime copy `configs/mihomo/config.yaml`, avoiding runtime content leakage into user-managed config files.
+
 ## v0.3.9 - 2026-06-30
 
 ### 中文

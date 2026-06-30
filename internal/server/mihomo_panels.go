@@ -1027,11 +1027,59 @@ func (a *App) writeMihomoConfigMap(cfg map[string]any, sections ...string) error
 	if err := a.writeTextFile("configs/mihomo/config.yaml", content); err != nil {
 		return err
 	}
+	if len(sections) > 0 {
+		return a.syncAppliedMihomoUserConfigSections(cfg, sections, "system")
+	}
 	return a.syncAppliedMihomoUserConfig(content)
 }
 
 func (a *App) syncAppliedMihomoUserConfig(content string) error {
 	return a.syncAppliedMihomoUserConfigAs(content, "system")
+}
+
+func (a *App) syncAppliedMihomoUserConfigSections(cfg map[string]any, sections []string, username string) error {
+	rel, ok := a.appliedMihomoUserConfigRel()
+	if !ok {
+		return nil
+	}
+	path, err := a.safePath(rel)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat(path); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	oldContent, err := a.readTextFile(rel)
+	if err != nil {
+		return err
+	}
+	var userCfg map[string]any
+	if err := yaml.Unmarshal([]byte(oldContent), &userCfg); err != nil {
+		return err
+	}
+	if userCfg == nil {
+		userCfg = map[string]any{}
+	}
+	for _, section := range sections {
+		if value, ok := cfg[section]; ok {
+			userCfg[section] = value
+		} else {
+			delete(userCfg, section)
+		}
+	}
+	b, err := yaml.Marshal(userCfg)
+	if err != nil {
+		return err
+	}
+	content := string(b)
+	validation := a.validateMihomoConfigContent(content)
+	if !validation.Valid {
+		return fmt.Errorf("%s", validation.Error)
+	}
+	return a.syncAppliedMihomoUserConfigAs(content, username)
 }
 
 func (a *App) syncAppliedMihomoUserConfigAs(content, username string) error {

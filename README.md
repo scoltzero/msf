@@ -10,7 +10,7 @@
 
 `msf` 是一个面向 MosDNS + Mihomo 工作流的 MSM 风格管理面板重构版。项目目标是提供可自部署、可审计的 DNS 分流、透明代理、Mihomo 管理和多平台安装体验。
 
-当前发布版本：`v0.3.9`
+当前发布版本：`v0.3.9.1`
 
 > **提示：Cloudflare Redirect CLI 插件为测试功能。** 它用于让“不走代理的客户端”访问用户指定的 Cloudflare 盾站时，返回本机网络实测较快的 Cloudflare CDN IPv4/IPv6。该功能依赖本机网络、运营商路由、Cloudflare Anycast、域名名单质量和 MosDNS 当前配置，不保证一定比原解析更快或更稳定。详细用法见 [Cloudflare Redirect 文档](docs/plugins/cloudflare-redirect.md)。
 
@@ -46,16 +46,16 @@
 GitHub Release：
 
 ```text
-https://github.com/scoltzero/msf/releases/tag/v0.3.9
+https://github.com/scoltzero/msf/releases/tag/v0.3.9.1
 ```
 
 | 资产 | 下载地址 |
 |---|---|
-| Linux x86_64 | `https://github.com/scoltzero/msf/releases/download/v0.3.9/msf-linux-amd64.tar.gz` |
-| Linux ARM64 | `https://github.com/scoltzero/msf/releases/download/v0.3.9/msf-linux-arm64.tar.gz` |
-| fnOS x86 FPK | `https://github.com/scoltzero/msf/releases/download/v0.3.9/msf_0.3.9_x86.fpk` |
-| fnOS ARM FPK | `https://github.com/scoltzero/msf/releases/download/v0.3.9/msf_0.3.9_arm.fpk` |
-| Unraid PLG | `https://github.com/scoltzero/msf/releases/download/v0.3.9/msf.plg` |
+| Linux x86_64 | `https://github.com/scoltzero/msf/releases/download/v0.3.9.1/msf-linux-amd64.tar.gz` |
+| Linux ARM64 | `https://github.com/scoltzero/msf/releases/download/v0.3.9.1/msf-linux-arm64.tar.gz` |
+| fnOS x86 FPK | `https://github.com/scoltzero/msf/releases/download/v0.3.9.1/msf_0.3.9.1_x86.fpk` |
+| fnOS ARM FPK | `https://github.com/scoltzero/msf/releases/download/v0.3.9.1/msf_0.3.9.1_arm.fpk` |
+| Unraid PLG | `https://github.com/scoltzero/msf/releases/download/v0.3.9.1/msf.plg` |
 
 ## 快速开始
 

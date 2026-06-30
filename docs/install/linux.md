@@ -2,19 +2,19 @@
 
 本页面适用于普通 Linux 主机上的 `msf-linux-amd64.tar.gz` / `msf-linux-arm64.tar.gz` 安装包。Linux tarball/systemd 是当前推荐的通用安装方式，也是唯一支持 `msf update` 和 `msf uninstall` 的安装方式。
 
-当前版本：`v0.3.9`
+当前版本：`v0.3.9.1`
 
 ## 下载
 
 | 架构 | 下载地址 |
 |---|---|
-| x86_64 / amd64 | `https://github.com/scoltzero/msf/releases/download/v0.3.9/msf-linux-amd64.tar.gz` |
-| ARM64 / aarch64 | `https://github.com/scoltzero/msf/releases/download/v0.3.9/msf-linux-arm64.tar.gz` |
+| x86_64 / amd64 | `https://github.com/scoltzero/msf/releases/download/v0.3.9.1/msf-linux-amd64.tar.gz` |
+| ARM64 / aarch64 | `https://github.com/scoltzero/msf/releases/download/v0.3.9.1/msf-linux-arm64.tar.gz` |
 
 Release 页面：
 
 ```text
-https://github.com/scoltzero/msf/releases/tag/v0.3.9
+https://github.com/scoltzero/msf/releases/tag/v0.3.9.1
 ```
 
 ## 安装
@@ -23,20 +23,20 @@ x86_64 / amd64：
 
 ```bash
 curl -L -o msf-linux-amd64.tar.gz \
-  https://github.com/scoltzero/msf/releases/download/v0.3.9/msf-linux-amd64.tar.gz
+  https://github.com/scoltzero/msf/releases/download/v0.3.9.1/msf-linux-amd64.tar.gz
 
 tar -xzf msf-linux-amd64.tar.gz -C /tmp
-sudo /tmp/msf-0.3.9-linux-amd64/install.sh
+sudo /tmp/msf-0.3.9.1-linux-amd64/install.sh
 ```
 
 ARM64 / aarch64：
 
 ```bash
 curl -L -o msf-linux-arm64.tar.gz \
-  https://github.com/scoltzero/msf/releases/download/v0.3.9/msf-linux-arm64.tar.gz
+  https://github.com/scoltzero/msf/releases/download/v0.3.9.1/msf-linux-arm64.tar.gz
 
 tar -xzf msf-linux-arm64.tar.gz -C /tmp
-sudo /tmp/msf-0.3.9-linux-arm64/install.sh
+sudo /tmp/msf-0.3.9.1-linux-arm64/install.sh
 ```
 
 安装脚本默认完成这些操作：

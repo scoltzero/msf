@@ -18,7 +18,7 @@ func TestDockerRunScriptHostTunDryRun(t *testing.T) {
 		"--network host",
 		"--device /dev/net/tun:/dev/net/tun",
 		"-e MSF_DOCKER_NETWORK_MODE=host-tun",
-		"ghcr.io/scoltzero/msf:v0.3.8",
+		"ghcr.io/scoltzero/msf:v0.3.9.1",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("host dry run missing %q:\n%s", want, out)

@@ -1,6 +1,6 @@
 services:
   msf:
-    image: ${MSF_IMAGE:-ghcr.io/scoltzero/msf:v0.3.9}
+    image: ${MSF_IMAGE:-ghcr.io/scoltzero/msf:v0.3.9.1}
     container_name: ${MSF_CONTAINER_NAME:-msf}
     cap_add:
       - NET_ADMIN

@@ -10,7 +10,7 @@
 
 `msf` is an open-source reimplementation of the MSM-style management experience for the MosDNS + Mihomo workflow. It focuses on self-hosted DNS split routing, transparent proxy management, Mihomo management, and platform-native installs.
 
-Current release: `v0.3.9`
+Current release: `v0.3.9.1`
 
 > **Tip: Cloudflare Redirect is experimental.** The `msf cloudflare-redirect` CLI can rewrite user-selected Cloudflare-protected domains to locally scanned Cloudflare CDN IPv4/IPv6 addresses for direct clients only. Results depend on the msf host's ISP route, Cloudflare Anycast, IPv6 reachability, domain-list quality, and MosDNS config. See [Cloudflare Redirect docs](docs/plugins/cloudflare-redirect.md).
 
@@ -46,16 +46,16 @@ Current release: `v0.3.9`
 GitHub Release:
 
 ```text
-https://github.com/scoltzero/msf/releases/tag/v0.3.9
+https://github.com/scoltzero/msf/releases/tag/v0.3.9.1
 ```
 
 | Asset | URL |
 |---|---|
-| Linux x86_64 | `https://github.com/scoltzero/msf/releases/download/v0.3.9/msf-linux-amd64.tar.gz` |
-| Linux ARM64 | `https://github.com/scoltzero/msf/releases/download/v0.3.9/msf-linux-arm64.tar.gz` |
-| fnOS x86 FPK | `https://github.com/scoltzero/msf/releases/download/v0.3.9/msf_0.3.9_x86.fpk` |
-| fnOS ARM FPK | `https://github.com/scoltzero/msf/releases/download/v0.3.9/msf_0.3.9_arm.fpk` |
-| Unraid PLG | `https://github.com/scoltzero/msf/releases/download/v0.3.9/msf.plg` |
+| Linux x86_64 | `https://github.com/scoltzero/msf/releases/download/v0.3.9.1/msf-linux-amd64.tar.gz` |
+| Linux ARM64 | `https://github.com/scoltzero/msf/releases/download/v0.3.9.1/msf-linux-arm64.tar.gz` |
+| fnOS x86 FPK | `https://github.com/scoltzero/msf/releases/download/v0.3.9.1/msf_0.3.9.1_x86.fpk` |
+| fnOS ARM FPK | `https://github.com/scoltzero/msf/releases/download/v0.3.9.1/msf_0.3.9.1_arm.fpk` |
+| Unraid PLG | `https://github.com/scoltzero/msf/releases/download/v0.3.9.1/msf.plg` |
 
 ## Quick Start
 

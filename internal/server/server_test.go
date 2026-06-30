@@ -2011,6 +2011,14 @@ func TestMihomoCustomConfigModeProtectsGeneratedConfigAndRestoresBackup(t *testi
 		t.Fatalf("custom config should not be overwritten by generated writes:\n%s", active)
 	}
 
+	runtimeOnlyActive := strings.Replace(active, "proxy-groups:", "proxies:\n  - name: downloaded-airport-node\n    type: ss\n    server: runtime.example\n    port: 443\nproxy-groups:", 1)
+	if runtimeOnlyActive == active {
+		t.Fatalf("test fixture should contain proxy-groups for runtime marker injection:\n%s", active)
+	}
+	if err := app.writeTextFileDirect(mihomoActiveConfigRelPath, runtimeOnlyActive); err != nil {
+		t.Fatal(err)
+	}
+
 	syncedProvider := requestJSON(t, app, http.MethodPut, "/api/v1/mihomo/proxy-providers/synced", token, map[string]any{
 		"url":      "https://example.com/synced.yaml",
 		"interval": 3600,
@@ -2033,6 +2041,15 @@ func TestMihomoCustomConfigModeProtectsGeneratedConfigAndRestoresBackup(t *testi
 		if !strings.Contains(text, "synced:") || !strings.Contains(text, "https://example.com/synced.yaml") {
 			t.Fatalf("synced provider missing from %s:\n%s", path, text)
 		}
+	}
+	if !strings.Contains(active, "downloaded-airport-node") {
+		t.Fatalf("runtime-only active config marker should remain in active config:\n%s", active)
+	}
+	if strings.Contains(userConfig, "downloaded-airport-node") || strings.Contains(userConfig, "runtime.example") {
+		t.Fatalf("provider section sync should not copy runtime-only provider contents into user config:\n%s", userConfig)
+	}
+	if !strings.Contains(userConfig, "CopiedApplied") {
+		t.Fatalf("provider section sync should preserve user config fields outside proxy-providers:\n%s", userConfig)
 	}
 	var userHistoryCount int
 	if err := app.DB.QueryRow(`select count(*) from config_histories where service='mihomo' and file_path='configs/mihomo/user_configs/custom.yaml'`).Scan(&userHistoryCount); err != nil {

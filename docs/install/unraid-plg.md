@@ -2,14 +2,14 @@
 
 本页面适用于 Unraid WebGUI 的 `.plg` 插件安装方式。Unraid PLG 是稳定支持的安装方式，更新和卸载都应通过 Unraid 插件管理页面完成。
 
-当前版本：`v0.3.9`
+当前版本：`v0.3.9.1`
 
 ## 安装
 
 在 Unraid WebGUI 中打开 **Plugins / Install Plugin**，填入插件地址：
 
 ```text
-https://github.com/scoltzero/msf/releases/download/v0.3.9/msf.plg
+https://github.com/scoltzero/msf/releases/download/v0.3.9.1/msf.plg
 ```
 
 安装完成后打开 **Settings / MSF Free**，进入轻量插件控制页，再点击打开 WebUI。完整管理界面运行在独立 WebUI 中，不嵌入 Unraid Settings 页面。
@@ -87,7 +87,7 @@ msf uninstall
 Unraid 发布资产包括：
 
 - `msf.plg`
-- `msf-0.3.9-x86_64-1.txz`
+- `msf-0.3.9.1-x86_64-1.txz`
 - 对应 `.sha256` 校验文件
 
 Unraid 打包开发说明见 [packaging/unraid/README.md](../../packaging/unraid/README.md)。运行目录和端口说明见 [运行参考](../reference/runtime.md)。

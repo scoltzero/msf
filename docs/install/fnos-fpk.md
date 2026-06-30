@@ -2,20 +2,20 @@
 
 本页面适用于 fnOS / 飞牛系统上的 `.fpk` 安装包。fnOS FPK 由 `fnos-fpk` 分支在同步 `main` 后构建，运行时由 fnOS / 飞牛应用中心或 FPK 包管理器管理。
 
-当前版本：`v0.3.9`
+当前版本：`v0.3.9.1`
 
 ## 下载
 
 Release 页面：
 
 ```text
-https://github.com/scoltzero/msf/releases/tag/v0.3.9
+https://github.com/scoltzero/msf/releases/tag/v0.3.9.1
 ```
 
 | 架构 | FPK 资产 |
 |---|---|
-| x86 / amd64 | `https://github.com/scoltzero/msf/releases/download/v0.3.9/msf_0.3.9_x86.fpk` |
-| ARM / arm64 | `https://github.com/scoltzero/msf/releases/download/v0.3.9/msf_0.3.9_arm.fpk` |
+| x86 / amd64 | `https://github.com/scoltzero/msf/releases/download/v0.3.9.1/msf_0.3.9.1_x86.fpk` |
+| ARM / arm64 | `https://github.com/scoltzero/msf/releases/download/v0.3.9.1/msf_0.3.9.1_arm.fpk` |
 
 请按 fnOS 设备 CPU 架构选择对应安装包。发布时也会提供对应 `.sha256` 校验文件。
 
