@@ -175,6 +175,11 @@ func (a *App) writeGeneratedConfigs(cfg SetupConfig) error {
 	if err := a.ensureMosDNSRuleFiles(); err != nil {
 		return err
 	}
+	if a.mihomoConfigMode() == "custom" {
+		if err := a.syncMihomoProxyProvidersFromSetupConfig(cfg, "system"); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -839,14 +844,7 @@ func (a *App) ensureMosDNSRuleFiles() error {
 }
 
 func replaceMihomoProxyProviders(content, providersYAML string) string {
-	marker := "\n# 节点订阅\nproxy-providers:"
-	if idx := strings.Index(content, marker); idx >= 0 {
-		return strings.TrimRight(content[:idx], "\n") + "\n\n# 节点订阅\n" + strings.TrimRight(providersYAML, "\n") + "\n"
-	}
-	if idx := strings.LastIndex(content, "\nproxy-providers:"); idx >= 0 {
-		return strings.TrimRight(content[:idx], "\n") + "\n\n" + strings.TrimRight(providersYAML, "\n") + "\n"
-	}
-	return strings.TrimRight(content, "\n") + "\n\n" + strings.TrimRight(providersYAML, "\n") + "\n"
+	return replaceTopLevelYAMLBlock(content, "proxy-providers", providersYAML)
 }
 
 func boolYAML(v bool) string {

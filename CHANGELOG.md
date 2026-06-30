@@ -6,35 +6,45 @@
 
 ### English
 
-## v0.3.9.1 - 2026-06-30
+## v0.3.9.2 - 2026-06-30
 
 ### 中文
 
 #### 说明
 
-- 这是 `v0.3.9` 的小修补发布，用于修正 Mihomo 代理供应商管理与用户配置同步语义。
+- 这是一次 Mihomo 配置管理热修复发布，用于替换并下架存在 provider 同步问题的 v0.3.9 / v0.3.9.1。
 - 本版本 GitHub Release 资产数量与 v0.3.9 保持一致：Linux amd64/arm64 tarball、Unraid `.txz`/`.plg`，以及从同步后的 `fnos-fpk` 分支构建的 fnOS x86/arm `.fpk` 包，共 12 个 release assets。
-- Docker 镜像额外以 `ghcr.io/scoltzero/msf:v0.3.9.1` 发布，不推送 `latest`。
+- Docker 镜像额外以 `ghcr.io/scoltzero/msf:v0.3.9.2` 发布，不推送 `latest`。
 
 #### 修复
 
-- Mihomo“管理代理供应商”保存后，只把用户修改的 `proxy-providers` 引用字段同步到已应用的用户配置。
-- 订阅下载后的供应商文件内容继续保存在 `configs/mihomo/proxy_providers/*.yaml` 并由 `proxy-providers` 引用，不再把下载后的节点内容合并进用户配置 YAML。
-- 代理供应商、规则供应商和代理分组等面板保存配置 section 时，不再用内部运行副本 `configs/mihomo/config.yaml` 整份覆盖用户配置，避免运行态内容污染用户配置。
+- Mihomo 初始化配置里的订阅链接/自定义节点与“代理节点 > 管理代理供应商”统一同步到顶层 `proxy-providers` 引用字段；已应用用户配置只替换该 section，不再写入订阅下载后的节点内容。
+- 自定义节点分享链接再次打开仍保持“分享链接模式”，不会被运行用的 `msf_manual.yaml` 反向覆盖成 `proxies:` YAML 文本。
+- Mihomo 配置页“运行中”旁恢复配置模式标签，用“默认配置 / 用户自定义配置”区分当前运行配置来源，同时继续隐藏内部运行副本 `configs/mihomo/config.yaml`。
+
+#### 受影响用户
+
+- 如果您在 v0.3.9 或 v0.3.9.1 期间通过系统设置或“代理节点 > 管理代理供应商”添加/管理过代理订阅链接，已应用的用户配置可能被错误写入订阅下载后的节点内容。
+- MSF 不会自动猜测和修复这类污染配置。请删除受污染的用户配置后重新创建，避免继续编辑或沿用错误内容。
 
 ### English
 
 #### Notes
 
-- This is a small patch release for `v0.3.9`, fixing Mihomo proxy provider management and applied user config synchronization semantics.
+- This is a Mihomo config-management hotfix release that replaces and retires v0.3.9 / v0.3.9.1, which had incorrect provider synchronization behavior.
 - GitHub Release assets remain aligned with v0.3.9: Linux amd64/arm64 tarballs, Unraid `.txz`/`.plg`, and fnOS x86/arm `.fpk` packages built from the synced `fnos-fpk` branch, for 12 release assets total.
-- The Docker image is additionally published as `ghcr.io/scoltzero/msf:v0.3.9.1`. The `latest` tag is not pushed.
+- The Docker image is additionally published as `ghcr.io/scoltzero/msf:v0.3.9.2`. The `latest` tag is not pushed.
 
 #### Fixed
 
-- Saving Mihomo proxy providers now syncs only the user-edited `proxy-providers` reference section into the applied user config.
-- Downloaded subscription provider contents remain in `configs/mihomo/proxy_providers/*.yaml` and are referenced by `proxy-providers`; downloaded node contents are no longer merged into the user config YAML.
-- Config section saves from provider, rule-provider, and proxy-group panels no longer overwrite the applied user config with the entire internal runtime copy `configs/mihomo/config.yaml`, avoiding runtime content leakage into user-managed config files.
+- Mihomo setup subscriptions/manual nodes and “Proxies > Provider management” now synchronize the top-level `proxy-providers` references consistently. Applied user configs only have that section replaced, and downloaded subscription node payloads are no longer written back.
+- Manual proxy share links remain editable in share-link mode when reopening the settings page, instead of being replaced by the generated `msf_manual.yaml` `proxies:` YAML.
+- The Mihomo config page again shows a running-config mode badge, distinguishing “Default config” from “User custom config” while still hiding the internal runtime copy `configs/mihomo/config.yaml`.
+
+#### Affected Users
+
+- If you added or managed proxy subscription URLs through system settings or “Proxies > Provider management” while running v0.3.9 or v0.3.9.1, your applied user config may have been polluted with downloaded subscription node content.
+- MSF will not try to guess and repair these polluted configs automatically. Delete the polluted user config and recreate it instead of continuing to edit or use the bad content.
 
 ## v0.3.9 - 2026-06-30
 

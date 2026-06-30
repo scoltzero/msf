@@ -22,6 +22,7 @@ func (a *App) handleSetupCheck(w http.ResponseWriter, r *http.Request) {
 	if initialized {
 		if cfg, ok := a.latestSetupConfig(); ok {
 			cfg.defaults()
+			a.applyMihomoProviderFieldsFromEffectiveConfig(&cfg)
 			missing = a.setupMissingComponentsForConfig(cfg)
 			existing = setupConfigPayload(cfg, true)
 		}
@@ -115,6 +116,7 @@ func (a *App) handleSetupGetConfig(w http.ResponseWriter, r *http.Request) {
 	if cfg.SelectedInterface == "" {
 		cfg.SelectedInterface = defaultSetupInterface()
 	}
+	a.applyMihomoProviderFieldsFromEffectiveConfig(&cfg)
 	payload := setupConfigPayload(cfg, initialized)
 	response := map[string]any{"success": true, "config": payload, "data": payload, "is_initialized": initialized}
 	for key, value := range payload {
@@ -188,6 +190,8 @@ type setupConfigRequestMeta struct {
 	GitHubSocks5Proxy        bool
 	GitHubAcceleratorEnabled bool
 	GitHubAcceleratorURL     bool
+	SubscriptionURLs         bool
+	MihomoProxies            bool
 }
 
 func preserveMissingGitHubDownloadFields(cfg *SetupConfig, meta setupConfigRequestMeta, existing SetupConfig) {
@@ -208,6 +212,12 @@ func preserveMissingGitHubDownloadFields(cfg *SetupConfig, meta setupConfigReque
 	}
 	if !meta.GitHubAcceleratorURL {
 		cfg.GitHubAcceleratorURL = existing.GitHubAcceleratorURL
+	}
+	if !meta.SubscriptionURLs {
+		cfg.SubscriptionURLs = existing.SubscriptionURLs
+	}
+	if !meta.MihomoProxies {
+		cfg.MihomoProxies = existing.MihomoProxies
 	}
 }
 
@@ -284,6 +294,8 @@ func decodeSetupConfigRequestWithMeta(r *http.Request, cfg *SetupConfig) (setupC
 		GitHubSocks5Proxy:        setupHasValue(raw, "github_socks5_proxy", "githubSocks5Proxy"),
 		GitHubAcceleratorEnabled: setupHasValue(raw, "github_accelerator_enabled", "githubAcceleratorEnabled"),
 		GitHubAcceleratorURL:     setupHasValue(raw, "github_accelerator_url", "githubAcceleratorURL"),
+		SubscriptionURLs:         setupHasValue(raw, "subscription_urls", "subscriptionURLs"),
+		MihomoProxies:            setupHasValue(raw, "mihomo_proxies", "mihomoProxies"),
 	}
 	cfg.Username = setupString(raw, "username")
 	cfg.Password = setupString(raw, "password")

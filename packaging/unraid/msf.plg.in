@@ -13,10 +13,11 @@
   <CHANGES>
     <![CDATA[
 ### msf __PLUGIN_VERSION__
-- 修复 Mihomo 代理供应商管理与已应用用户配置的同步语义。
-- “管理代理供应商”保存后只同步 `proxy-providers` 引用字段，不再用内部运行副本整份覆盖用户配置。
-- 订阅下载后的供应商文件内容继续保存在 `configs/mihomo/proxy_providers/*.yaml`，不会被合并进用户配置 YAML。
-- Docker 镜像额外发布 `ghcr.io/scoltzero/msf:v0.3.9.1`，不推送 `latest`。
+- Mihomo 初始化配置里的订阅链接/自定义节点与“代理节点 > 管理代理供应商”统一同步到顶层 `proxy-providers` 引用字段；已应用用户配置只替换该 section，不再写入订阅下载后的节点内容。
+- 自定义节点分享链接再次打开仍保持“分享链接模式”，不会被运行用的 `msf_manual.yaml` 反向覆盖成 `proxies:` YAML 文本。
+- Mihomo 配置页“运行中”旁恢复配置模式标签，用“默认配置 / 用户自定义配置”区分当前运行配置来源，同时继续隐藏内部运行副本 `configs/mihomo/config.yaml`。
+- 如果您在 v0.3.9 或 v0.3.9.1 期间添加/管理过代理订阅链接，受污染的用户配置建议删除后重新创建，不建议继续编辑污染文件。
+- Docker 镜像额外发布 `ghcr.io/scoltzero/msf:v0.3.9.2`，不推送 `latest`。
     ]]>
   </CHANGES>
 

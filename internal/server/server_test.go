@@ -2007,16 +2007,20 @@ func TestMihomoCustomConfigModeProtectsGeneratedConfigAndRestoresBackup(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(active, "CopiedApplied") || strings.Contains(active, "https://example.com/sub.yaml") {
-		t.Fatalf("custom config should not be overwritten by generated writes:\n%s", active)
-	}
-
-	runtimeOnlyActive := strings.Replace(active, "proxy-groups:", "proxies:\n  - name: downloaded-airport-node\n    type: ss\n    server: runtime.example\n    port: 443\nproxy-groups:", 1)
-	if runtimeOnlyActive == active {
-		t.Fatalf("test fixture should contain proxy-groups for runtime marker injection:\n%s", active)
-	}
-	if err := app.writeTextFileDirect(mihomoActiveConfigRelPath, runtimeOnlyActive); err != nil {
+	userConfigAfterSetupSync, err := app.readTextFile("configs/mihomo/user_configs/custom.yaml")
+	if err != nil {
 		t.Fatal(err)
+	}
+	for path, text := range map[string]string{
+		mihomoActiveConfigRelPath:                 active,
+		"configs/mihomo/user_configs/custom.yaml": userConfigAfterSetupSync,
+	} {
+		if !strings.Contains(text, "CopiedApplied") || !strings.Contains(text, "https://example.com/sub.yaml") {
+			t.Fatalf("custom config should keep user fields while syncing setup providers in %s:\n%s", path, text)
+		}
+		if strings.Contains(text, "name: 机场节点") || strings.Contains(text, "RULE-SET,Google,谷歌服务") {
+			t.Fatalf("setup provider sync should not replace full user config in %s:\n%s", path, text)
+		}
 	}
 
 	syncedProvider := requestJSON(t, app, http.MethodPut, "/api/v1/mihomo/proxy-providers/synced", token, map[string]any{
@@ -2041,15 +2045,9 @@ func TestMihomoCustomConfigModeProtectsGeneratedConfigAndRestoresBackup(t *testi
 		if !strings.Contains(text, "synced:") || !strings.Contains(text, "https://example.com/synced.yaml") {
 			t.Fatalf("synced provider missing from %s:\n%s", path, text)
 		}
-	}
-	if !strings.Contains(active, "downloaded-airport-node") {
-		t.Fatalf("runtime-only active config marker should remain in active config:\n%s", active)
-	}
-	if strings.Contains(userConfig, "downloaded-airport-node") || strings.Contains(userConfig, "runtime.example") {
-		t.Fatalf("provider section sync should not copy runtime-only provider contents into user config:\n%s", userConfig)
-	}
-	if !strings.Contains(userConfig, "CopiedApplied") {
-		t.Fatalf("provider section sync should preserve user config fields outside proxy-providers:\n%s", userConfig)
+		if !strings.Contains(text, "CopiedApplied") {
+			t.Fatalf("provider sync should preserve user config fields outside proxy-providers in %s:\n%s", path, text)
+		}
 	}
 	var userHistoryCount int
 	if err := app.DB.QueryRow(`select count(*) from config_histories where service='mihomo' and file_path='configs/mihomo/user_configs/custom.yaml'`).Scan(&userHistoryCount); err != nil {
@@ -2106,6 +2104,117 @@ func TestMihomoCustomConfigModeProtectsGeneratedConfigAndRestoresBackup(t *testi
 	if restoredText != original {
 		t.Fatalf("restore should use generated backup\nwant:\n%s\ngot:\n%s", original, restoredText)
 	}
+}
+
+func TestMihomoSetupAndPanelProviderFieldsStayInSync(t *testing.T) {
+	app := newTestApp(t)
+	token := tokenForRole(t, app, "admin")
+
+	custom := testMihomoConfigYAML("KeepUserGroup")
+	save := requestJSON(t, app, http.MethodPut, "/api/v1/mihomo/user-configs", token, map[string]any{"name": "custom.yaml", "content": custom, "overwrite": true})
+	if save.Code != http.StatusOK {
+		t.Fatalf("user config save status=%d body=%s", save.Code, save.Body.String())
+	}
+	apply := requestJSON(t, app, http.MethodPost, "/api/v1/mihomo/user-configs/apply", token, map[string]any{"path": "configs/mihomo/user_configs/custom.yaml", "restart": false})
+	if apply.Code != http.StatusOK {
+		t.Fatalf("user config apply status=%d body=%s", apply.Code, apply.Body.String())
+	}
+
+	setupSave := requestJSON(t, app, http.MethodPut, "/api/v1/setup/config", token, map[string]any{
+		"selected_interface": "eth0",
+		"subscription_urls":  "airport|https://example.com/sub.yaml",
+		"mihomo_proxies":     "vless://00000000-0000-4000-8000-000000000000@example.com:443?encryption=none#manual-node",
+		"proxy_core":         "mihomo",
+		"mos_dns_enabled":    true,
+	})
+	if setupSave.Code != http.StatusOK {
+		t.Fatalf("setup config save status=%d body=%s", setupSave.Code, setupSave.Body.String())
+	}
+
+	active, err := app.readTextFile(mihomoActiveConfigRelPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	userConfig, err := app.readTextFile("configs/mihomo/user_configs/custom.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for path, text := range map[string]string{
+		mihomoActiveConfigRelPath:                 active,
+		"configs/mihomo/user_configs/custom.yaml": userConfig,
+	} {
+		for _, want := range []string{"KeepUserGroup", "proxy-providers:", "airport", "https://example.com/sub.yaml", "msf_manual:", "./proxy_providers/msf_manual.yaml"} {
+			if !strings.Contains(text, want) {
+				t.Fatalf("setup provider sync missing %q in %s:\n%s", want, path, text)
+			}
+		}
+		for _, unwanted := range []string{"type: vless", "server: example.com", "uuid: 00000000-0000-4000-8000-000000000000"} {
+			if strings.Contains(text, unwanted) {
+				t.Fatalf("user/runtime config should contain provider references, not manual provider nodes, in %s:\n%s", path, text)
+			}
+		}
+	}
+	manualProvider, err := app.readTextFile("configs/mihomo/proxy_providers/msf_manual.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(manualProvider, "type: vless") || !strings.Contains(manualProvider, "manual-node") {
+		t.Fatalf("manual nodes should be written to provider file:\n%s", manualProvider)
+	}
+
+	setupGet := requestJSON(t, app, http.MethodGet, "/api/v1/setup/config", token, nil)
+	if setupGet.Code != http.StatusOK || !strings.Contains(setupGet.Body.String(), "https://example.com/sub.yaml") || !strings.Contains(setupGet.Body.String(), "manual-node") {
+		t.Fatalf("setup config should read providers from effective config: status=%d body=%s", setupGet.Code, setupGet.Body.String())
+	}
+	assertSetupManualSource := func(res *httptest.ResponseRecorder) {
+		t.Helper()
+		var body map[string]any
+		if err := json.Unmarshal(res.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		data, _ := body["data"].(map[string]any)
+		manual := firstNonEmpty(stringMapValue(data, "mihomo_proxies"), stringMapValue(body, "mihomo_proxies"))
+		if !strings.Contains(manual, "vless://") || !strings.Contains(manual, "manual-node") {
+			t.Fatalf("setup config should preserve editable share links, got %q in body=%s", manual, res.Body.String())
+		}
+		if strings.HasPrefix(strings.TrimSpace(manual), "proxies:") || strings.Contains(manual, "type: vless") {
+			t.Fatalf("setup config should not return generated manual provider YAML as editable source, got %q", manual)
+		}
+	}
+	assertSetupManualSource(setupGet)
+
+	panelSave := requestJSON(t, app, http.MethodPut, "/api/v1/mihomo/proxy-providers/panel", token, map[string]any{
+		"url":      "https://example.com/panel.yaml",
+		"interval": 3600,
+	})
+	if panelSave.Code != http.StatusOK || !strings.Contains(panelSave.Body.String(), `"restart_required":false`) {
+		t.Fatalf("panel provider save status=%d body=%s", panelSave.Code, panelSave.Body.String())
+	}
+	userConfig, err = app.readTextFile("configs/mihomo/user_configs/custom.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(userConfig, "panel:") || !strings.Contains(userConfig, "https://example.com/panel.yaml") || !strings.Contains(userConfig, "KeepUserGroup") {
+		t.Fatalf("panel provider should sync only proxy-providers to user config:\n%s", userConfig)
+	}
+	if strings.Contains(userConfig, "vehicleType") || strings.Contains(userConfig, "updatedAt") {
+		t.Fatalf("panel provider sync should not write controller provider runtime payload:\n%s", userConfig)
+	}
+	setupGet = requestJSON(t, app, http.MethodGet, "/api/v1/setup/config", token, nil)
+	if setupGet.Code != http.StatusOK || !strings.Contains(setupGet.Body.String(), "https://example.com/panel.yaml") {
+		t.Fatalf("setup config should reflect panel provider changes: status=%d body=%s", setupGet.Code, setupGet.Body.String())
+	}
+	assertSetupManualSource(setupGet)
+
+	panelDelete := requestJSON(t, app, http.MethodDelete, "/api/v1/mihomo/proxy-providers/panel", token, nil)
+	if panelDelete.Code != http.StatusOK {
+		t.Fatalf("panel provider delete status=%d body=%s", panelDelete.Code, panelDelete.Body.String())
+	}
+	setupGet = requestJSON(t, app, http.MethodGet, "/api/v1/setup/config", token, nil)
+	if setupGet.Code != http.StatusOK || strings.Contains(setupGet.Body.String(), "https://example.com/panel.yaml") {
+		t.Fatalf("setup config should reflect panel provider deletion: status=%d body=%s", setupGet.Code, setupGet.Body.String())
+	}
+	assertSetupManualSource(setupGet)
 }
 
 func TestMihomoConfigAndLogPanelCompatibility(t *testing.T) {

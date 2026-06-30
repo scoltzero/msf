@@ -135,6 +135,16 @@ function configDisplayName(path: string, modeInfo: ConfigModeInfo) {
   return fileName(path);
 }
 
+function configModeBadge(modeInfo: ConfigModeInfo) {
+  const custom = Boolean(modeInfo.active_path) || modeInfo.is_default === false;
+  return {
+    text: custom ? "用户自定义配置" : "默认配置",
+    className: custom
+      ? "bg-orange-500/10 text-orange-600 dark:text-orange-300"
+      : "bg-blue-500/10 text-blue-600 dark:text-blue-300",
+  };
+}
+
 export default function MihomoConfigPage() {
   const { toasts, showToast } = useToaster();
   const [content, setContent] = useState("");
@@ -158,6 +168,7 @@ export default function MihomoConfigPage() {
     return modeInfo.active_path || (activeFile ? configPathFor(activeFile) : "");
   }, [files, modeInfo.active_path]);
   const currentConfigName = useMemo(() => configDisplayName(path, modeInfo), [modeInfo, path]);
+  const modeBadge = useMemo(() => configModeBadge(modeInfo), [modeInfo]);
 
   const loadStatus = useCallback(async () => {
     try {
@@ -523,6 +534,9 @@ export default function MihomoConfigPage() {
               >
                 <span className={cn("h-1.5 w-1.5 rounded-full", running ? "bg-green-500 animate-pulse" : "bg-muted-foreground")} />
                 {serviceStatusText(status)}
+              </span>
+              <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium", modeBadge.className)}>
+                {modeBadge.text}
               </span>
             </div>
             <div className="ml-auto flex items-center gap-1.5">

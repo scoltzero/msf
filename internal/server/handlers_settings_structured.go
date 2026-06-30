@@ -47,6 +47,7 @@ func (a *App) handleSettingsStructuredPut(w http.ResponseWriter, r *http.Request
 	setupChanged := false
 	restartRequired := false
 	regenerateRequired := false
+	providerSyncRequired := false
 	if raw, ok := settingsMap(req["appearance"]); ok {
 		if err := a.applyStructuredAppearance(raw); err != nil {
 			writeError(w, http.StatusBadRequest, "bad_request", err.Error())
@@ -72,11 +73,20 @@ func (a *App) handleSettingsStructuredPut(w http.ResponseWriter, r *http.Request
 		setupChanged = setupChanged || changed
 		restartRequired = restartRequired || restart
 		regenerateRequired = regenerateRequired || regen
+		if section == "mihomo" || section == "setup" {
+			providerSyncRequired = providerSyncRequired || setupPatchTouchesMihomoProviders(raw)
+		}
 	}
 	if setupChanged {
 		if err := a.insertSetupSnapshot(cfg, initialized); err != nil {
 			writeError(w, http.StatusInternalServerError, "db_error", err.Error())
 			return
+		}
+		if providerSyncRequired {
+			if err := a.syncMihomoProxyProvidersFromSetupConfig(cfg, currentUsername(r)); err != nil {
+				writeError(w, http.StatusInternalServerError, "config_error", err.Error())
+				return
+			}
 		}
 	}
 	data := a.structuredSettingsPayload()
@@ -138,6 +148,14 @@ func (a *App) structuredAppearanceSettings() map[string]string {
 }
 
 func (a *App) latestSetupConfigForSettings() (SetupConfig, bool, bool) {
+	cfg, initialized, setupExists := a.latestSetupConfigForSettingsRaw()
+	if setupExists {
+		a.applyMihomoProviderFieldsFromEffectiveConfig(&cfg)
+	}
+	return cfg, initialized, setupExists
+}
+
+func (a *App) latestSetupConfigForSettingsRaw() (SetupConfig, bool, bool) {
 	row := a.DB.QueryRow(`select username,email,timezone,web_port,amd64v3_enabled,selected_interface,mihomo_core_type,auto_set_dns,dns_on,dns_off,enable_ipv6,fake_ip_range_v4,fake_ip_range_v6,linux_proxy_mode,nft_proxy_policy,proxy_core,mos_dns_enabled,subscription_urls,mihomo_proxies,github_proxy_enabled,github_https_proxy,github_http_proxy,github_socks5_proxy,github_accelerator_enabled,github_accelerator_url,is_initialized from system_setups order by id desc limit 1`)
 	var cfg SetupConfig
 	var initialized bool
