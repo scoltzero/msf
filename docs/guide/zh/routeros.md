@@ -48,7 +48,30 @@ WinBox/WebFig：**IP → Routes / IPv6 → Routes → Add**，逐条填写 Dst. 
 
 ## 第 3 步：可选服务网段
 
-如分流规则按 IP 段直连 Telegram、Netflix 等，可用同样的 `/ip route` / `/ipv6 route` 把对应网段的 gateway 指到 msf 主机，按需添加，不是必须项。
+如分流规则按 IP 段直连 Telegram、Netflix 等，建议把下面这些 IPv4 网段的 gateway 指到 msf 主机，避免解析或直连固定 IP 时绕过 msf：
+
+```bash
+/ip route
+# Telegram
+add distance=1 dst-address=149.154.160.0/22 gateway=192.168.20.2 comment="msf Telegram"
+add distance=1 dst-address=149.154.164.0/22 gateway=192.168.20.2 comment="msf Telegram"
+add distance=1 dst-address=149.154.172.0/22 gateway=192.168.20.2 comment="msf Telegram"
+add distance=1 dst-address=91.108.4.0/22 gateway=192.168.20.2 comment="msf Telegram"
+add distance=1 dst-address=91.108.20.0/22 gateway=192.168.20.2 comment="msf Telegram"
+add distance=1 dst-address=91.108.56.0/22 gateway=192.168.20.2 comment="msf Telegram"
+add distance=1 dst-address=91.108.8.0/22 gateway=192.168.20.2 comment="msf Telegram"
+add distance=1 dst-address=95.161.64.0/22 gateway=192.168.20.2 comment="msf Telegram"
+add distance=1 dst-address=91.108.12.0/22 gateway=192.168.20.2 comment="msf Telegram"
+add distance=1 dst-address=91.108.16.0/22 gateway=192.168.20.2 comment="msf Telegram"
+add distance=1 dst-address=67.198.55.0/24 gateway=192.168.20.2 comment="msf Telegram"
+add distance=1 dst-address=109.239.140.0/24 gateway=192.168.20.2 comment="msf Telegram"
+
+# Netflix
+add distance=1 dst-address=207.45.72.0/22 gateway=192.168.20.2 comment="msf Netflix"
+add distance=1 dst-address=208.75.76.0/22 gateway=192.168.20.2 comment="msf Netflix"
+add distance=1 dst-address=210.0.153.0/24 gateway=192.168.20.2 comment="msf Netflix"
+add distance=1 dst-address=185.76.151.0/24 gateway=192.168.20.2 comment="msf Netflix"
+```
 
 ## 验证
 

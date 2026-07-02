@@ -36,6 +36,33 @@ IPv6:
 
 > The exact location of "Static Routes" varies by controller version — usually under the Routing / Static Routes section of Settings.
 
+## Step 3: Add public DNS and service IP routes
+
+In the same Static Routes area, add the following IPv4 routes. Set every next hop to the msf host IPv4: `192.168.1.2`. These routes capture hardcoded public DNS and reduce Telegram / Netflix issues caused by bypassing msf through fixed public IPs.
+
+| Destination network | Next hop | Comment |
+|---|---|---|
+| `8.8.8.8/32` | `192.168.1.2` | Public DNS |
+| `8.8.4.4/32` | `192.168.1.2` | Public DNS |
+| `1.1.1.1/32` | `192.168.1.2` | Public DNS |
+| `1.0.0.1/32` | `192.168.1.2` | Public DNS |
+| `149.154.160.0/22` | `192.168.1.2` | Telegram |
+| `149.154.164.0/22` | `192.168.1.2` | Telegram |
+| `149.154.172.0/22` | `192.168.1.2` | Telegram |
+| `91.108.4.0/22` | `192.168.1.2` | Telegram |
+| `91.108.20.0/22` | `192.168.1.2` | Telegram |
+| `91.108.56.0/22` | `192.168.1.2` | Telegram |
+| `91.108.8.0/22` | `192.168.1.2` | Telegram |
+| `95.161.64.0/22` | `192.168.1.2` | Telegram |
+| `91.108.12.0/22` | `192.168.1.2` | Telegram |
+| `91.108.16.0/22` | `192.168.1.2` | Telegram |
+| `67.198.55.0/24` | `192.168.1.2` | Telegram |
+| `109.239.140.0/24` | `192.168.1.2` | Telegram |
+| `207.45.72.0/22` | `192.168.1.2` | Netflix |
+| `208.75.76.0/22` | `192.168.1.2` | Netflix |
+| `210.0.153.0/24` | `192.168.1.2` | Netflix |
+| `185.76.151.0/24` | `192.168.1.2` | Netflix |
+
 ## Verification
 
 On a client:

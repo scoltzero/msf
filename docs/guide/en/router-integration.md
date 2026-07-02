@@ -32,13 +32,45 @@ Set the DHCP-advertised DNS server to `{msf host IPv4}` (only this one — do no
 | IPv4 | `28.0.0.0/8` | `{msf host IPv4}` |
 | IPv6 | `f2b0::/18` | `{msf host IPv6}` |
 
-### 3. Optional extra routes
+### 3. Extra static routes (public DNS / service IPs)
 
-To also capture devices that hardcode public DNS, you may route common public resolvers to msf (optional):
+These routes do not replace FakeIP. They capture hardcoded public DNS and keep services that connect by public IP range flowing back to msf. To reduce Telegram / Netflix failures caused by direct fixed-IP access, point the following IPv4 routes to `{msf host IPv4}`.
 
-`8.8.8.8/32`, `8.8.4.4/32`, `1.1.1.1/32`, `1.0.0.1/32` → `{msf host IPv4}`
+MosDNS and Mihomo FakeIP / public DNS:
 
-Services that connect by IP range (Telegram, Netflix, etc.) can be steered the same way if your rules need it — optional, not required.
+| Destination | Next hop |
+|---|---|
+| `28.0.0.0/8` | `{msf host IPv4}` |
+| `8.8.8.8/32` | `{msf host IPv4}` |
+| `8.8.4.4/32` | `{msf host IPv4}` |
+| `1.1.1.1/32` | `{msf host IPv4}` |
+| `1.0.0.1/32` | `{msf host IPv4}` |
+
+Telegram routes:
+
+| Destination | Next hop |
+|---|---|
+| `149.154.160.0/22` | `{msf host IPv4}` |
+| `149.154.164.0/22` | `{msf host IPv4}` |
+| `149.154.172.0/22` | `{msf host IPv4}` |
+| `91.108.4.0/22` | `{msf host IPv4}` |
+| `91.108.20.0/22` | `{msf host IPv4}` |
+| `91.108.56.0/22` | `{msf host IPv4}` |
+| `91.108.8.0/22` | `{msf host IPv4}` |
+| `95.161.64.0/22` | `{msf host IPv4}` |
+| `91.108.12.0/22` | `{msf host IPv4}` |
+| `91.108.16.0/22` | `{msf host IPv4}` |
+| `67.198.55.0/24` | `{msf host IPv4}` |
+| `109.239.140.0/24` | `{msf host IPv4}` |
+
+Netflix routes:
+
+| Destination | Next hop |
+|---|---|
+| `207.45.72.0/22` | `{msf host IPv4}` |
+| `208.75.76.0/22` | `{msf host IPv4}` |
+| `210.0.153.0/24` | `{msf host IPv4}` |
+| `185.76.151.0/24` | `{msf host IPv4}` |
 
 ## Why DNS alone is not enough
 
