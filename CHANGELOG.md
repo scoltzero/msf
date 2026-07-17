@@ -6,6 +6,44 @@
 
 ### English
 
+## v0.3.9.3 - 2026-07-18
+
+### 中文
+
+#### 说明
+
+- 这是一次 Mihomo `v1.19.28` REST API 兼容性修复发布。该核心版本恢复原 Clash 行为，不再把代理供应商节点合并到 `/proxies`。
+- 本版本继续发布 12 个 GitHub Release assets：Linux amd64/arm64 tarball、Unraid `.txz`/`.plg`，以及 fnOS x86/arm `.fpk`，每个安装资产同时提供 `.sha256`。
+- Docker 镜像额外以 `ghcr.io/scoltzero/msf:v0.3.9.3` 发布，不推送 `latest`。
+
+#### 修复
+
+- 代理节点运行时数据现在同时聚合 Mihomo `/proxies` 与 `/providers/proxies`：非 `Compatible` 供应商的 `proxies[]` 会补入 MSF 节点表，恢复代理组内 provider 节点、类型、存活状态与延迟显示。
+- 保持旧核心兼容：如果节点已经由 `/proxies` 返回，MSF 保留该运行时对象，不重复覆盖；`Compatible` 伪供应商中的代理组条目不会被错误当作独立节点。
+- 补充回归测试，覆盖 Mihomo `v1.19.27` 及更早版本的合并式接口，以及 `v1.19.28` 起拆分 provider 节点的接口结构。
+
+#### 受影响用户
+
+- 使用 MSF `v0.3.9.2` 并将 Mihomo 更新到 `v1.19.28` 的用户，代理转发和订阅本身仍可工作，但 MSF 自带代理页面可能只剩内置节点，provider 节点无法正常显示。升级 MSF 后无需重新添加订阅或修改配置。
+
+### English
+
+#### Notes
+
+- This is a compatibility release for the Mihomo `v1.19.28` REST API. That core release restored the original Clash behavior and no longer merges proxy-provider nodes into `/proxies`.
+- This release continues to ship 12 GitHub Release assets: Linux amd64/arm64 tarballs, Unraid `.txz`/`.plg`, and fnOS x86/arm `.fpk` packages, with a matching `.sha256` for every install asset.
+- The Docker image is additionally published as `ghcr.io/scoltzero/msf:v0.3.9.3`. The `latest` tag is not pushed.
+
+#### Fixed
+
+- The proxies runtime payload now aggregates both Mihomo `/proxies` and `/providers/proxies`. Nodes from non-`Compatible` providers are added back to the MSF node map, restoring provider nodes, types, health, and latency inside proxy groups.
+- Older cores remain compatible: when `/proxies` already contains a node, its runtime object takes precedence and is not overwritten; proxy-group entries exposed through `Compatible` pseudo-providers are not treated as standalone nodes.
+- Regression coverage now includes the merged response used by Mihomo `v1.19.27` and earlier, plus the split provider-node response introduced in `v1.19.28`.
+
+#### Affected Users
+
+- With MSF `v0.3.9.2` and Mihomo `v1.19.28`, proxy routing and subscriptions can continue working while the built-in MSF proxies page only shows built-in nodes and omits provider nodes. Upgrading MSF restores the page without recreating subscriptions or changing config.
+
 ## v0.3.9.2 - 2026-06-30
 
 ### 中文

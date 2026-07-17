@@ -1775,7 +1775,7 @@ func TestMihomoConnectionsProxiesRulesAndClose(t *testing.T) {
 		t.Fatalf("connection close failed: status=%d body=%s", closeAll.Code, closeAll.Body.String())
 	}
 	proxies := requestJSON(t, app, http.MethodGet, "/api/v1/mihomo/proxies?search=proxy", token, nil)
-	if proxies.Code != http.StatusOK || !strings.Contains(proxies.Body.String(), `"name":"Proxy"`) || !strings.Contains(proxies.Body.String(), `"name":"proxy-a"`) || !strings.Contains(proxies.Body.String(), `"proxy_list"`) || !strings.Contains(proxies.Body.String(), `"Proxy":{`) {
+	if proxies.Code != http.StatusOK || !strings.Contains(proxies.Body.String(), `"name":"Proxy"`) || !strings.Contains(proxies.Body.String(), `"name":"proxy-a"`) || !strings.Contains(proxies.Body.String(), `"provider-name":"airport"`) || !strings.Contains(proxies.Body.String(), `"proxy_list"`) || !strings.Contains(proxies.Body.String(), `"Proxy":{`) {
 		t.Fatalf("proxy list mismatch: status=%d body=%s", proxies.Code, proxies.Body.String())
 	}
 	selectProxy := requestJSON(t, app, http.MethodPut, "/api/v1/mihomo/proxies/Proxy", token, map[string]string{"name": "proxy-a"})
@@ -1785,6 +1785,40 @@ func TestMihomoConnectionsProxiesRulesAndClose(t *testing.T) {
 	rules := requestJSON(t, app, http.MethodGet, "/api/v1/mihomo/rules?type=DOMAIN-SUFFIX", token, nil)
 	if rules.Code != http.StatusOK || !strings.Contains(rules.Body.String(), `"payload":"google.com"`) || strings.Contains(rules.Body.String(), "geoip") {
 		t.Fatalf("rules filtering mismatch: status=%d body=%s", rules.Code, rules.Body.String())
+	}
+}
+
+func TestMergeMihomoProviderProxiesSupportsOldAndNewControllerShapes(t *testing.T) {
+	existing := map[string]any{"name": "shared", "type": "Trojan", "history": []any{map[string]any{"delay": 11}}}
+	merged := mergeMihomoProviderProxies(
+		map[string]any{"proxies": map[string]any{
+			"DIRECT": map[string]any{"name": "DIRECT", "type": "Direct"},
+			"shared": existing,
+		}},
+		map[string]any{"providers": map[string]any{
+			"airport": map[string]any{"vehicleType": "HTTP", "proxies": []any{
+				map[string]any{"name": "provider-only", "type": "Vless"},
+				map[string]any{"name": "shared", "type": "Shadowsocks"},
+			}},
+			"compatible": map[string]any{"vehicleType": "Compatible", "proxies": []any{
+				map[string]any{"name": "compatible-only", "type": "Shadowsocks"},
+			}},
+		}},
+	)
+
+	proxyMap, _ := merged["proxies"].(map[string]any)
+	if len(proxyMap) != 3 {
+		t.Fatalf("expected two existing proxies plus one provider proxy, got %#v", proxyMap)
+	}
+	if !reflect.DeepEqual(proxyMap["shared"], existing) {
+		t.Fatal("existing /proxies entry should take precedence for old Mihomo controller responses")
+	}
+	providerOnly, _ := proxyMap["provider-only"].(map[string]any)
+	if stringMapValue(providerOnly, "provider-name") != "airport" {
+		t.Fatalf("provider-only proxy should keep its provider identity: %#v", providerOnly)
+	}
+	if _, ok := proxyMap["compatible-only"]; ok {
+		t.Fatal("Compatible pseudo-provider entries must not be merged as standalone nodes")
 	}
 }
 
@@ -2722,9 +2756,8 @@ func newFakeMihomoController(t *testing.T) *httptest.Server {
 			})
 		case "/proxies":
 			_ = json.NewEncoder(w).Encode(map[string]any{"proxies": map[string]any{
-				"Proxy":   map[string]any{"name": "Proxy", "type": "Selector", "now": "proxy-a", "all": []string{"proxy-a", "DIRECT"}},
-				"proxy-a": map[string]any{"name": "proxy-a", "type": "Shadowsocks", "udp": true, "history": []map[string]any{{"delay": 42}}},
-				"DIRECT":  map[string]any{"name": "DIRECT", "type": "Direct"},
+				"Proxy":  map[string]any{"name": "Proxy", "type": "Selector", "now": "proxy-a", "all": []string{"proxy-a", "DIRECT"}},
+				"DIRECT": map[string]any{"name": "DIRECT", "type": "Direct"},
 			}})
 		case "/proxies/Proxy":
 			_ = json.NewEncoder(w).Encode(map[string]any{"updated": true})
@@ -2735,8 +2768,12 @@ func newFakeMihomoController(t *testing.T) *httptest.Server {
 			}})
 		case "/providers/proxies":
 			_ = json.NewEncoder(w).Encode(map[string]any{"providers": map[string]any{
-				"airport":    map[string]any{"name": "airport", "vehicleType": "HTTP", "updatedAt": "2026-05-30T10:00:00Z", "proxies": []any{}},
-				"compatible": map[string]any{"name": "compatible", "vehicleType": "Compatible", "updatedAt": "2026-05-30T10:00:00Z", "proxies": []any{}},
+				"airport": map[string]any{"name": "airport", "vehicleType": "HTTP", "updatedAt": "2026-05-30T10:00:00Z", "proxies": []any{
+					map[string]any{"name": "proxy-a", "type": "Shadowsocks", "udp": true, "history": []map[string]any{{"delay": 42}}},
+				}},
+				"compatible": map[string]any{"name": "compatible", "vehicleType": "Compatible", "updatedAt": "2026-05-30T10:00:00Z", "proxies": []any{
+					map[string]any{"name": "compatible-only", "type": "Shadowsocks"},
+				}},
 			}})
 		case "/providers/proxies/airport":
 			_ = json.NewEncoder(w).Encode(map[string]any{"name": "airport", "vehicleType": "HTTP", "updatedAt": "2026-05-30T10:00:00Z", "proxies": []any{}})
