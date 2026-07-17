@@ -588,6 +588,7 @@ func (a *App) mihomoProxiesPayload(r *http.Request) map[string]any {
 	if !ok {
 		rawProviders = map[string]any{"providers": map[string]any{}}
 	}
+	rawProxies = mergeMihomoProviderProxies(rawProxies, rawProviders)
 	proxyMap, groups, proxies := normalizeMihomoProxies(rawProxies, a.mihomoProxyGroupOrder())
 	if r != nil {
 		search := strings.ToLower(strings.TrimSpace(firstNonEmpty(r.URL.Query().Get("search"), r.URL.Query().Get("q"))))
@@ -606,6 +607,51 @@ func (a *App) mihomoProxiesPayload(r *http.Request) map[string]any {
 		"providers":    normalizeProviderMap(rawProviders["providers"]),
 		"raw":          rawProxies,
 	}
+}
+
+func mergeMihomoProviderProxies(rawProxies, rawProviders map[string]any) map[string]any {
+	merged := map[string]any{}
+	if proxyMap, ok := rawProxies["proxies"].(map[string]any); ok {
+		for name, proxy := range proxyMap {
+			merged[name] = proxy
+		}
+	}
+
+	providers := normalizeProviderMap(rawProviders["providers"])
+	names := make([]string, 0, len(providers))
+	for name, provider := range providers {
+		if providerVehicleType(provider) == "compatible" {
+			continue
+		}
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, providerName := range names {
+		for _, proxy := range anyMapSlice(providers[providerName]["proxies"]) {
+			name := stringMapValue(proxy, "name")
+			if name == "" {
+				continue
+			}
+			if _, exists := merged[name]; exists {
+				continue
+			}
+			item := make(map[string]any, len(proxy)+1)
+			for key, value := range proxy {
+				item[key] = value
+			}
+			if firstNonEmpty(stringMapValue(item, "provider"), stringMapValue(item, "providerName"), stringMapValue(item, "provider-name")) == "" {
+				item["provider-name"] = providerName
+			}
+			merged[name] = item
+		}
+	}
+
+	out := make(map[string]any, len(rawProxies)+1)
+	for key, value := range rawProxies {
+		out[key] = value
+	}
+	out["proxies"] = merged
+	return out
 }
 
 func (a *App) mihomoProxyGroupOrder() map[string]int {

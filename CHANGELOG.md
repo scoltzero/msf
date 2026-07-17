@@ -6,6 +6,44 @@
 
 ### English
 
+## v0.3.9.3 - 2026-07-18
+
+### 中文
+
+#### 说明
+
+- 这是一次 Mihomo `v1.19.28` REST API 兼容性修复发布。该核心版本恢复原 Clash 行为，不再把代理供应商节点合并到 `/proxies`。
+- 本版本继续发布 12 个 GitHub Release assets：Linux amd64/arm64 tarball、Unraid `.txz`/`.plg`，以及 fnOS x86/arm `.fpk`，每个安装资产同时提供 `.sha256`。
+- Docker 镜像额外以 `ghcr.io/scoltzero/msf:v0.3.9.3` 发布，不推送 `latest`。
+
+#### 修复
+
+- 代理节点运行时数据现在同时聚合 Mihomo `/proxies` 与 `/providers/proxies`：非 `Compatible` 供应商的 `proxies[]` 会补入 MSF 节点表，恢复代理组内 provider 节点、类型、存活状态与延迟显示。
+- 保持旧核心兼容：如果节点已经由 `/proxies` 返回，MSF 保留该运行时对象，不重复覆盖；`Compatible` 伪供应商中的代理组条目不会被错误当作独立节点。
+- 补充回归测试，覆盖 Mihomo `v1.19.27` 及更早版本的合并式接口，以及 `v1.19.28` 起拆分 provider 节点的接口结构。
+
+#### 受影响用户
+
+- 使用 MSF `v0.3.9.2` 并将 Mihomo 更新到 `v1.19.28` 的用户，代理转发和订阅本身仍可工作，但 MSF 自带代理页面可能只剩内置节点，provider 节点无法正常显示。升级 MSF 后无需重新添加订阅或修改配置。
+
+### English
+
+#### Notes
+
+- This is a compatibility release for the Mihomo `v1.19.28` REST API. That core release restored the original Clash behavior and no longer merges proxy-provider nodes into `/proxies`.
+- This release continues to ship 12 GitHub Release assets: Linux amd64/arm64 tarballs, Unraid `.txz`/`.plg`, and fnOS x86/arm `.fpk` packages, with a matching `.sha256` for every install asset.
+- The Docker image is additionally published as `ghcr.io/scoltzero/msf:v0.3.9.3`. The `latest` tag is not pushed.
+
+#### Fixed
+
+- The proxies runtime payload now aggregates both Mihomo `/proxies` and `/providers/proxies`. Nodes from non-`Compatible` providers are added back to the MSF node map, restoring provider nodes, types, health, and latency inside proxy groups.
+- Older cores remain compatible: when `/proxies` already contains a node, its runtime object takes precedence and is not overwritten; proxy-group entries exposed through `Compatible` pseudo-providers are not treated as standalone nodes.
+- Regression coverage now includes the merged response used by Mihomo `v1.19.27` and earlier, plus the split provider-node response introduced in `v1.19.28`.
+
+#### Affected Users
+
+- With MSF `v0.3.9.2` and Mihomo `v1.19.28`, proxy routing and subscriptions can continue working while the built-in MSF proxies page only shows built-in nodes and omits provider nodes. Upgrading MSF restores the page without recreating subscriptions or changing config.
+
 ## v0.3.9.2 - 2026-06-30
 
 ### 中文
@@ -16,11 +54,27 @@
 - 本版本 GitHub Release 资产数量与 v0.3.9 保持一致：Linux amd64/arm64 tarball、Unraid `.txz`/`.plg`，以及从同步后的 `fnos-fpk` 分支构建的 fnOS x86/arm `.fpk` 包，共 12 个 release assets。
 - Docker 镜像额外以 `ghcr.io/scoltzero/msf:v0.3.9.2` 发布，不推送 `latest`。
 
-#### 修复
+#### 包含 v0.3.9 的正确改动
+
+- Docker `host-tun` + Mihomo TUN 启动后自动补齐 FakeIP IPv4 路由，例如 `28.0.0.0/8 dev mihomo src 28.0.0.1`，避免客户端 FakeIP 流量到达 Docker 宿主机后没有进入 `mihomo` TUN。
+- Docker `host-tun` + Mihomo TUN 在显式启用 IPv6 时自动补齐 FakeIP IPv6 路由，例如 `f2b0::/18 dev mihomo src f2b0::1`；IPv4 / IPv6 任一路由修复失败都只写 warning，不阻断服务启动。
+- Docker `host-tun` + Mihomo TUN 会尝试关闭默认出口网卡的 `rp_filter`；失败时只写 warning，不阻断 Mihomo 启动。
+- Mihomo 配置管理不再把内部运行副本 `configs/mihomo/config.yaml` 当作用户配置展示；打开页面会优先显示正在应用的用户配置，没有用户配置时显示“默认配置”。
+- 默认 Mihomo 配置只允许修改 `proxy-providers` 并继续保持默认模式；其他 YAML 字段一旦保存会转为用户自定义配置。
+- 保存、覆盖或复制已应用的 Mihomo 用户配置时会同步内部运行副本，避免配置列表与实际运行配置漂移。
+- MosDNS、MSF 通用配置管理和 Mihomo 配置管理共用的 YAML 编辑器高亮对齐 VS Code Dark+ 风格，改善 key、字符串、数字、布尔、注释、锚点和 tag 的颜色识别。
+
+#### v0.3.9.2 修复
 
 - Mihomo 初始化配置里的订阅链接/自定义节点与“代理节点 > 管理代理供应商”统一同步到顶层 `proxy-providers` 引用字段；已应用用户配置只替换该 section，不再写入订阅下载后的节点内容。
 - 自定义节点分享链接再次打开仍保持“分享链接模式”，不会被运行用的 `msf_manual.yaml` 反向覆盖成 `proxies:` YAML 文本。
 - Mihomo 配置页“运行中”旁恢复配置模式标签，用“默认配置 / 用户自定义配置”区分当前运行配置来源，同时继续隐藏内部运行副本 `configs/mihomo/config.yaml`。
+
+#### 说明
+
+- 程序不会自动重启 `firewalld`、`nftables` 或 `ufw`。如果防火墙服务会缓存或重放规则，仍需按 Docker 文档手动重启对应防火墙服务。
+- Docker IPv6 默认仍保持关闭；只有用户显式启用 IPv6 后才会生成并修复 `f2b0::/18`。
+- 内部 Mihomo 运行副本仍然存在并用于启动核心，只是不再作为普通配置文件让用户直接管理。
 
 #### 受影响用户
 
@@ -35,11 +89,27 @@
 - GitHub Release assets remain aligned with v0.3.9: Linux amd64/arm64 tarballs, Unraid `.txz`/`.plg`, and fnOS x86/arm `.fpk` packages built from the synced `fnos-fpk` branch, for 12 release assets total.
 - The Docker image is additionally published as `ghcr.io/scoltzero/msf:v0.3.9.2`. The `latest` tag is not pushed.
 
-#### Fixed
+#### Included From The Valid v0.3.9 Changes
+
+- Docker `host-tun` + Mihomo TUN now restores the FakeIP IPv4 route after Mihomo starts, for example `28.0.0.0/8 dev mihomo src 28.0.0.1`, so client FakeIP traffic reaching the Docker host can enter the `mihomo` TUN interface.
+- Docker `host-tun` + Mihomo TUN now restores the FakeIP IPv6 route when IPv6 is explicitly enabled, for example `f2b0::/18 dev mihomo src f2b0::1`; IPv4 and IPv6 route failures are logged as warnings and do not fail service startup.
+- Docker `host-tun` + Mihomo TUN now tries to disable `rp_filter` on the default egress interface; failures are logged as warnings and do not fail Mihomo startup.
+- Mihomo config management no longer exposes the internal runtime copy `configs/mihomo/config.yaml` as a user config. The page opens the applied user config first, or shows “Default config” when no user config is applied.
+- Default Mihomo config mode now only permits `proxy-providers` edits while staying in generated mode; saving any other YAML field becomes a user custom config.
+- Saving, overwriting, or copying the applied Mihomo user config now syncs the internal runtime copy, avoiding drift between the config list and the running config.
+- The shared YAML editor used by MosDNS, generic MSF config management, and Mihomo config management now uses VS Code Dark+ style highlighting for keys, strings, numbers, booleans, comments, anchors, and tags.
+
+#### v0.3.9.2 Fixed
 
 - Mihomo setup subscriptions/manual nodes and “Proxies > Provider management” now synchronize the top-level `proxy-providers` references consistently. Applied user configs only have that section replaced, and downloaded subscription node payloads are no longer written back.
 - Manual proxy share links remain editable in share-link mode when reopening the settings page, instead of being replaced by the generated `msf_manual.yaml` `proxies:` YAML.
 - The Mihomo config page again shows a running-config mode badge, distinguishing “Default config” from “User custom config” while still hiding the internal runtime copy `configs/mihomo/config.yaml`.
+
+#### Notes
+
+- MSF does not automatically restart `firewalld`, `nftables`, or `ufw`. If a firewall service caches or replays rules, restart the active firewall service manually as documented in the Docker guide.
+- Docker IPv6 remains disabled by default; `f2b0::/18` is generated and repaired only after the user explicitly enables IPv6.
+- The internal Mihomo runtime copy still exists and is used to start the core; it is just no longer directly managed as a normal user-facing config file.
 
 #### Affected Users
 
