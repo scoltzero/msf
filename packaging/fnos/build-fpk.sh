@@ -157,6 +157,8 @@ cp "${STAGE}/ICON_256.PNG" "${STAGE}/app/ui/images/256.png"
 cp "${STAGE}/ICON.PNG"     "${STAGE}/app/ui/images/64.png"
 sips -z 32 32  "${STAGE}/ICON_256.PNG" --out "${STAGE}/app/ui/images/32.png" >/dev/null 2>&1 || true
 sips -z 48 48  "${STAGE}/ICON_256.PNG" --out "${STAGE}/app/ui/images/48.png" >/dev/null 2>&1 || true
+[ -s "${STAGE}/app/ui/images/32.png" ] || cp "${STAGE}/ICON.PNG" "${STAGE}/app/ui/images/32.png"
+[ -s "${STAGE}/app/ui/images/48.png" ] || cp "${STAGE}/ICON.PNG" "${STAGE}/app/ui/images/48.png"
 
 # ── pack ──────────────────────────────────────────────────
 OUT="${DIST}/${APP_NAME}_${VERSION}_${PLATFORM}.fpk"
@@ -188,7 +190,7 @@ else
       chmod 755 "${FNPACK_CACHE}.tmp"
       mv "${FNPACK_CACHE}.tmp" "${FNPACK_CACHE}"
     else
-      echo "WARN: failed to download fnpack; falling back to tar.gz" >&2
+      echo "ERROR: failed to download fnpack; refusing to create an invalid .fpk fallback" >&2
       rm -f "${FNPACK_CACHE}.tmp"
     fi
   fi
@@ -198,28 +200,19 @@ else
   fi
 fi
 
-if [ -n "${FNPACK}" ]; then
-  echo "INFO: building .fpk with ${FNPACK} ..." >&2
-  ( cd "${STAGE}" && "${FNPACK}" build )
-  # fnpack build 在当前目录产出 .fpk，找出来移动到 DIST
-  FPK_FILE="$(find "${STAGE}" -maxdepth 1 -name '*.fpk' -print -quit 2>/dev/null || true)"
-  if [ -n "${FPK_FILE}" ] && [ -f "${FPK_FILE}" ]; then
-    mv "${FPK_FILE}" "${OUT}"
-  else
-    # 备选：glob 当前目录
-    FPK_FILE="$(ls -1 *.fpk 2>/dev/null | head -1 || true)"
-    if [ -n "${FPK_FILE}" ] && [ -f "${FPK_FILE}" ]; then
-      mv "${FPK_FILE}" "${OUT}"
-    else
-      echo "WARN: fnpack ran but no .fpk found; falling back to tar.gz" >&2
-    fi
-  fi
+if [ -z "${FNPACK}" ]; then
+  echo "ERROR: fnpack is required for release-quality fnOS assets" >&2
+  exit 1
 fi
 
-if [ ! -f "${OUT}" ]; then
-  echo "WARN: producing tar.gz fallback (not a valid .fpk; re-run with fnpack installed)" >&2
-  tar -czf "${OUT}" -C "${STAGE}" .
+echo "INFO: building .fpk with ${FNPACK} ..." >&2
+( cd "${STAGE}" && "${FNPACK}" build )
+FPK_FILE="$(find "${STAGE}" -maxdepth 1 -name '*.fpk' -print -quit 2>/dev/null || true)"
+if [ -z "${FPK_FILE}" ] || [ ! -f "${FPK_FILE}" ]; then
+  echo "ERROR: fnpack completed without producing a .fpk" >&2
+  exit 1
 fi
+mv "${FPK_FILE}" "${OUT}"
 
 echo "DONE: ${OUT}" >&2
 echo "${OUT}"

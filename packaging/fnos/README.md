@@ -20,9 +20,8 @@ it from `static2.fnnas.com`.  On macOS the script uses `sips` for icon resizing
 
 ## Runtime notes
 
-- **Requires root.**  msf manages nftables rules, binds `:53` for DNS, and runs
-  transparent proxy (TProxy) — all of which need `run-as: root` and full network
-  capabilities.
+- **Requires root.** msf supports both nftables/TProxy and Mihomo TUN, binds
+  `:53` for DNS, and needs `run-as: root` plus the required network capabilities.
 - The binary is installed to `/var/apps/msf/app/msf`, writeable data to
   `/var/apps/msf/var` (`$TRIM_PKGVAR`).
 - The systemd unit (`msf.service`) is registered by fnOS (route 乙 in `resource`).

@@ -102,7 +102,7 @@ func (a *App) structuredSettingsPayload() map[string]any {
 		"system": map[string]any{
 			"web_port":           cfg.WebPort,
 			"timezone":           cfg.Timezone,
-			"jwt_secret_set":     len(a.Secret) > 0,
+			"jwt_secret_set":     len(a.currentSecret()) > 0,
 			"log_level":          a.setting("log_level", "info"),
 			"log_retention_days": structuredIntSetting(a.setting("log_retention_days", a.setting("log.retention_days", "7")), 7),
 			"restart_required":   false,

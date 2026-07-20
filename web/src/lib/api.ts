@@ -41,9 +41,14 @@ export function setSession(token: string, refreshToken?: string) {
 }
 
 export function clearSession() {
-  window.localStorage.removeItem(TOKEN_KEY);
-  window.localStorage.removeItem(REFRESH_TOKEN_KEY);
-  window.localStorage.removeItem("msf-auth");
+  for (const storage of [window.localStorage, window.sessionStorage]) {
+    const keys: string[] = [];
+    for (let index = 0; index < storage.length; index += 1) {
+      const key = storage.key(index);
+      if (key && key.toLowerCase().startsWith("msf")) keys.push(key);
+    }
+    keys.forEach((key) => storage.removeItem(key));
+  }
 }
 
 function parsePayloadMessage(payload: unknown, fallback: string) {

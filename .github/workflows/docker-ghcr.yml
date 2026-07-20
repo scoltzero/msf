@@ -1,6 +1,9 @@
 name: Docker GHCR
 
 on:
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
 
 permissions:
@@ -11,8 +14,37 @@ jobs:
   docker:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout exact release ref
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify clean tagged source
+        id: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF_TYPE}" != "tag" || ! "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Docker releases must run from a version tag" >&2
+            exit 1
+          fi
+          test -z "$(git status --porcelain)"
+          commit="$(git rev-parse HEAD)"
+          tag_commit="$(git rev-parse "${GITHUB_REF_NAME}^{commit}")"
+          test "${commit}" = "${tag_commit}"
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          git merge-base --is-ancestor "${commit}" origin/main || {
+            echo "Docker release tag commit must be reachable from main" >&2
+            exit 1
+          }
+          version="${GITHUB_REF_NAME#v}"
+          build_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          {
+            echo "commit=${commit}"
+            echo "version=${version}"
+            echo "tag=${GITHUB_REF_NAME}"
+            echo "build_time=${build_time}"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -33,9 +65,55 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
-            type=ref,event=tag
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
-            type=raw,value=edge,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=${{ steps.source.outputs.tag }}
+            type=raw,value=latest
+          labels: |
+            org.opencontainers.image.version=${{ steps.source.outputs.version }}
+            org.opencontainers.image.revision=${{ steps.source.outputs.commit }}
+
+      - name: Build local amd64 smoke image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          push: false
+          build-args: |
+            VERSION=${{ steps.source.outputs.version }}
+            COMMIT=${{ steps.source.outputs.commit }}
+            TAG=${{ steps.source.outputs.tag }}
+            TAG_COMMIT=${{ steps.source.outputs.commit }}
+            SOURCE_COMMIT=${{ steps.source.outputs.commit }}
+            DIRTY=false
+            BUILD_TIME=${{ steps.source.outputs.build_time }}
+          tags: msf-smoke:${{ steps.source.outputs.commit }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Verify Docker host-tun and macvlan-tun behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo modprobe tun 2>/dev/null || true
+          if [[ ! -c /dev/net/tun ]]; then
+            sudo mkdir -p /dev/net
+            sudo mknod /dev/net/tun c 10 200
+          fi
+          sudo chmod 666 /dev/net/tun
+          image="msf-smoke:${{ steps.source.outputs.commit }}"
+          provenance="$(docker run --rm "$image" version --json)"
+          python3 -c 'import json,sys; p=json.loads(sys.argv[1]); e={"version":sys.argv[2],"commit":sys.argv[3],"tag":sys.argv[4],"tag_commit":sys.argv[3],"source_commit":sys.argv[3],"dirty":"false"}; bad={k:(p.get(k),v) for k,v in e.items() if p.get(k)!=v}; assert not bad,bad' "$provenance" "${{ steps.source.outputs.version }}" "${{ steps.source.outputs.commit }}" "${{ steps.source.outputs.tag }}"
+          resolved_active=false
+          if sudo systemctl is-active --quiet systemd-resolved 2>/dev/null; then
+            resolved_active=true
+            sudo systemctl stop systemd-resolved
+          fi
+          trap 'if [[ "$resolved_active" == "true" ]]; then sudo systemctl start systemd-resolved; fi' EXIT
+          scripts/smoke-docker-tun.sh "$image" host-tun
+          if [[ "$resolved_active" == "true" ]]; then
+            sudo systemctl start systemd-resolved
+            resolved_active=false
+          fi
+          scripts/smoke-docker-tun.sh "$image" macvlan-tun
 
       - name: Build and push
         uses: docker/build-push-action@v6
@@ -44,6 +122,21 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           build-args: |
-            VERSION=${{ github.ref_name }}
+            VERSION=${{ steps.source.outputs.version }}
+            COMMIT=${{ steps.source.outputs.commit }}
+            TAG=${{ steps.source.outputs.tag }}
+            TAG_COMMIT=${{ steps.source.outputs.commit }}
+            SOURCE_COMMIT=${{ steps.source.outputs.commit }}
+            DIRTY=false
+            BUILD_TIME=${{ steps.source.outputs.build_time }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Verify pushed image revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="ghcr.io/${GITHUB_REPOSITORY}:${{ steps.source.outputs.tag }}"
+          docker pull --platform linux/amd64 "$image"
+          revision="$(docker image inspect "$image" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')"
+          test "$revision" = "${{ steps.source.outputs.commit }}"

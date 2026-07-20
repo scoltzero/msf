@@ -97,6 +97,7 @@ interface SetupPortCheck {
 
 interface SetupPreflight {
   success?: boolean;
+  effective_proxy_mode?: string;
   dns53?: {
     status?: string;
     message?: string;
@@ -111,6 +112,15 @@ interface SetupPreflight {
     target?: string;
     needs_change?: boolean;
     valid?: boolean;
+    message?: string;
+  };
+  tun?: {
+    required?: boolean;
+    available?: boolean;
+    device?: string;
+    net_admin?: boolean;
+    net_raw?: boolean;
+    network_mode?: string;
     message?: string;
   };
   reserved_ports?: SetupPortCheck[];
@@ -1000,6 +1010,7 @@ export function SetupPage() {
   }, [downloadStatus, fetchPreflight, step]);
 
   const update = (key: keyof SetupForm, value: string | boolean) => {
+    if (key === "linux_proxy_mode" && isDockerRuntime && value !== "tun") return;
     if (key === "timezone" || key === "linux_proxy_mode") {
       setPreflight(null);
       setPortRiskAccepted(false);
@@ -1580,18 +1591,16 @@ export function SetupPage() {
                     <div>
                       <div className="mb-2 text-sm font-medium">Linux 透明代理模式</div>
                       <div className="grid gap-3 sm:grid-cols-2">
+                        {!isDockerRuntime && (
+                          <ChoiceCard
+                            title="nftables 转发（TProxy + Redirect）"
+                            description="Linux 下 Mihomo 支持 nftables 转发，默认使用 nftables 转发。"
+                            selected={form.linux_proxy_mode === "nft"}
+                            onClick={() => update("linux_proxy_mode", "nft")}
+                          />
+                        )}
                         <ChoiceCard
-                          title="nftables 转发（TProxy + Redirect）"
-                          description={
-                            isDockerRuntime
-                              ? "传统 Linux 透明代理，会管理宿主 nftables，不作为 Docker 默认模式。"
-                              : "Linux 下 Mihomo 支持 nftables 转发，默认使用 nftables 转发。"
-                          }
-                          selected={form.linux_proxy_mode === "nft"}
-                          onClick={() => update("linux_proxy_mode", "nft")}
-                        />
-                        <ChoiceCard
-                          title={isDockerRuntime ? "TUN 模式（Docker 推荐）" : "TUN 模式"}
+                          title={isDockerRuntime ? "TUN 模式（Docker 唯一支持模式）" : "TUN 模式"}
                           description={
                             isDockerRuntime
                               ? "需要 /dev/net/tun 与 NET_ADMIN；由 MosDNS 负责 DNS 分流，Mihomo TUN 接管 Fake-IP 路由。"
@@ -1800,6 +1809,10 @@ export function SetupPage() {
                   <SummaryRow label="HTTPS" value={form.enableHttps ? "启用" : "禁用"} />
                   <SummaryRow label="MosDNS" value={form.mosdnsEnabled ? "启用" : "禁用"} />
                   <SummaryRow label="代理核心" value={form.proxyCore === "mihomo" ? "Mihomo" : form.proxyCore} />
+                  <SummaryRow
+                    label="透明代理模式"
+                    value={(preflight?.effective_proxy_mode || form.linux_proxy_mode) === "tun" ? "TUN" : "nftables"}
+                  />
                   <SummaryRow label="自定义节点" value={manualNodeCount > 0 ? `${manualNodeCount} 条/组` : "未配置"} />
                   <SummaryRow label="GitHub 加速" value={form.github_proxy_enabled || form.github_accelerator_enabled ? "已配置" : "未配置"} />
                 </div>
@@ -1814,7 +1827,7 @@ export function SetupPage() {
                   {preflightBusy && !preflight ? (
                     <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
                       <Loader2 className="h-4 w-4 animate-spin" />
-                      正在检查 53 端口、宿主机时区和业务端口占用
+                      正在检查 53 端口、TUN 能力、宿主机时区和业务端口占用
                     </div>
                   ) : preflight ? (
                     <div className="space-y-3">
@@ -1861,6 +1874,31 @@ export function SetupPage() {
                         </div>
                         <div>{preflight.timezone?.message || "初始化时会同步宿主机时区"}</div>
                       </div>
+                      {preflight.tun?.required && (
+                        <div
+                          className={cn(
+                            "rounded-lg border p-3 text-xs leading-5",
+                            preflight.tun.available
+                              ? "border-green-500/25 bg-green-500/10 text-green-700 dark:text-green-300"
+                              : "border-red-500/25 bg-red-500/10 text-red-700 dark:text-red-300"
+                          )}
+                        >
+                          <div className="flex items-start gap-2">
+                            {preflight.tun.available ? (
+                              <CheckCircle2 className="mt-0.5 h-4 w-4" />
+                            ) : (
+                              <AlertCircle className="mt-0.5 h-4 w-4" />
+                            )}
+                            <div>
+                              <div className="font-medium">TUN 能力：{preflight.tun.available ? "可用" : "阻断"}</div>
+                              <div className="mt-0.5 break-words">{preflight.tun.message || "未返回 TUN 检查结果"}</div>
+                              {preflight.tun.network_mode && (
+                                <div className="text-[11px]">Docker 网络模式：{preflight.tun.network_mode}</div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
                       {occupiedPorts.length > 0 ? (
                         <div className="rounded-lg border border-yellow-500/25 bg-yellow-500/10 p-3 text-xs leading-5 text-yellow-800 dark:text-yellow-300">
                           <div className="mb-2 flex items-center gap-2 font-medium">

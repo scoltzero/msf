@@ -1,18 +1,18 @@
-# Docker TUN Experimental Deployment
+# Docker TUN Deployment
 
 [中文版本](docker.md)
 
-Docker deployment is still experimental and is not the recommended installation path yet. It is intended for users who understand Docker, TUN, static routes, and side-router integration. For production or long-term use, prefer [Linux tarball/systemd](install/linux.md), [fnOS FPK](install/fnos-fpk.md), or [Unraid PLG](install/unraid-plg.md).
+Docker `host-tun` and `macvlan-tun` are now supported as TUN-only modes. The setup UI hides nftables and the backend rejects nftables requests in Docker.
 
-Current release: `v0.3.9.3`
+Current release: `v0.3.9.5`
 
-Current Docker experimental image:
+Current Docker image:
 
 ```text
-ghcr.io/scoltzero/msf:v0.3.9.3
+ghcr.io/scoltzero/msf:v0.3.9.5
 ```
 
-This experimental image is not pushed as `latest`. To pull or deploy the Docker experimental version, explicitly use the `v0.3.9.3` tag.
+The release workflow publishes both the versioned tag and `latest`; production deployments should still pin an explicit version.
 
 ## Current Status
 
@@ -23,7 +23,7 @@ This experimental image is not pushed as `latest`. To pull or deploy the Docker 
 - Runtime data must be mapped to a host directory. The in-container data directory is fixed at `/opt/msf`; the default examples map host `./msf-data` to `/opt/msf`.
 - `msf update` and WebUI self-update installation are disabled inside the container. Image upgrades must be handled through Docker, Compose, or your container manager.
 
-If you need a stable deployment today, use Linux, fnOS, or Unraid PLG first.
+Setup preflight blocks initialization when `/dev/net/tun`, `CAP_NET_ADMIN`, `CAP_NET_RAW`, or a supported Docker network mode is missing.
 
 ## Runtime Requirements
 
@@ -67,7 +67,7 @@ The repository already provides `docker-compose.yml`. If you need to create the 
 ```yaml
 services:
   msf:
-    image: ghcr.io/scoltzero/msf:v0.3.9.3
+    image: ghcr.io/scoltzero/msf:v0.3.9.5
     container_name: msf
     network_mode: host
     cap_add:
@@ -95,7 +95,7 @@ docker compose up -d
 
 The default compose file uses:
 
-- Image: `ghcr.io/scoltzero/msf:v0.3.9.3`
+- Image: `ghcr.io/scoltzero/msf:v0.3.9.5`
 - Network: `host`
 - Data directory: `./msf-data:/opt/msf`
 - WebUI: `http://<host-ip>:7777`
@@ -126,7 +126,7 @@ docker run -d \
   -e MSF_DOCKER_NETWORK_MODE=host-tun \
   -e MSF_DATA_DIR=/opt/msf \
   -v "$PWD/msf-data:/opt/msf" \
-  ghcr.io/scoltzero/msf:v0.3.9.3
+  ghcr.io/scoltzero/msf:v0.3.9.5
 ```
 
 ## Quick Start: macvlan TUN
@@ -140,7 +140,7 @@ The repository already provides `docker-compose.macvlan.yml`. If you need to cre
 ```yaml
 services:
   msf:
-    image: ${MSF_IMAGE:-ghcr.io/scoltzero/msf:v0.3.9.3}
+    image: ${MSF_IMAGE:-ghcr.io/scoltzero/msf:v0.3.9.5}
     container_name: ${MSF_CONTAINER_NAME:-msf}
     cap_add:
       - NET_ADMIN
@@ -181,7 +181,7 @@ cp docker.env.example .env
 You can also copy this minimal macvlan compose `.env` example and save it as `.env`:
 
 ```text
-MSF_IMAGE=ghcr.io/scoltzero/msf:v0.3.9.3
+MSF_IMAGE=ghcr.io/scoltzero/msf:v0.3.9.5
 MSF_CONTAINER_NAME=msf
 MSF_DOCKER_DATA_DIR=./msf-data
 MSF_DOCKER_NETWORK_NAME=msf-macvlan
@@ -218,7 +218,7 @@ The script creates the `msf-macvlan` Docker network if it does not already exist
 The first Docker version supports manual Unraid Dockerman setup only. It does not provide a Community Applications container template.
 
 1. Enable custom networks in Unraid Docker settings, and choose `macvlan` or the custom network implementation recommended for your current system.
-2. Create a new container and set the image to `ghcr.io/scoltzero/msf:v0.3.9.3`.
+2. Create a new container and set the image to `ghcr.io/scoltzero/msf:v0.3.9.5`.
 3. Set Network Type to a custom LAN network such as `br0`.
 4. Set Fixed IP address to a static IPv4 address outside your DHCP pool, for example `192.168.1.10`.
 5. Add this to Extra Parameters or advanced parameters:
@@ -388,7 +388,7 @@ fi
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `MSF_IMAGE` | `ghcr.io/scoltzero/msf:v0.3.9.3` | Container image |
+| `MSF_IMAGE` | `ghcr.io/scoltzero/msf:v0.3.9.5` | Container image |
 | `MSF_CONTAINER_NAME` | `msf` | Container name |
 | `MSF_DOCKER_DATA_DIR` | `$PWD/msf-data` | Host data directory |
 | `MSF_DOCKER_NETWORK_MODE` | `host-tun` | `host-tun` or `macvlan-tun` |
@@ -503,7 +503,7 @@ docker compose up -d
 Plain Docker:
 
 ```bash
-docker pull ghcr.io/scoltzero/msf:v0.3.9.3
+docker pull ghcr.io/scoltzero/msf:v0.3.9.5
 docker stop msf
 docker rm msf
 ./docker-run.sh

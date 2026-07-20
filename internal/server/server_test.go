@@ -2892,6 +2892,9 @@ port: 7890
 socks-port: 7891
 redir-port: 7877
 tproxy-port: 7896
+routing-mark: 1
+tun:
+  enable: false
 external-controller: :9090
 external-ui: ui
 allow-lan: true

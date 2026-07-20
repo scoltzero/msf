@@ -2,7 +2,9 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"runtime"
 	"strings"
 )
 
@@ -23,18 +25,58 @@ func (a *App) SetConfiguredRuntimeDesired(cfg SetupConfig) {
 }
 
 func (a *App) RestoreConfiguredRuntime(ctx context.Context) RuntimeRestoreReport {
+	if a.resetInProgress.Load() {
+		return RuntimeRestoreReport{Errors: []string{"system factory reset is in progress"}}
+	}
+	a.resetGate.RLock()
+	defer a.resetGate.RUnlock()
+	if a.resetInProgress.Load() {
+		return RuntimeRestoreReport{Errors: []string{"system factory reset is in progress"}}
+	}
 	report := RuntimeRestoreReport{Initialized: a.IsInitialized()}
 	if !report.Initialized {
 		return report
 	}
-	if cfg, ok := a.latestSetupConfig(); ok {
-		cfg.defaults()
-		a.applyMihomoProviderFieldsFromEffectiveConfig(&cfg)
-		if err := a.ensureSetupProviderArtifacts(cfg); err != nil {
-			report.Errors = append(report.Errors, "failed to sync setup providers: "+err.Error())
+	cfg, ok := a.latestSetupConfig()
+	if !ok {
+		report.Errors = append(report.Errors, "initialized setup config is missing")
+		return report
+	}
+	cfg.defaults()
+	if err := a.migrateSetupProxyModeForRuntime(&cfg); err != nil {
+		report.Errors = append(report.Errors, err.Error())
+		return report
+	}
+	if err := validateSetupProxyMode(cfg); err != nil {
+		report.Errors = append(report.Errors, err.Error())
+		return report
+	}
+	if !shouldRestoreNFT(cfg) && runtime.GOOS == "linux" {
+		output, err := a.clearNFT(ctx)
+		status := a.nftStatus()
+		if output != "" {
+			status["output"] = output
+		}
+		report.NFT = status
+		if err != nil {
+			report.Errors = append(report.Errors, "failed to clear nftables for TUN mode: "+err.Error())
+			return report
 		}
 	}
+	if err := a.ensureProxyModeConsistency(cfg, a.mihomoConfigMode() != "custom"); err != nil {
+		report.Errors = append(report.Errors, err.Error())
+		return report
+	}
+	a.applyMihomoProviderFieldsFromEffectiveConfig(&cfg)
+	if err := a.ensureSetupProviderArtifacts(cfg); err != nil {
+		report.Errors = append(report.Errors, "failed to sync setup providers: "+err.Error())
+	}
 	a.backfillConfiguredRuntimeDesired()
+	a.setSetting(nftDesiredKey, boolSetting(shouldRestoreNFT(cfg)))
+	if err := a.validateProxyModeRuntimeState(cfg); err != nil {
+		report.Errors = append(report.Errors, err.Error())
+		return report
+	}
 	report.Errors = append(report.Errors, a.Services.StartEnabled(ctx)...)
 	report.Services = a.Services.List()
 	if a.setting(nftDesiredKey, "") == "true" {
@@ -51,6 +93,21 @@ func (a *App) RestoreConfiguredRuntime(ctx context.Context) RuntimeRestoreReport
 		}
 	}
 	return report
+}
+
+func (a *App) migrateSetupProxyModeForRuntime(cfg *SetupConfig) error {
+	if cfg == nil {
+		return nil
+	}
+	cfg.defaults()
+	if !IsDockerRuntime() || isTUNProxyMode(cfg.LinuxProxyMode) {
+		return nil
+	}
+	cfg.LinuxProxyMode = "tun"
+	if _, err := a.DB.Exec(`update system_setups set linux_proxy_mode='tun',updated_at=? where id=(select id from system_setups order by id desc limit 1)`, nowString()); err != nil {
+		return fmt.Errorf("failed to migrate Docker proxy mode to TUN: %w", err)
+	}
+	return nil
 }
 
 func (a *App) backfillConfiguredRuntimeDesired() {
@@ -78,7 +135,7 @@ func (a *App) latestSetupConfig() (SetupConfig, bool) {
 }
 
 func shouldRestoreNFT(cfg SetupConfig) bool {
-	return isNFTProxyMode(cfg.LinuxProxyMode)
+	return !IsDockerRuntime() && isNFTProxyMode(cfg.LinuxProxyMode)
 }
 
 func (a *App) currentLinuxProxyMode() string {

@@ -17,6 +17,7 @@ OUT_DIR="${ROOT_DIR}/${DIST}/unraid"
 TXZ="${OUT_DIR}/${PKG_NAME}.txz"
 PLG="${OUT_DIR}/${APP_NAME}.plg"
 ROOT_PLG="${ROOT_DIR}/${APP_NAME}.plg"
+UPDATE_ROOT_PLG="${UPDATE_ROOT_PLG:-false}"
 BIN="${ROOT_DIR}/${DIST}/${APP_NAME}-linux-amd64"
 
 if [ ! -x "$BIN" ]; then
@@ -72,11 +73,15 @@ sed \
   -e "s|__RELEASE_TAG__|${RELEASE_TAG}|g" \
   -e "s|__PACKAGE_SHA256__|${PKG_SHA256}|g" \
   "${ROOT_DIR}/packaging/unraid/msf.plg.in" > "$PLG"
-cp "$PLG" "$ROOT_PLG"
+if [ "$UPDATE_ROOT_PLG" = "true" ]; then
+  cp "$PLG" "$ROOT_PLG"
+fi
 
 cp "${ROOT_DIR}/packaging/unraid/README.md" "${OUT_DIR}/README.md"
 
 echo "Unraid package: $TXZ"
 echo "Unraid plugin:  $PLG"
-echo "Repo plugin:    $ROOT_PLG"
+if [ "$UPDATE_ROOT_PLG" = "true" ]; then
+  echo "Repo plugin:    $ROOT_PLG"
+fi
 echo "SHA256:         $PKG_SHA256"

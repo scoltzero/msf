@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -29,7 +30,15 @@ import (
 	"github.com/scoltzero/msf/internal/server"
 )
 
-var version = "0.1.0-dev"
+var (
+	version           = "0.1.0-dev"
+	buildCommit       = "unknown"
+	buildTag          = "unknown"
+	buildTagCommit    = "unknown"
+	buildSourceCommit = "unknown"
+	buildDirty        = "unknown"
+	buildTime         = ""
+)
 
 var (
 	currentEUID                        = os.Geteuid
@@ -79,6 +88,7 @@ func run(args []string) error {
 	daemon := fs.Bool("d", false, "daemon mode placeholder")
 	versionFlag := fs.Bool("v", false, "print version")
 	fs.BoolVar(versionFlag, "version", false, "print version")
+	versionJSON := fs.Bool("json", false, "print machine-readable JSON for the version command")
 	helpAll := fs.Bool("help-all", false, "print full help")
 	_ = fs.Parse(args)
 	configExplicit := false
@@ -97,7 +107,20 @@ func run(args []string) error {
 	})
 
 	if *versionFlag || command == "version" {
-		fmt.Printf("msf %s\n", version)
+		info := map[string]string{
+			"name":          "msf",
+			"version":       version,
+			"commit":        buildCommit,
+			"tag":           buildTag,
+			"tag_commit":    buildTagCommit,
+			"source_commit": buildSourceCommit,
+			"dirty":         buildDirty,
+			"build_time":    buildTime,
+		}
+		if *versionJSON {
+			return json.NewEncoder(os.Stdout).Encode(info)
+		}
+		fmt.Printf("msf %s commit=%s tag=%s source=%s dirty=%s\n", version, buildCommit, buildTag, buildSourceCommit, buildDirty)
 		return nil
 	}
 	if command == "help" || *helpAll {
@@ -112,14 +135,14 @@ func run(args []string) error {
 		}
 		return serve(*configDir, *host, *port)
 	case "init", "migrate":
-		app, err := server.New(server.Options{DataDir: *configDir, Version: version})
+		app, err := server.New(serverOptions(*configDir))
 		if err != nil {
 			return err
 		}
 		defer app.Close()
 		return app.EnsureBaseLayout()
 	case "reset-password":
-		app, err := server.New(server.Options{DataDir: *configDir, Version: version})
+		app, err := server.New(serverOptions(*configDir))
 		if err != nil {
 			return err
 		}
@@ -206,7 +229,7 @@ Notes:
 }
 
 func serve(dataDir, host string, port int) error {
-	app, err := server.New(server.Options{DataDir: dataDir, Version: version})
+	app, err := server.New(serverOptions(dataDir))
 	if err != nil {
 		return err
 	}
@@ -269,6 +292,21 @@ func serve(dataDir, host string, port int) error {
 		return nil
 	}
 	return err
+}
+
+func serverOptions(dataDir string) server.Options {
+	return server.Options{
+		DataDir: dataDir,
+		Version: version,
+		Build: server.BuildInfo{
+			Commit:       buildCommit,
+			Tag:          buildTag,
+			TagCommit:    buildTagCommit,
+			SourceCommit: buildSourceCommit,
+			Dirty:        buildDirty,
+			BuildTime:    buildTime,
+		},
+	}
 }
 
 func defaultDataDir() string {
@@ -547,7 +585,7 @@ func printStatus(dataDir, serviceName string) error {
 	if systemdUnitExists(serviceName) {
 		fmt.Printf("systemd: %s\n", strings.TrimSpace(commandOutput("systemctl", "is-active", serviceName)))
 	}
-	app, err := server.New(server.Options{DataDir: dataDir, Version: version})
+	app, err := server.New(serverOptions(dataDir))
 	if err == nil {
 		defer app.Close()
 		for _, st := range app.Services.List() {
@@ -648,7 +686,7 @@ func runDoctor(dataDir, serviceName string) error {
 	} else {
 		fmt.Printf("systemd %s: not-installed\n", serviceName)
 	}
-	app, err := server.New(server.Options{DataDir: dataDir, Version: version})
+	app, err := server.New(serverOptions(dataDir))
 	if err != nil {
 		return err
 	}
@@ -1013,7 +1051,7 @@ func updateRuntime(opts updateOptions) error {
 	}
 	defer os.RemoveAll(tmp)
 	archivePath := filepath.Join(tmp, archiveName)
-	downloadApp, appErr := server.New(server.Options{DataDir: opts.DataDir, Version: version})
+	downloadApp, appErr := server.New(serverOptions(opts.DataDir))
 	if appErr == nil {
 		defer downloadApp.Close()
 		effectiveURL := downloadApp.EffectiveDownloadURL(opts.URL)

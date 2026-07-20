@@ -21,10 +21,22 @@ type setupPreflightResult struct {
 	Success       bool                `json:"success"`
 	DNS53         setupDNS53Status    `json:"dns53"`
 	Timezone      setupTimezoneStatus `json:"timezone"`
+	TUN           setupTUNStatus      `json:"tun"`
+	EffectiveMode string              `json:"effective_proxy_mode"`
 	ReservedPorts []setupPortCheck    `json:"reserved_ports"`
 	Blocking      bool                `json:"blocking"`
 	Warnings      []string            `json:"warnings"`
 	Errors        []string            `json:"errors,omitempty"`
+}
+
+type setupTUNStatus struct {
+	Required    bool   `json:"required"`
+	Available   bool   `json:"available"`
+	Device      string `json:"device"`
+	NetAdmin    bool   `json:"net_admin"`
+	NetRaw      bool   `json:"net_raw"`
+	NetworkMode string `json:"network_mode,omitempty"`
+	Message     string `json:"message"`
 }
 
 type setupDNS53Status struct {
@@ -81,6 +93,9 @@ var (
 	setupShouldProbePort = func() bool {
 		return runtime.GOOS == "linux" && setupGeteuid() == 0
 	}
+	setupTunPreflight        = detectSetupTUN
+	setupTUNDeviceStat       = os.Stat
+	setupNetworkCapabilities = effectiveNetworkCapabilities
 )
 
 const (
@@ -103,7 +118,20 @@ func (a *App) buildSetupPreflight(ctx context.Context, targetTimezone string, au
 		targetTimezone = "Asia/Shanghai"
 	}
 	proxyMode := setupPreflightProxyMode(proxyModes...)
-	result := setupPreflightResult{Success: true}
+	if IsDockerRuntime() {
+		proxyMode = "tun"
+	}
+	result := setupPreflightResult{Success: true, EffectiveMode: proxyMode}
+	requestedMode := setupPreflightProxyMode(proxyModes...)
+	if err := validateSetupProxyMode(SetupConfig{LinuxProxyMode: requestedMode}); err != nil {
+		result.Blocking = true
+		result.Errors = append(result.Errors, err.Error())
+	}
+	result.TUN = setupTunPreflight(proxyMode)
+	if result.TUN.Required && !result.TUN.Available {
+		result.Blocking = true
+		result.Errors = append(result.Errors, result.TUN.Message)
+	}
 	result.Timezone = setupTimezonePreflight(ctx, targetTimezone)
 	if !result.Timezone.Valid {
 		result.Blocking = true
@@ -135,6 +163,67 @@ func (a *App) buildSetupPreflight(ctx context.Context, targetTimezone string, au
 	}
 	result.Success = !result.Blocking
 	return result
+}
+
+func detectSetupTUN(proxyMode string) setupTUNStatus {
+	status := setupTUNStatus{Required: isTUNProxyMode(proxyMode), Available: true, Device: "/dev/net/tun", NetAdmin: true, NetRaw: true}
+	if !status.Required {
+		status.Message = "TUN device is not required for nftables mode"
+		return status
+	}
+	if runtime.GOOS != "linux" {
+		status.Message = "TUN preflight is only enforced on Linux"
+		return status
+	}
+	if info, err := setupTUNDeviceStat(status.Device); err != nil || info.Mode()&os.ModeCharDevice == 0 {
+		status.Available = false
+		status.Message = "TUN 模式需要可用的 /dev/net/tun"
+		return status
+	}
+	status.NetAdmin, status.NetRaw = setupNetworkCapabilities()
+	if IsDockerRuntime() {
+		status.NetworkMode = DockerNetworkMode()
+		if status.NetworkMode != "host-tun" && status.NetworkMode != "macvlan-tun" {
+			status.Available = false
+			status.Message = "Docker TUN 模式只支持 host-tun 或 macvlan-tun 网络模式"
+			return status
+		}
+		if !status.NetAdmin {
+			status.Available = false
+			status.Message = "Docker TUN 模式需要 CAP_NET_ADMIN"
+			return status
+		}
+		if !status.NetRaw {
+			status.Available = false
+			status.Message = "Docker TUN 模式需要 CAP_NET_RAW"
+			return status
+		}
+	} else if setupGeteuid() != 0 && !status.NetAdmin {
+		status.Available = false
+		status.Message = "TUN 模式需要 root 权限或 CAP_NET_ADMIN"
+		return status
+	}
+	status.Message = "TUN device and network capabilities are available"
+	return status
+}
+
+func effectiveNetworkCapabilities() (bool, bool) {
+	body, err := os.ReadFile("/proc/self/status")
+	if err != nil {
+		return false, false
+	}
+	for _, line := range strings.Split(string(body), "\n") {
+		if !strings.HasPrefix(line, "CapEff:") {
+			continue
+		}
+		value := strings.TrimSpace(strings.TrimPrefix(line, "CapEff:"))
+		bits, err := strconv.ParseUint(value, 16, 64)
+		if err != nil {
+			return false, false
+		}
+		return bits&(uint64(1)<<12) != 0, bits&(uint64(1)<<13) != 0
+	}
+	return false, false
 }
 
 func setupPreflightProxyMode(proxyModes ...string) string {

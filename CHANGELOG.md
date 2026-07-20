@@ -6,6 +6,56 @@
 
 ### English
 
+## v0.3.9.5 - 2026-07-20
+
+### 中文
+
+#### 说明
+
+- 这是一次 Factory Reset 与全平台 TUN 一致性修复发布，重点解决 nftables 模式重置后重新选择 TUN，但旧用户数据、配置引用或网络状态仍让 Mihomo 保持 nftables 配置的问题。
+- 本版本发布 16 个 GitHub Release assets：Linux amd64/arm64 tarball 及旧名称兼容副本、Unraid `.txz`/`.plg`、fnOS x86/arm `.fpk`，每个安装资产同时提供 `.sha256`。
+- Docker 镜像以 `ghcr.io/scoltzero/msf:v0.3.9.5` 与 `latest` 发布；Docker 正式收口为 TUN-only，只支持 `host-tun` 与 `macvlan-tun`。
+- Linux、Unraid、fnOS 与 Docker 统一从同一个干净 tag checkout 构建；二进制和镜像嵌入源码 commit，发布门禁会拒绝 dirty 构建、来源不一致和摘要错误的资产。
+
+#### 修复
+
+- “重置系统”升级为真正的 factory reset：验证当前管理员密码，停止 MosDNS/Mihomo，清理 `table inet msf`、IPv4/IPv6 fwmark rule 与 table 100 路由，并事务性清空用户、JWT/refresh/API token、审计、设置、配置历史、MosDNS 状态、更新状态、provider、备份、日志和下载缓存。
+- 重置默认保留 MosDNS、Mihomo 与 Zashboard；勾选“删除组件”后会一并删除。重置过程使用原子 trash、恢复 marker、数据库事务和新 JWT secret，服务停止、文件或数据库失败时不会留下半重置状态。
+- 重置成功后 WebUI 清除全部 `msf*` local/session storage，并使用硬跳转进入 `/setup`，避免旧 React/Auth 状态继续使用已失效令牌。
+- 初始化强制使用 generated Mihomo 配置并清除 custom/applied 引用；TUN 与 nftables 的数据库、`network.yaml`、Mihomo YAML、`network.nft` 和 desired state 必须一致，否则禁止激活服务。generated 漂移会自动修复一次，custom 冲突会明确报错。
+- TUN 配置固定启用 `tun.enable=true`、`stack=system`、route address/exclude 与 `dns.proxy-server-nameserver`，并移除 `redir-port`、`tproxy-port`、`routing-mark` 和 `network.nft`；nftables 配置则强制相反的不变量。
+- Docker 正式收口为 TUN-only：前端隐藏 nftables，后端拒绝 nft 请求，启动恢复永不恢复 nftables；预检增加 `/dev/net/tun`、root、`CAP_NET_ADMIN`、`CAP_NET_RAW` 和 `host-tun` / `macvlan-tun` 检查。
+- 启动期兼容迁移覆盖 v0.1.x–v0.3.6 generated 配置重建、v0.3.7 旧 TUN/DNS block 升级，以及 v0.3.8–v0.3.9.3 数据库与运行 YAML 漂移检测；真实 custom 配置不会被自动覆盖，但冲突会阻止错误网络规则恢复。
+
+#### 受影响用户
+
+- 从 v0.1.x 至 v0.3.9.3 升级、曾在 nftables/TUN 间切换、执行过“重置系统”或存在 generated 配置漂移的用户都应升级；升级后无需重写历史 Release 资产。
+- 使用真实自定义 Mihomo 配置的用户不会被自动覆盖；如果配置与目标代理模式冲突，系统会明确阻止激活或切换，并要求恢复默认配置或手工修正。
+- Linux、Unraid 与 fnOS 均支持 nftables 和 TUN；Docker 用户必须提供 `/dev/net/tun`、`CAP_NET_ADMIN`、`CAP_NET_RAW` 以及受支持的网络模式。
+
+### English
+
+#### Notes
+
+- This release fixes Factory Reset and cross-platform TUN consistency, especially the case where a user resets an nftables installation, selects TUN during reinitialization, but stale user data, config references, or network state keep Mihomo in nftables mode.
+- It publishes 16 GitHub Release assets: Linux amd64/arm64 tarballs plus legacy-name compatibility copies, Unraid `.txz`/`.plg`, and fnOS x86/arm `.fpk` packages, each with a matching `.sha256`.
+- Docker is published as `ghcr.io/scoltzero/msf:v0.3.9.5` and `latest`. Docker is now TUN-only and supports the `host-tun` and `macvlan-tun` modes.
+- Linux, Unraid, fnOS, and Docker are built from the same clean tagged checkout. Binaries and images embed the source commit, and release gates reject dirty builds, provenance mismatches, and invalid asset digests.
+
+#### Fixed
+
+- “Reset system” is now a real factory reset. It verifies the current admin password, stops MosDNS/Mihomo, clears the `inet msf` table plus IPv4/IPv6 fwmark rules and table 100 routes, and transactionally removes users, JWT/refresh/API tokens, audits, settings, histories, MosDNS state, update state, providers, backups, logs, and download caches.
+- Components and Zashboard are retained by default and removed only when explicitly selected. Atomic trash staging, a recovery marker, a database transaction, and JWT-secret rotation prevent partial reset states.
+- Setup always re-enters generated Mihomo mode. Database intent, `network.yaml`, Mihomo YAML, `network.nft`, and runtime desired state must satisfy the complete TUN/nftables invariants before activation. Generated drift is repaired once; custom-config conflicts are reported and blocked.
+- Docker is now TUN-only. The UI hides nftables, the API rejects Docker nft requests, runtime restore never restores nftables, and preflight validates `/dev/net/tun`, root, `CAP_NET_ADMIN`, `CAP_NET_RAW`, and the `host-tun` / `macvlan-tun` mode.
+- Startup compatibility migration rebuilds v0.1.x–v0.3.6 generated configs, upgrades the v0.3.7 TUN/DNS block, and detects database/runtime-YAML drift from v0.3.8 through v0.3.9.3. Genuine custom configs are not overwritten, but conflicts block incorrect network-rule restoration.
+
+#### Affected Users
+
+- Users upgrading from v0.1.x through v0.3.9.3, switching between nftables and TUN, using “Reset system,” or carrying generated-config drift should upgrade. Historical Release assets remain immutable.
+- Genuine custom Mihomo configs are never silently overwritten. If one conflicts with the target proxy mode, activation or mode switching is blocked until the generated config is restored or the custom YAML is corrected manually.
+- Linux, Unraid, and fnOS support both nftables and TUN. Docker requires `/dev/net/tun`, `CAP_NET_ADMIN`, `CAP_NET_RAW`, and a supported Docker network mode.
+
 ## v0.3.9.3 - 2026-07-18
 
 ### 中文

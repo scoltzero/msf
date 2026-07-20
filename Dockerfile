@@ -16,15 +16,33 @@ WORKDIR /src
 ARG TARGETOS
 ARG TARGETARCH
 ARG VERSION=0.1.0-dev
+ARG COMMIT=unknown
+ARG TAG=unknown
+ARG TAG_COMMIT=unknown
+ARG SOURCE_COMMIT=unknown
+ARG DIRTY=unknown
+ARG BUILD_TIME=unknown
 
 COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
 COPY --from=web-build /src/internal/server/web/dist ./internal/server/web/dist
-RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/msf ./cmd/msf
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build -buildvcs=false -trimpath \
+  -ldflags "-s -w -X main.version=${VERSION} -X main.buildCommit=${COMMIT} -X main.buildTag=${TAG} -X main.buildTagCommit=${TAG_COMMIT} -X main.buildSourceCommit=${SOURCE_COMMIT} -X main.buildDirty=${DIRTY} -X main.buildTime=${BUILD_TIME}" \
+  -o /out/msf ./cmd/msf
 
 FROM debian:12-slim AS runtime
+
+ARG VERSION=0.1.0-dev
+ARG SOURCE_COMMIT=unknown
+ARG BUILD_TIME=unknown
+
+LABEL org.opencontainers.image.title="MSF" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${SOURCE_COMMIT}" \
+      org.opencontainers.image.created="${BUILD_TIME}" \
+      org.opencontainers.image.source="https://github.com/scoltzero/msf"
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates iproute2 nftables curl tar unzip gzip \

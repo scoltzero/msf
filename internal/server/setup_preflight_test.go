@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"testing"
@@ -258,6 +259,75 @@ func TestSetupActivateReturnsConflictOnRuntimeErrors(t *testing.T) {
 	}
 }
 
+func TestSetupPreflightRejectsDockerNFTAndReportsEffectiveTun(t *testing.T) {
+	t.Setenv("MSF_RUNTIME", "docker")
+	withTestSetupSystemOps(t)
+	result := (&App{}).buildSetupPreflight(context.Background(), "Asia/Shanghai", false, "nft")
+	if !result.Blocking || result.EffectiveMode != "tun" {
+		t.Fatalf("Docker nft preflight=%+v, want blocking effective TUN", result)
+	}
+	if !strings.Contains(strings.Join(result.Errors, ";"), "only supports linux_proxy_mode=tun") {
+		t.Fatalf("Docker nft errors=%v", result.Errors)
+	}
+}
+
+func TestDetectSetupTUNBlocksMissingDeviceCapabilitiesAndNetworkMode(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("Linux-only TUN capability enforcement")
+	}
+	oldStat := setupTUNDeviceStat
+	oldCaps := setupNetworkCapabilities
+	oldGeteuid := setupGeteuid
+	t.Cleanup(func() {
+		setupTUNDeviceStat = oldStat
+		setupNetworkCapabilities = oldCaps
+		setupGeteuid = oldGeteuid
+	})
+
+	t.Run("missing device", func(t *testing.T) {
+		setupTUNDeviceStat = func(string) (os.FileInfo, error) { return nil, os.ErrNotExist }
+		status := detectSetupTUN("tun")
+		if status.Available || !strings.Contains(status.Message, "/dev/net/tun") {
+			t.Fatalf("missing device status=%+v", status)
+		}
+	})
+
+	info, err := os.Stat("/dev/null")
+	if err != nil {
+		t.Fatal(err)
+	}
+	setupTUNDeviceStat = func(string) (os.FileInfo, error) { return info, nil }
+	t.Setenv("MSF_RUNTIME", "native")
+	t.Run("unprivileged native runtime", func(t *testing.T) {
+		setupGeteuid = func() int { return 1000 }
+		setupNetworkCapabilities = func() (bool, bool) { return false, false }
+		status := detectSetupTUN("tun")
+		if status.Available || !strings.Contains(status.Message, "root") {
+			t.Fatalf("unprivileged native TUN status=%+v", status)
+		}
+	})
+
+	setupGeteuid = func() int { return 0 }
+	t.Setenv("MSF_RUNTIME", "docker")
+	t.Setenv("MSF_DOCKER_NETWORK_MODE", "host-tun")
+	t.Run("missing NET_ADMIN", func(t *testing.T) {
+		setupNetworkCapabilities = func() (bool, bool) { return false, true }
+		status := detectSetupTUN("tun")
+		if status.Available || !strings.Contains(status.Message, "CAP_NET_ADMIN") {
+			t.Fatalf("missing capability status=%+v", status)
+		}
+	})
+
+	t.Run("invalid Docker mode", func(t *testing.T) {
+		t.Setenv("MSF_DOCKER_NETWORK_MODE", "bridge")
+		setupNetworkCapabilities = func() (bool, bool) { return true, true }
+		status := detectSetupTUN("tun")
+		if status.Available || !strings.Contains(status.Message, "host-tun") {
+			t.Fatalf("invalid network mode status=%+v", status)
+		}
+	})
+}
+
 func withTestSetupSystemOps(t *testing.T) {
 	t.Helper()
 	oldCommandOutput := setupCommandOutput
@@ -265,11 +335,21 @@ func withTestSetupSystemOps(t *testing.T) {
 	oldGeteuid := setupGeteuid
 	oldProbePort := setupProbePort
 	oldShouldProbePort := setupShouldProbePort
+	oldTunPreflight := setupTunPreflight
+	oldTunDeviceStat := setupTUNDeviceStat
+	oldNetworkCapabilities := setupNetworkCapabilities
+	oldApplyProxyNetworkState := setupApplyProxyNetworkState
 	oldLocal := time.Local
 	oldTZ, hadTZ := os.LookupEnv("TZ")
 	setupGeteuid = func() int { return 0 }
 	setupProbePort = func(protocol string, port int) error { return nil }
 	setupShouldProbePort = func() bool { return true }
+	setupTunPreflight = func(mode string) setupTUNStatus {
+		return setupTUNStatus{Required: isTUNProxyMode(mode), Available: true, Device: "/dev/net/tun", NetAdmin: true, NetRaw: true, Message: "available in test"}
+	}
+	setupTUNDeviceStat = os.Stat
+	setupNetworkCapabilities = func() (bool, bool) { return true, true }
+	setupApplyProxyNetworkState = func(*App, context.Context, SetupConfig) error { return nil }
 	setupLookPath = func(name string) (string, error) {
 		switch name {
 		case "timedatectl", "systemctl":
@@ -295,6 +375,10 @@ func withTestSetupSystemOps(t *testing.T) {
 		setupGeteuid = oldGeteuid
 		setupProbePort = oldProbePort
 		setupShouldProbePort = oldShouldProbePort
+		setupTunPreflight = oldTunPreflight
+		setupTUNDeviceStat = oldTunDeviceStat
+		setupNetworkCapabilities = oldNetworkCapabilities
+		setupApplyProxyNetworkState = oldApplyProxyNetworkState
 		time.Local = oldLocal
 		if hadTZ {
 			_ = os.Setenv("TZ", oldTZ)

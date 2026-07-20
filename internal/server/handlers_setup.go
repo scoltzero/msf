@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"net/http"
@@ -14,6 +13,18 @@ import (
 	"strings"
 	"time"
 )
+
+var setupApplyProxyNetworkState = func(a *App, ctx context.Context, cfg SetupConfig) error {
+	if runtime.GOOS != "linux" {
+		return nil
+	}
+	if shouldRestoreNFT(cfg) {
+		_, err := a.applyNFT(ctx)
+		return err
+	}
+	_, err := a.clearNFT(ctx)
+	return err
+}
 
 func (a *App) handleSetupCheck(w http.ResponseWriter, r *http.Request) {
 	initialized := a.IsInitialized()
@@ -132,10 +143,36 @@ func (a *App) handleSetupPutConfig(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
-	if existing, _, ok := a.latestSetupConfigForSettings(); ok {
+	existing, _, hasExisting := a.latestSetupConfigForSettings()
+	if hasExisting {
 		preserveMissingGitHubDownloadFields(&cfg, meta, existing)
 	}
 	cfg.defaults()
+	if err := validateSetupProxyMode(cfg); err != nil {
+		writeError(w, http.StatusBadRequest, "unsupported_proxy_mode", err.Error())
+		return
+	}
+	if hasExisting {
+		existing.defaults()
+		if a.mihomoConfigMode() == "custom" && !strings.EqualFold(existing.LinuxProxyMode, cfg.LinuxProxyMode) {
+			content, readErr := os.ReadFile(filepath.Join(a.DataDir, mihomoActiveConfigRelPath))
+			conflictErr := readErr
+			if conflictErr == nil {
+				conflictErr = a.validateMihomoContentForTargetProxyMode(cfg, content)
+			}
+			if conflictErr != nil {
+				writeError(w, http.StatusConflict, "custom_config_mode_conflict", "restore the generated Mihomo config or manually update the active custom config for the target proxy mode before retrying: "+conflictErr.Error())
+				return
+			}
+		}
+		if !strings.EqualFold(existing.LinuxProxyMode, cfg.LinuxProxyMode) && isTUNProxyMode(cfg.LinuxProxyMode) {
+			tunStatus := setupTunPreflight(cfg.LinuxProxyMode)
+			if !tunStatus.Available {
+				writeError(w, http.StatusConflict, "tun_preflight_failed", tunStatus.Message)
+				return
+			}
+		}
+	}
 	if cfg.Username == "" {
 		cfg.Username = "root"
 	}
@@ -143,17 +180,48 @@ func (a *App) handleSetupPutConfig(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "timezone_error", err.Error())
 		return
 	}
-	now := time.Now()
-	_, err = a.DB.Exec(`insert into system_setups(created_at,updated_at,username,email,timezone,web_port,amd64v3_enabled,selected_interface,mihomo_core_type,auto_set_dns,dns_on,dns_off,enable_ipv6,fake_ip_range_v4,fake_ip_range_v6,linux_proxy_mode,nft_proxy_policy,proxy_core,mos_dns_enabled,subscription_urls,mihomo_proxies,github_proxy_enabled,github_https_proxy,github_http_proxy,github_socks5_proxy,github_accelerator_enabled,github_accelerator_url,is_initialized)
-		values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,true)`,
-		now, now, cfg.Username, cfg.Email, cfg.Timezone, cfg.WebPort, cfg.AMD64v3Enabled, cfg.SelectedInterface, cfg.MihomoCoreType, cfg.AutoSetDNS, cfg.DNSOn, cfg.DNSOff, cfg.EnableIPv6, cfg.FakeIPRangeV4, cfg.FakeIPRangeV6, cfg.LinuxProxyMode, cfg.NFTProxyPolicy, "mihomo", true, cfg.SubscriptionURLs, cfg.MihomoProxies, cfg.GitHubProxyEnabled, cfg.GitHubHTTPSProxy, cfg.GitHubHTTPProxy, cfg.GitHubSocks5Proxy, cfg.GitHubAcceleratorEnabled, cfg.GitHubAcceleratorURL)
+	if err := a.writeGeneratedConfigs(cfg); err != nil {
+		writeError(w, http.StatusInternalServerError, "config_error", err.Error())
+		return
+	}
+	if err := a.ensureProxyModeConsistency(cfg, false); err != nil {
+		writeError(w, http.StatusConflict, "proxy_mode_mismatch", err.Error())
+		return
+	}
+	setupID, err := a.insertInitializedSetup(cfg)
 	if err != nil {
+		if hasExisting {
+			_ = a.writeGeneratedConfigs(existing)
+		}
 		writeError(w, http.StatusInternalServerError, "setup_error", err.Error())
 		return
 	}
 	a.SetConfiguredRuntimeDesired(cfg)
-	if err := a.writeGeneratedConfigs(cfg); err != nil {
-		writeError(w, http.StatusInternalServerError, "config_error", err.Error())
+	if err := a.validateProxyModeRuntimeState(cfg); err != nil {
+		_, _ = a.DB.Exec(`delete from system_setups where id=?`, setupID)
+		if hasExisting {
+			a.SetConfiguredRuntimeDesired(existing)
+			_ = a.writeGeneratedConfigs(existing)
+		} else {
+			a.Services.setDesired("mihomo", false)
+			a.Services.setDesired("mosdns", false)
+			a.setSetting(nftDesiredKey, "false")
+		}
+		writeError(w, http.StatusConflict, "proxy_mode_mismatch", err.Error())
+		return
+	}
+	if err := setupApplyProxyNetworkState(a, r.Context(), cfg); err != nil {
+		_, _ = a.DB.Exec(`delete from system_setups where id=?`, setupID)
+		if hasExisting {
+			a.SetConfiguredRuntimeDesired(existing)
+			_ = a.writeGeneratedConfigs(existing)
+			_ = setupApplyProxyNetworkState(a, r.Context(), existing)
+		} else {
+			a.Services.setDesired("mihomo", false)
+			a.Services.setDesired("mosdns", false)
+			a.setSetting(nftDesiredKey, "false")
+		}
+		writeError(w, http.StatusInternalServerError, "network_apply_failed", err.Error())
 		return
 	}
 	restarted := []string{}
@@ -166,7 +234,6 @@ func (a *App) handleSetupPutConfig(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	missing := a.setupMissingComponentsForConfig(cfg)
-	networkReapply := shouldRestoreNFT(cfg)
 	payload := setupConfigPayload(cfg, true)
 	response := map[string]any{
 		"success":                  true,
@@ -175,7 +242,10 @@ func (a *App) handleSetupPutConfig(w http.ResponseWriter, r *http.Request) {
 		"restarted_services":       restarted,
 		"needs_download":           len(missing) > 0,
 		"download_component":       missing,
-		"network_reapply_required": networkReapply,
+		"network_reapply_required": false,
+		"network_applied":          runtime.GOOS == "linux",
+		"effective_proxy_mode":     cfg.LinuxProxyMode,
+		"tun":                      setupTunPreflight(cfg.LinuxProxyMode),
 	}
 	for key, value := range payload {
 		response[key] = value
@@ -192,6 +262,7 @@ type setupConfigRequestMeta struct {
 	GitHubAcceleratorURL     bool
 	SubscriptionURLs         bool
 	MihomoProxies            bool
+	LinuxProxyMode           bool
 }
 
 func preserveMissingGitHubDownloadFields(cfg *SetupConfig, meta setupConfigRequestMeta, existing SetupConfig) {
@@ -219,15 +290,26 @@ func preserveMissingGitHubDownloadFields(cfg *SetupConfig, meta setupConfigReque
 	if !meta.MihomoProxies {
 		cfg.MihomoProxies = existing.MihomoProxies
 	}
+	if !meta.LinuxProxyMode {
+		cfg.LinuxProxyMode = existing.LinuxProxyMode
+	}
 }
 
 func (a *App) handleSetupInitialize(w http.ResponseWriter, r *http.Request) {
+	if a.IsInitialized() {
+		writeError(w, http.StatusConflict, "already_initialized", "system is already initialized")
+		return
+	}
 	var cfg SetupConfig
 	if err := decodeSetupConfigRequest(r, &cfg); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
 	cfg.defaults()
+	if err := validateSetupProxyMode(cfg); err != nil {
+		writeError(w, http.StatusBadRequest, "unsupported_proxy_mode", err.Error())
+		return
+	}
 	if cfg.Username == "" || cfg.Password == "" {
 		writeError(w, http.StatusBadRequest, "validation_error", "username and password are required")
 		return
@@ -246,6 +328,7 @@ func (a *App) handleSetupInitialize(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "timezone_error", err.Error())
 		return
 	}
+	a.prepareUninitializedGeneratedMihomoMode()
 	if err := a.EnsureBaseLayout(); err != nil {
 		writeError(w, http.StatusInternalServerError, "layout_error", err.Error())
 		return
@@ -258,23 +341,54 @@ func (a *App) handleSetupInitialize(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "config_error", err.Error())
 		return
 	}
-	now := time.Now()
-	_, err := a.DB.Exec(`insert into system_setups(created_at,updated_at,username,email,timezone,web_port,amd64v3_enabled,selected_interface,mihomo_core_type,auto_set_dns,dns_on,dns_off,enable_ipv6,fake_ip_range_v4,fake_ip_range_v6,linux_proxy_mode,nft_proxy_policy,proxy_core,mos_dns_enabled,subscription_urls,mihomo_proxies,github_proxy_enabled,github_https_proxy,github_http_proxy,github_socks5_proxy,github_accelerator_enabled,github_accelerator_url,is_initialized)
-		values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,true)`,
-		now, now, cfg.Username, cfg.Email, cfg.Timezone, cfg.WebPort, cfg.AMD64v3Enabled, cfg.SelectedInterface, cfg.MihomoCoreType, cfg.AutoSetDNS, cfg.DNSOn, cfg.DNSOff, cfg.EnableIPv6, cfg.FakeIPRangeV4, cfg.FakeIPRangeV6, cfg.LinuxProxyMode, cfg.NFTProxyPolicy, "mihomo", true, cfg.SubscriptionURLs, cfg.MihomoProxies, cfg.GitHubProxyEnabled, cfg.GitHubHTTPSProxy, cfg.GitHubHTTPProxy, cfg.GitHubSocks5Proxy, cfg.GitHubAcceleratorEnabled, cfg.GitHubAcceleratorURL)
+	if err := a.validateGeneratedProxyModeFiles(cfg); err != nil {
+		writeError(w, http.StatusConflict, "proxy_mode_mismatch", err.Error())
+		return
+	}
+	setupID, err := a.insertInitializedSetup(cfg)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "setup_error", err.Error())
 		return
 	}
 	a.SetConfiguredRuntimeDesired(cfg)
+	if err := a.validateProxyModeRuntimeState(cfg); err != nil {
+		_, _ = a.DB.Exec(`delete from system_setups where id=?`, setupID)
+		a.Services.setDesired("mihomo", false)
+		a.Services.setDesired("mosdns", false)
+		a.setSetting(nftDesiredKey, "false")
+		writeError(w, http.StatusConflict, "proxy_mode_mismatch", err.Error())
+		return
+	}
 	a.audit(nil, "setup.initialize", "system", cfg.Username, true, "")
 	missing := a.setupMissingComponentsForConfig(cfg)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"success":            true,
-		"message":            "initialized",
-		"needs_download":     len(missing) > 0,
-		"download_component": missing,
+		"success":              true,
+		"message":              "initialized",
+		"needs_download":       len(missing) > 0,
+		"download_component":   missing,
+		"effective_proxy_mode": cfg.LinuxProxyMode,
+		"tun":                  preflight.TUN,
 	})
+}
+
+func (a *App) prepareUninitializedGeneratedMihomoMode() {
+	a.setSetting(mihomoAppliedUserConfigKey, "")
+	a.setSetting(mihomoGeneratedBackupPathKey, mihomoGeneratedBackupRelPath)
+	a.setMihomoConfigMode("generated")
+	a.setSetting("mihomo.active_config", "config.yaml")
+	_ = os.Remove(filepath.Join(a.DataDir, mihomoGeneratedBackupRelPath))
+	_ = os.Remove(filepath.Join(a.DataDir, "configs/mihomo/config.yaml.backup"))
+}
+
+func (a *App) insertInitializedSetup(cfg SetupConfig) (int64, error) {
+	now := time.Now()
+	res, err := a.DB.Exec(`insert into system_setups(created_at,updated_at,username,email,timezone,web_port,amd64v3_enabled,selected_interface,mihomo_core_type,auto_set_dns,dns_on,dns_off,enable_ipv6,fake_ip_range_v4,fake_ip_range_v6,linux_proxy_mode,nft_proxy_policy,proxy_core,mos_dns_enabled,subscription_urls,mihomo_proxies,github_proxy_enabled,github_https_proxy,github_http_proxy,github_socks5_proxy,github_accelerator_enabled,github_accelerator_url,is_initialized)
+		values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,true)`,
+		now, now, cfg.Username, cfg.Email, cfg.Timezone, cfg.WebPort, cfg.AMD64v3Enabled, cfg.SelectedInterface, cfg.MihomoCoreType, cfg.AutoSetDNS, cfg.DNSOn, cfg.DNSOff, cfg.EnableIPv6, cfg.FakeIPRangeV4, cfg.FakeIPRangeV6, cfg.LinuxProxyMode, cfg.NFTProxyPolicy, "mihomo", true, cfg.SubscriptionURLs, cfg.MihomoProxies, cfg.GitHubProxyEnabled, cfg.GitHubHTTPSProxy, cfg.GitHubHTTPProxy, cfg.GitHubSocks5Proxy, cfg.GitHubAcceleratorEnabled, cfg.GitHubAcceleratorURL)
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
 }
 
 func decodeSetupConfigRequest(r *http.Request, cfg *SetupConfig) error {
@@ -296,6 +410,7 @@ func decodeSetupConfigRequestWithMeta(r *http.Request, cfg *SetupConfig) (setupC
 		GitHubAcceleratorURL:     setupHasValue(raw, "github_accelerator_url", "githubAcceleratorURL"),
 		SubscriptionURLs:         setupHasValue(raw, "subscription_urls", "subscriptionURLs"),
 		MihomoProxies:            setupHasValue(raw, "mihomo_proxies", "mihomoProxies"),
+		LinuxProxyMode:           setupHasValue(raw, "linux_proxy_mode", "linuxProxyMode"),
 	}
 	cfg.Username = setupString(raw, "username")
 	cfg.Password = setupString(raw, "password")
@@ -484,26 +599,46 @@ func (a *App) handleSetupReset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		DeleteBinaries   bool `json:"delete_binaries"`
-		DeleteComponents bool `json:"delete_components"`
+		CurrentPassword  string `json:"current_password"`
+		DeleteBinaries   bool   `json:"delete_binaries"`
+		DeleteComponents bool   `json:"delete_components"`
 	}
-	if err := decodeJSON(r, &req); err != nil && err != io.EOF {
+	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
-	_ = a.Services.StopAll(r.Context())
-	_, _ = a.DB.Exec(`delete from system_setups`)
-	a.Services.setDesired("mihomo", false)
-	a.Services.setDesired("mosdns", false)
-	a.setSetting(nftDesiredKey, "false")
-	deletedBinaries := false
-	if req.DeleteBinaries || req.DeleteComponents {
-		_ = os.RemoveAll(filepath.Join(a.DataDir, "data/binaries/mihomo"))
-		_ = os.RemoveAll(filepath.Join(a.DataDir, "data/binaries/mosdns"))
-		deletedBinaries = true
+	if !a.resetMu.TryLock() {
+		writeError(w, http.StatusConflict, "reset_in_progress", "system factory reset is already in progress")
+		return
 	}
-	a.audit(currentUser(r), "setup.reset", "system", fmt.Sprintf("delete_binaries=%t", deletedBinaries), true, "")
-	writeJSON(w, http.StatusOK, map[string]any{"success": true, "deleted_binaries": deletedBinaries})
+	defer a.resetMu.Unlock()
+	if err := a.validateFactoryResetPassword(currentUser(r), req.CurrentPassword); err != nil {
+		if strings.Contains(err.Error(), "required") {
+			writeError(w, http.StatusBadRequest, "validation_error", err.Error())
+		} else {
+			writeError(w, http.StatusUnauthorized, "invalid_credentials", err.Error())
+		}
+		return
+	}
+	a.resetInProgress.Store(true)
+	defer a.resetInProgress.Store(false)
+	a.resetGate.Lock()
+	defer a.resetGate.Unlock()
+
+	deleteComponents := req.DeleteComponents || req.DeleteBinaries
+	result, err := a.factoryReset(r.Context(), factoryResetOptions{DeleteComponents: deleteComponents})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "factory_reset_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"success":               true,
+		"factory_reset":         result.FactoryReset,
+		"requires_reinitialize": result.RequiresReinitialize,
+		"deleted_components":    result.DeletedComponents,
+		"retained_components":   result.RetainedComponents,
+		"deleted_binaries":      deleteComponents,
+	})
 }
 
 func (a *App) handleSetupDownload(w http.ResponseWriter, r *http.Request) {

@@ -69,7 +69,7 @@ func (a *App) authenticateRequest(r *http.Request) (*AuthIdentity, error) {
 
 func (a *App) authenticateJWT(tokenStr string) (*AuthIdentity, error) {
 	token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(token *jwt.Token) (any, error) {
-		return a.Secret, nil
+		return a.currentSecret(), nil
 	})
 	if err != nil || !token.Valid {
 		return nil, errors.New("invalid jwt")
@@ -114,7 +114,7 @@ func (a *App) makeToken(u *User, ttl time.Duration) (string, error) {
 			ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
 		},
 	}
-	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(a.Secret)
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(a.currentSecret())
 }
 
 func tokenHash(token string) string {

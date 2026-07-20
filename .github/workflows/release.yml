@@ -1,0 +1,138 @@
+name: Release assets
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify source provenance
+        id: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF_TYPE}" != "tag" || ! "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Release assets must be built from a version tag" >&2
+            exit 1
+          fi
+          test -z "$(git status --porcelain)"
+          commit="$(git rev-parse HEAD)"
+          tag_commit="$(git rev-parse "${GITHUB_REF_NAME}^{commit}")"
+          test "$commit" = "$tag_commit"
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          git merge-base --is-ancestor "$commit" origin/main || {
+            echo "Release tag commit must be reachable from main" >&2
+            exit 1
+          }
+          version="${GITHUB_REF_NAME#v}"
+          {
+            echo "commit=$commit"
+            echo "version=$version"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.x"
+          cache: true
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Install frontend dependencies
+        run: npm --prefix web ci
+
+      - name: Test source
+        run: |
+          go test ./...
+          npm --prefix web run check
+
+      - name: Build and verify all release assets
+        run: make release-assets VERSION=${{ steps.source.outputs.version }} RELEASE_TAG=${GITHUB_REF_NAME}
+
+      - name: Prepare TUN smoke-test host
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo modprobe tun 2>/dev/null || true
+          if [[ ! -c /dev/net/tun ]]; then
+            sudo mkdir -p /dev/net
+            sudo mknod /dev/net/tun c 10 200
+          fi
+          sudo chmod 666 /dev/net/tun
+
+      - name: Black-box factory-reset and TUN smoke tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ steps.source.outputs.version }}"
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          mkdir -p "$tmp/unraid" "$tmp/fnos-x86" "$tmp/fnos-arm" "$tmp/fnos-x86-app" "$tmp/fnos-arm-app"
+          tar -xJf "dist/unraid/msf-${version}-x86_64-1.txz" -C "$tmp/unraid"
+          tar -xzf "dist/msf_${version}_x86.fpk" -C "$tmp/fnos-x86"
+          tar -xzf "dist/msf_${version}_arm.fpk" -C "$tmp/fnos-arm"
+          tar -xzf "$tmp/fnos-x86/app.tgz" -C "$tmp/fnos-x86-app"
+          tar -xzf "$tmp/fnos-arm/app.tgz" -C "$tmp/fnos-arm-app"
+          binaries=(
+            "dist/msf-linux-amd64"
+            "dist/msf-linux-arm64"
+            "$tmp/unraid/usr/local/emhttp/plugins/msf/bin/msf"
+            "$tmp/fnos-x86-app/msf"
+            "$tmp/fnos-arm-app/msf"
+          )
+          for binary in "${binaries[@]}"; do
+            sudo -E unshare --net -- scripts/smoke-factory-reset.sh "$binary"
+          done
+
+      - name: Publish immutable GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ steps.source.outputs.version }}"
+          notes_file="dist/release-notes.md"
+          awk -v tag="${GITHUB_REF_NAME}" '
+            index($0, "## " tag " - ") == 1 { capture=1 }
+            capture && printed && /^## v/ { exit }
+            capture { print; printed=1 }
+          ' CHANGELOG.md > "$notes_file"
+          test -s "$notes_file"
+          assets=(
+            "dist/msf-linux-amd64.tar.gz"
+            "dist/msf-linux-amd64.tar.gz.sha256"
+            "dist/msm-free-linux-amd64.tar.gz"
+            "dist/msm-free-linux-amd64.tar.gz.sha256"
+            "dist/msf-linux-arm64.tar.gz"
+            "dist/msf-linux-arm64.tar.gz.sha256"
+            "dist/msm-free-linux-arm64.tar.gz"
+            "dist/msm-free-linux-arm64.tar.gz.sha256"
+            "dist/unraid/msf-${version}-x86_64-1.txz"
+            "dist/unraid/msf-${version}-x86_64-1.txz.sha256"
+            "dist/unraid/msf.plg"
+            "dist/unraid/msf.plg.sha256"
+            "dist/msf_${version}_x86.fpk"
+            "dist/msf_${version}_x86.fpk.sha256"
+            "dist/msf_${version}_arm.fpk"
+            "dist/msf_${version}_arm.fpk.sha256"
+          )
+          gh release create "${GITHUB_REF_NAME}" --verify-tag --title "${GITHUB_REF_NAME}" --notes-file "$notes_file" "${assets[@]}"

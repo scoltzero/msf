@@ -33,7 +33,7 @@ import {
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { ToastStack, useToaster } from "@/components/Toaster";
-import { api, apiData, apiList } from "@/lib/api";
+import { api, apiData, apiList, clearSession } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 type TabId = "profile" | "system" | "appearance" | "update" | "reset";
@@ -50,6 +50,7 @@ interface InitConfigState {
   iface: string;
   proxyCore: "Mihomo" | "无";
   mihomoType: "Meta" | "Alpha";
+  proxyMode: "nft" | "tun";
   autoDns: boolean;
   dnsEnable: string;
   dnsDisable: string;
@@ -396,6 +397,7 @@ const defaultInitConfig: InitConfigState = {
   iface: "enp1s0 (192.168.10.3)",
   proxyCore: "Mihomo",
   mihomoType: "Meta",
+  proxyMode: "nft",
   autoDns: true,
   dnsEnable: "127.0.0.1",
   dnsDisable: "223.5.5.5",
@@ -474,7 +476,7 @@ function serializeSubscriptions(rows: SubscriptionRow[]) {
     .join("\n");
 }
 
-function setupToInitConfig(raw: any): InitConfigState {
+function setupToInitConfig(raw: any, forceTun = false): InitConfigState {
   const data = raw && typeof raw === "object" ? raw : {};
   const subscriptions = parseSubscriptionValue(data.subscription_urls || data.subscriptionURLs);
   const mihomoProxies = String(data.mihomo_proxies || data.mihomoProxies || "");
@@ -485,6 +487,7 @@ function setupToInitConfig(raw: any): InitConfigState {
     iface: String(data.selected_interface || data.selectedInterface || ""),
     proxyCore: String(data.proxy_core || data.proxyCore || "mihomo").toLowerCase() === "none" ? "无" : "Mihomo",
     mihomoType: String(data.mihomo_core_type || data.mihomoCoreType || "meta").toLowerCase() === "alpha" ? "Alpha" : "Meta",
+    proxyMode: forceTun || String(data.linux_proxy_mode || "nft").toLowerCase() === "tun" ? "tun" : "nft",
     autoDns: data.auto_set_dns ?? data.autoSetDNS ?? true,
     dnsEnable: String(data.dns_on || data.dnsOn || "127.0.0.1"),
     dnsDisable: String(data.dns_off || data.dnsOff || "223.5.5.5"),
@@ -507,6 +510,7 @@ function initConfigToSetupPayload(config: InitConfigState) {
     selected_interface: config.iface,
     proxy_core: config.proxyCore === "无" ? "none" : "mihomo",
     mihomo_core_type: config.mihomoType.toLowerCase(),
+    linux_proxy_mode: config.proxyMode,
     auto_set_dns: config.autoDns,
     dns_on: config.dnsEnable,
     dns_off: config.dnsDisable,
@@ -811,6 +815,7 @@ function InitConfigSummary({
       <div className="grid gap-x-4 gap-y-4 md:grid-cols-4">
         <PlainInfo label="选定网卡" value={config.iface.replace(" (192.168.10.3)", "")} />
         <PlainInfo label="代理核心类型" value={`${config.proxyCore} (${config.mihomoType.toLowerCase()})`} />
+        <PlainInfo label="透明代理模式" value={config.proxyMode === "tun" ? "TUN" : "nftables"} />
         <PlainInfo label="自动设置 DNS" value={config.autoDns ? "已启用" : "已禁用"} />
         <PlainInfo label="DNS 启用地址" value={config.dnsEnable} />
         <PlainInfo label="DNS 禁用地址" value={config.dnsDisable} />
@@ -849,12 +854,14 @@ function InitConfigEditor({
   onCancel,
   onSave,
   networkInterfaces,
+  dockerRuntime,
 }: {
   draft: InitConfigState;
   setDraft: (updater: (current: InitConfigState) => InitConfigState) => void;
   onCancel: () => void;
   onSave: () => void;
   networkInterfaces: NetworkInterfaceInfo[];
+  dockerRuntime: boolean;
 }) {
   const updateSub = (id: string, patch: Partial<SubscriptionRow>) => {
     setDraft((current) => ({
@@ -902,6 +909,22 @@ function InitConfigEditor({
               {iface.name}{iface.primary_ip || iface.ip ? ` (${iface.primary_ip || iface.ip})` : ""}
             </option>
           ))}
+        </select>
+      </SectionBox>
+
+      <SectionBox>
+        <h3 className="text-lg font-semibold text-foreground">透明代理模式</h3>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {dockerRuntime ? "Docker 仅支持 TUN，需提供 /dev/net/tun、CAP_NET_ADMIN 与 CAP_NET_RAW。" : "generated 配置会随模式切换原子重建；自定义配置冲突时后端会拒绝切换。"}
+        </p>
+        <select
+          value={dockerRuntime ? "tun" : draft.proxyMode}
+          disabled={dockerRuntime}
+          onChange={(event) => setDraft((current) => ({ ...current, proxyMode: event.target.value as InitConfigState["proxyMode"] }))}
+          className={`${inputClass} mt-4 h-12 text-base`}
+        >
+          {!dockerRuntime && <option value="nft">nftables（TProxy + Redirect）</option>}
+          <option value="tun">TUN</option>
         </select>
       </SectionBox>
 
@@ -1215,13 +1238,17 @@ function SystemTab({ showToast }: { showToast: (message: string) => void }) {
   const [draftConfig, setDraftConfig] = useState(defaultInitConfig);
   const [networkInterfaces, setNetworkInterfaces] = useState<NetworkInterfaceInfo[]>([]);
   const [saving, setSaving] = useState(false);
+  const [dockerRuntime, setDockerRuntime] = useState(false);
 
   useEffect(() => {
     Promise.allSettled([
       api("/api/v1/settings"),
       api("/api/v1/setup/config"),
       api("/api/v1/setup/network-interfaces"),
-    ]).then(([settingsResult, configResult, interfacesResult]) => {
+      api("/api/v1/setup/privilege"),
+    ]).then(([settingsResult, configResult, interfacesResult, privilegeResult]) => {
+      const docker = privilegeResult.status === "fulfilled" && Boolean((privilegeResult.value as any)?.runtime?.docker);
+      setDockerRuntime(docker);
       if (settingsResult.status === "fulfilled") {
         const data = apiData<Record<string, string>>(settingsResult.value, {});
         const hours = Number(data.token_retention_hours || data.jwt_expire_hours || data.jwt_expiry_hours || data.token_ttl_hours || 24);
@@ -1231,7 +1258,7 @@ function SystemTab({ showToast }: { showToast: (message: string) => void }) {
         setNetworkInterfaces(apiList<NetworkInterfaceInfo>(interfacesResult.value, ["data", "interfaces", "items"]));
       }
       if (configResult.status === "fulfilled") {
-        const config = setupToInitConfig(apiData<any>(configResult.value, configResult.value));
+        const config = setupToInitConfig(apiData<any>(configResult.value, configResult.value), docker);
         setInitConfig(config);
         setDraftConfig(config);
       } else {
@@ -1258,11 +1285,13 @@ function SystemTab({ showToast }: { showToast: (message: string) => void }) {
   const saveInitConfig = async () => {
     setSaving(true);
     try {
+      const nextConfig = dockerRuntime ? { ...draftConfig, proxyMode: "tun" as const } : draftConfig;
       await api("/api/v1/setup/config", {
         method: "PUT",
-        body: JSON.stringify(initConfigToSetupPayload(draftConfig)),
+        body: JSON.stringify(initConfigToSetupPayload(nextConfig)),
       });
-      setInitConfig(draftConfig);
+      setInitConfig(nextConfig);
+      setDraftConfig(nextConfig);
       setEditingInit(false);
       showToast("初始化配置已保存");
     } catch (error) {
@@ -1303,6 +1332,7 @@ function SystemTab({ showToast }: { showToast: (message: string) => void }) {
             draft={draftConfig}
             setDraft={setDraftConfig}
             networkInterfaces={networkInterfaces}
+            dockerRuntime={dockerRuntime}
             onCancel={() => {
               setDraftConfig(initConfig);
               setEditingInit(false);
@@ -2355,11 +2385,12 @@ function ResetTab({ showToast }: { showToast: (message: string) => void }) {
     try {
       await api("/api/v1/setup/reset", {
         method: "POST",
-        body: JSON.stringify({ delete_binaries: deleteBinaries, delete_components: deleteBinaries, current_password: password }),
+        body: JSON.stringify({ delete_components: deleteBinaries, current_password: password }),
       });
       setConfirmOpen(false);
       setPassword("");
-      showToast(deleteBinaries ? "系统已重置，组件二进制已删除" : "系统已重置");
+      clearSession();
+      window.location.replace("/setup");
     } catch (error) {
       showToast(errorMessage(error));
     } finally {
@@ -2410,7 +2441,7 @@ function ResetTab({ showToast }: { showToast: (message: string) => void }) {
                   <Check className={cn("h-3 w-3 text-white transition-opacity", deleteBinaries ? "opacity-100" : "opacity-0")} />
                 </span>
                 <span className="space-y-0.5">
-                  <span className="block font-medium text-foreground">删除组件二进制（MosDNS / Mihomo / Sing-box）</span>
+                  <span className="block font-medium text-foreground">删除组件（MosDNS / Mihomo / Zashboard）</span>
                   <span className="block text-[11px] text-muted-foreground">开启后将删除已下载的组件，重置后会重新下载。</span>
                 </span>
               </label>

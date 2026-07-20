@@ -114,10 +114,7 @@ func (a *App) handleMihomoConfigRestoreDefault(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusInternalServerError, "restore_failed", err.Error())
 		return
 	}
-	if old, err := a.readTextFile(mihomoActiveConfigRelPath); err == nil {
-		a.createConfigHistory("mihomo", mihomoActiveConfigRelPath, old, "backup before restoring generated Mihomo config", currentUsername(r))
-	}
-	if err := a.writeTextFile(mihomoActiveConfigRelPath, content); err != nil {
+	if err := a.replaceGeneratedConfigFiles(map[string]string{mihomoActiveConfigRelPath: content}, nil); err != nil {
 		writeError(w, http.StatusBadRequest, "write_failed", err.Error())
 		return
 	}
@@ -317,6 +314,12 @@ func (a *App) applyMihomoUserConfig(ctx context.Context, rel string, restart boo
 	validation := a.validateMihomoConfigContent(content)
 	if !validation.Valid {
 		return nil, fmt.Errorf("%s", validation.Error)
+	}
+	if cfg, ok := a.latestSetupConfig(); ok {
+		cfg.defaults()
+		if err := a.validateMihomoContentForProxyMode(cfg, []byte(content)); err != nil {
+			return nil, fmt.Errorf("custom config proxy mode conflict: %w", err)
+		}
 	}
 	if err := a.ensureMihomoGeneratedBackup(); err != nil {
 		return nil, err
@@ -656,9 +659,6 @@ func (a *App) validateMihomoActiveConfigWrite(content string) (mihomoConfigValid
 
 func (a *App) defaultMihomoConfigForRestore() (string, string, error) {
 	backupRel := a.mihomoGeneratedBackupPath()
-	if content, err := a.readTextFile(backupRel); err == nil && strings.TrimSpace(content) != "" {
-		return content, backupRel, nil
-	}
 	cfg, ok := a.latestSetupConfig()
 	if !ok {
 		cfg = SetupConfig{
@@ -673,6 +673,11 @@ func (a *App) defaultMihomoConfigForRestore() (string, string, error) {
 		}
 	}
 	cfg.defaults()
+	if content, err := a.readTextFile(backupRel); err == nil && strings.TrimSpace(content) != "" {
+		if err := a.validateMihomoContentForProxyMode(cfg, []byte(content)); err == nil {
+			return content, backupRel, nil
+		}
+	}
 	return a.renderMihomoYAML(cfg), "generated-template", nil
 }
 

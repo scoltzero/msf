@@ -393,7 +393,6 @@ func TestDockerHostTunRouteFixSkipsOtherModes(t *testing.T) {
 	}{
 		{name: "macvlan tun", runtime: "docker", network: "macvlan-tun", proxyMode: "tun"},
 		{name: "native tun", runtime: "native", network: "host-tun", proxyMode: "tun"},
-		{name: "docker nft", runtime: "docker", network: "host-tun", proxyMode: "nft"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -413,6 +412,22 @@ func TestDockerHostTunRouteFixSkipsOtherModes(t *testing.T) {
 				t.Fatalf("route fix should not run for %s, got commands:\n%s", tt.name, strings.Join(commands, "\n"))
 			}
 		})
+	}
+}
+
+func TestDockerRuntimeRejectsNFTSetup(t *testing.T) {
+	t.Setenv("MSF_RUNTIME", "docker")
+	app := newTestApp(t)
+	body := map[string]any{
+		"username":           "root",
+		"password":           "test-password-123",
+		"confirmPassword":    "test-password-123",
+		"selected_interface": "eth0",
+		"linux_proxy_mode":   "nft",
+	}
+	res := requestJSON(t, app, http.MethodPost, "/api/v1/setup/initialize", "", body)
+	if res.Code != http.StatusBadRequest || !strings.Contains(res.Body.String(), "unsupported_proxy_mode") {
+		t.Fatalf("Docker nft setup status=%d body=%s", res.Code, res.Body.String())
 	}
 }
 
@@ -612,6 +627,29 @@ func TestPolicyRouteCommandsAreIdempotent(t *testing.T) {
 		if !strings.Contains(clear, want) {
 			t.Fatalf("clear commands missing %q:\n%s", want, clear)
 		}
+	}
+}
+
+func TestManagedNetworkResidualDetection(t *testing.T) {
+	for _, rule := range []string{
+		"32765: from all fwmark 0x1 lookup 100",
+		"100: from all fwmark 1 table 100",
+	} {
+		if !containsManagedPolicyRule(rule) {
+			t.Fatalf("managed policy rule not detected: %q", rule)
+		}
+	}
+	for _, route := range []string{
+		"local default dev lo scope host",
+		"local 0.0.0.0/0 dev lo table 100",
+		"local ::/0 dev lo metric 1024",
+	} {
+		if !containsManagedLocalRoute(route) {
+			t.Fatalf("managed local route not detected: %q", route)
+		}
+	}
+	if containsManagedPolicyRule("32766: from all lookup main") || containsManagedPolicyRule("100: from all fwmark 0x100 lookup 100") || containsManagedLocalRoute("default via 192.0.2.1 dev eth0") {
+		t.Fatal("ordinary policy or route state must not be treated as MSF-managed residue")
 	}
 }
 

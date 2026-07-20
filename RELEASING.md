@@ -1,133 +1,77 @@
-# 发布手册（手动打包 / Manual Release）
+# 发布手册
 
-本项目**不使用 GitHub Actions**，发布全部手动完成。以下命令均为已验证可用的流程。把 `VERSION` 替换为本次版本（示例用 `0.3.0`，tag 用 `v0.3.0`）。
+从 v0.3.9.5 开始，Linux、Unraid、fnOS 和 Docker 必须由同一个干净 tag checkout 构建。不要再从 `fnos-fpk` 分支单独编译，也不要移动 tag、覆盖历史 Release 或使用 `gh release upload --clobber` 替换已发布资产。
 
-## 0. 前置
-
-- 在干净的 `main` 工作区操作（`git status` 干净）。
-- 已安装 Go、Node 22、`gh`（已登录 `scoltzero/msf` 推送权限）。
-- 产物输出在 `dist/`（已 gitignore）。
-
-## ⚠️ 最重要的一条规则
-
-**Linux（amd64/arm64）和 Unraid 必须在 `main` 上编译；fnOS `.fpk` 才在 `fnos-fpk` 上编译。**
-
-原因：`fnos-fpk` = `main` + fnOS 专属代码（`cmd/msf/main.go`、`handlers_update.go` 等会被编进二进制）。在 `fnos-fpk` 上跑 `make package`/`make unraid` 会把 fnOS 代码混进 Linux/Unraid 二进制。
-另外 `make unraid` 和 `make fnos` 都会**顺带重建 amd64 tarball**——所以谁最后跑，`dist/msf-linux-amd64.tar.gz` 就是谁的。**先在 main 出全部 Linux/Unraid 资产，最后才切 fnos-fpk 只出 fpk，且不要从 fnos-fpk 重传 amd64。**
-
----
-
-## 1. 在 `main` 上构建 Linux + Unraid
+## 1. 发布前检查
 
 ```bash
 git switch main
-VERSION=0.3.0
-
-# amd64
-make package VERSION=$VERSION GOOS=linux GOARCH=amd64
-
-# arm64
-make package VERSION=$VERSION GOOS=linux GOARCH=arm64
-
-# Unraid（会重建 amd64 作为依赖，并把 txz 哈希写进 root msf.plg）
-make unraid VERSION=$VERSION UNRAID_VERSION=$VERSION GITHUB_REPO=scoltzero/msf RELEASE_TAG=v$VERSION GOOS=linux GOARCH=amd64
+git pull --ff-only
+go test ./...
+npm --prefix web ci
+npm --prefix web run check
+git status --short
 ```
 
-### 1a. 生成旧名兼容副本 + 校验和（在所有 make 跑完之后）
+最后一条必须无输出。发布版本以 `0.3.9.5` 这类不带 `v` 的值传给 Make，tag 使用 `v0.3.9.5`。
 
-> `msm-free-*.tar.gz` 是给 **v0.2.2 旧客户端**的逐字节副本（它们硬编码旧资源名，靠仓库重定向下载）。**必须**有，且必须与新名逐字节相同。
+## 2. 创建不可变 tag
 
 ```bash
-# amd64（注意：要在 make unraid 之后再生成，因为它重建过 amd64）
-cp -f dist/msf-linux-amd64.tar.gz dist/msm-free-linux-amd64.tar.gz
-cmp dist/msf-linux-amd64.tar.gz dist/msm-free-linux-amd64.tar.gz   # 必须无输出
-shasum -a 256 dist/msf-linux-amd64.tar.gz      > dist/msf-linux-amd64.tar.gz.sha256
-shasum -a 256 dist/msm-free-linux-amd64.tar.gz > dist/msm-free-linux-amd64.tar.gz.sha256
-
-# arm64
-cp -f dist/msf-linux-arm64.tar.gz dist/msm-free-linux-arm64.tar.gz
-cmp dist/msf-linux-arm64.tar.gz dist/msm-free-linux-arm64.tar.gz   # 必须无输出
-shasum -a 256 dist/msf-linux-arm64.tar.gz      > dist/msf-linux-arm64.tar.gz.sha256
-shasum -a 256 dist/msm-free-linux-arm64.tar.gz > dist/msm-free-linux-arm64.tar.gz.sha256
-
-# Unraid
-shasum -a 256 dist/unraid/msf-$VERSION-x86_64-1.txz > dist/unraid/msf-$VERSION-x86_64-1.txz.sha256
-shasum -a 256 dist/unraid/msf.plg                   > dist/unraid/msf.plg.sha256
+VERSION=0.3.9.5
+git tag -a "v$VERSION" -m "v$VERSION"
+git push origin "v$VERSION"
 ```
 
-### 1b. 提交 root `msf.plg`（如有变化）
+tag push 会触发两个工作流：
 
-`make unraid` 会用本次 `.txz` 的哈希重写 root `msf.plg`（CA/raw 安装入口必须与已发布的 `.txz` 一致）：
+- `Release assets`：测试并构建 Linux amd64/arm64、Unraid、fnOS x86/arm，核验所有二进制来源，执行 factory reset → TUN 黑盒测试，然后创建 GitHub Release。
+- `Docker GHCR`：先构建本地 amd64 镜像并验证 `host-tun`、`macvlan-tun` 与 Docker nft 拒绝，再推送 amd64/arm64 多架构镜像。
+
+两个工作流都会确认：
+
+- checkout 工作区干净；
+- tag commit 等于 `HEAD`；
+- 二进制嵌入的 source/tag commit 与 tag 一致；
+- 非 Docker 二进制的 Go build metadata 包含 `vcs.modified=false`；
+- Docker OCI `org.opencontainers.image.revision` 等于同一 commit。
+
+## 3. 本地构建门禁
+
+tag 已存在并指向当前干净 `HEAD` 时，可运行：
 
 ```bash
-git add msf.plg && git commit -m "Update Unraid manifest hash for v$VERSION txz" && git push origin main
+VERSION=0.3.9.5
+make release-assets VERSION="$VERSION" RELEASE_TAG="v$VERSION"
 ```
 
----
+该命令会生成并验证：
 
-## 2. 在 `fnos-fpk` 上构建 fnOS `.fpk`
+- `msf-linux-amd64.tar.gz` 与 `.sha256`
+- `msm-free-linux-amd64.tar.gz` 与 `.sha256`（旧客户端兼容副本）
+- `msf-linux-arm64.tar.gz` 与 `.sha256`
+- `msm-free-linux-arm64.tar.gz` 与 `.sha256`
+- `msf-<version>-x86_64-1.txz` 与 `.sha256`
+- `msf.plg` 与 `.sha256`
+- `msf_<version>_x86.fpk` 与 `.sha256`
+- `msf_<version>_arm.fpk` 与 `.sha256`
+
+fnOS 构建必须使用真正的 `fnpack`；下载失败会中止，绝不再生成伪装成 `.fpk` 的 tar.gz fallback。
+
+## 4. 发布后核验
 
 ```bash
-git switch fnos-fpk
-git merge main          # 把 main 最新代码并进来；正常是干净自动合并
-make fnos VERSION=$VERSION GOOS=linux GOARCH=amd64
-shasum -a 256 dist/msf_${VERSION}_x86.fpk > dist/msf_${VERSION}_x86.fpk.sha256
-git switch main         # 出完包切回 main
+VERSION=0.3.9.5
+gh release view "v$VERSION" --repo scoltzero/msf --json tagName,targetCommitish,assets
+docker buildx imagetools inspect "ghcr.io/scoltzero/msf:v$VERSION"
 ```
 
-> `make fnos` 会自动下载 fnpack（飞牛 CDN）；网络不通会退化成无效 tar.gz，注意看输出 `DONE: dist/msf_..._x86.fpk` 才算成功。
-> 抽查：`tar -xzf dist/msf_${VERSION}_x86.fpk -C /tmp/x && grep -E 'appname|display_name' /tmp/x/manifest` 应为 `appname = msf` / `display_name = MSF Free`。
+确认 GitHub Release 包含全部安装资产与 SHA-256，GHCR 同时存在 `v<version>` 和 `latest`，且 revision 与 Release tag commit 相同。
 
----
+如需更新仓库根目录供 Unraid Community Apps 使用的 `msf.plg`，应直接下载本次 Release 中已经验证过的 `msf.plg`，逐字节替换并单独提交；不要重新打包生成另一个 txz 哈希。
 
-## 3. 发布 / 覆盖上传到 GitHub Release
+## 5. 失败处理
 
-tag 用 `v$VERSION`。**首次发布**用 `create`，**补传/覆盖**用 `upload --clobber`。
-
-```bash
-VERSION=0.3.0
-# 首次创建（如该 tag 还没 release）
-gh release create v$VERSION --repo scoltzero/msf --title v$VERSION --notes-file CHANGELOG-or-notes.md \
-  dist/msf-linux-amd64.tar.gz dist/msf-linux-amd64.tar.gz.sha256 \
-  dist/msm-free-linux-amd64.tar.gz dist/msm-free-linux-amd64.tar.gz.sha256 \
-  dist/msf-linux-arm64.tar.gz dist/msf-linux-arm64.tar.gz.sha256 \
-  dist/msm-free-linux-arm64.tar.gz dist/msm-free-linux-arm64.tar.gz.sha256 \
-  dist/unraid/msf-$VERSION-x86_64-1.txz dist/unraid/msf-$VERSION-x86_64-1.txz.sha256 \
-  dist/unraid/msf.plg dist/unraid/msf.plg.sha256 \
-  dist/msf_${VERSION}_x86.fpk dist/msf_${VERSION}_x86.fpk.sha256
-
-# 已存在则覆盖上传（把 create 换成 upload ... --clobber）
-gh release upload v$VERSION --repo scoltzero/msf --clobber \
-  dist/msf-linux-amd64.tar.gz ... （同上资产列表）
-```
-
-### 验证发布端 digest 与本地一致
-
-```bash
-gh release view v$VERSION --repo scoltzero/msf --json assets \
-  --jq '.assets[] | "\(.name)  \(.digest)"'
-# 旧名兼容副本与新名应同 digest（amd64/arm64）
-```
-
-旧客户端可达性（v0.2.2 升级链路）：旧仓库名 `scoltzero/msm-free` 经 GitHub 重定向到 `scoltzero/msf`，下载 `msm-free-linux-amd64.tar.gz` 会 301/302 到资产。
-
----
-
-## 4. 关于 git tag
-
-- 现在没有 CI，**移动/强推 tag 不会触发任何自动流程**，但建议 tag 仍指向本次发布的 main 提交，保证「tag 源码 = 已发布二进制源码」。
-- 创建：`git tag -a v$VERSION <commit> -m "v$VERSION" && git push origin v$VERSION`
-- Linux/Unraid 二进制源码以 `main` 上该提交为准；fnOS `.fpk` 源码 = 该提交 + fnOS 专属代码（`fnos-fpk`），属正常差异。
-
----
-
-## 速查清单
-
-- [ ] `main` 工作区干净，`VERSION` 设好
-- [ ] `make package` amd64 + arm64（main）
-- [ ] `make unraid`（main，会重建 amd64 + 改 root msf.plg）
-- [ ] 生成旧名副本 + `cmp` 校验 + `shasum`（amd64/arm64/txz/plg）
-- [ ] 提交并推送 root `msf.plg`
-- [ ] `fnos-fpk`：`git merge main` → `make fnos` → fpk sha → 切回 main
-- [ ] `gh release create/upload --clobber` 全部资产
-- [ ] `gh release view` 核对 digest（新旧名同 digest）
+- 任何测试、来源、dirty、摘要或黑盒检查失败，都不要创建/覆盖 Release。
+- 如果 tag 尚未产生公开资产，可以删除远端 tag、修复后创建一个新的正确 tag。
+- 如果 Release 或 GHCR 已经公开，保留其不可变性并发布下一个补丁版本，不覆盖旧资产。

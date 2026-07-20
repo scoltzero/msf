@@ -13,17 +13,12 @@
   <CHANGES>
     <![CDATA[
 ### msf __PLUGIN_VERSION__
-- 兼容 Mihomo `v1.19.28` 恢复原 Clash REST API 行为后的数据结构：同时聚合 `/proxies` 与 `/providers/proxies`，恢复代理组中的 provider 节点、存活状态和延迟显示。
-- 包含 v0.3.9 的正确改动：Docker `host-tun` + Mihomo TUN 启动后会自动补齐 FakeIP IPv4 / IPv6 路由，并尝试关闭出口网卡 `rp_filter`。
-- Mihomo 配置管理不再展示内部运行副本 `configs/mihomo/config.yaml`，打开页面会优先显示已应用用户配置或“默认配置”。
-- 默认 Mihomo 配置只允许修改 `proxy-providers`；其他 YAML 字段保存后会进入用户自定义配置。
-- 保存、覆盖或复制已应用的 Mihomo 用户配置时会同步内部运行副本，避免配置列表与实际运行配置漂移。
-- MosDNS、MSF 通用配置和 Mihomo 配置管理共用的 YAML 编辑器高亮对齐 VS Code Dark+ 风格。
-- Mihomo 初始化配置里的订阅链接/自定义节点与“代理节点 > 管理代理供应商”统一同步到顶层 `proxy-providers` 引用字段；已应用用户配置只替换该 section，不再写入订阅下载后的节点内容。
-- 自定义节点分享链接再次打开仍保持“分享链接模式”，不会被运行用的 `msf_manual.yaml` 反向覆盖成 `proxies:` YAML 文本。
-- Mihomo 配置页“运行中”旁恢复配置模式标签，用“默认配置 / 用户自定义配置”区分当前运行配置来源，同时继续隐藏内部运行副本 `configs/mihomo/config.yaml`。
-- 如果您在 v0.3.9 或 v0.3.9.1 期间添加/管理过代理订阅链接，受污染的用户配置建议删除后重新创建，不建议继续编辑污染文件。
-- Docker 镜像额外发布 `ghcr.io/scoltzero/msf:v0.3.9.3`，不推送 `latest`。
+- “重置系统”升级为完整 factory reset：清除用户、令牌、设置、配置历史、规则、日志、备份与运行缓存，并立即废止旧 JWT。
+- 默认保留 MosDNS、Mihomo 与 Zashboard；勾选删除组件时会一并清除，重新初始化后再下载。
+- Linux、Unraid 与 fnOS 的 generated 配置完整支持 nftables / TUN 切换，并在激活前校验数据库、Mihomo YAML、network.yaml 与 nft desired state 一致性。
+- TUN 模式会生成 `tun.enable: true`、system stack、路由包含/排除项与 `proxy-server-nameserver`，并清理遗留 nftables、fwmark 与 table 100 路由。
+- Docker 正式收口为 TUN-only，支持 `host-tun` 与 `macvlan-tun`，缺少 `/dev/net/tun` 或必要 capability 时阻止初始化。
+- Release 资产与 GHCR 镜像统一由同一个干净 tag commit 构建，并嵌入版本、源码 SHA 与 dirty 状态供核验。
     ]]>
   </CHANGES>
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 set -eu
 
-IMAGE="${MSF_IMAGE:-ghcr.io/scoltzero/msf:v0.3.9.3}"
+IMAGE="${MSF_IMAGE:-ghcr.io/scoltzero/msf:v0.3.9.5}"
 NAME="${MSF_CONTAINER_NAME:-msf}"
 DATA_DIR="${MSF_DOCKER_DATA_DIR:-$(pwd)/msf-data}"
 NETWORK_MODE="${MSF_DOCKER_NETWORK_MODE:-host-tun}"

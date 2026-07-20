@@ -172,7 +172,7 @@ func (sm *ServiceManager) stop(ctx context.Context, name string, persistDesired 
 		}
 		return sm.Status(name), nil
 	}
-	_ = proc.Signal(syscall.SIGTERM)
+	termErr := proc.Signal(syscall.SIGTERM)
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		if !processAliveCross(pid) {
@@ -184,12 +184,22 @@ func (sm *ServiceManager) stop(ctx context.Context, name string, persistDesired 
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
-	_ = proc.Signal(syscall.SIGKILL)
-	_ = os.Remove(spec.PIDFile)
-	if persistDesired {
-		sm.setDesired(name, false)
+	killErr := proc.Signal(syscall.SIGKILL)
+	killDeadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(killDeadline) {
+		if !processAliveCross(pid) {
+			_ = os.Remove(spec.PIDFile)
+			if persistDesired {
+				sm.setDesired(name, false)
+			}
+			return sm.Status(name), nil
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
-	return sm.Status(name), nil
+	if killErr != nil {
+		return sm.Status(name), fmt.Errorf("failed to stop %s process %d: SIGTERM=%v SIGKILL=%w", name, pid, termErr, killErr)
+	}
+	return sm.Status(name), fmt.Errorf("failed to stop %s process %d after SIGKILL", name, pid)
 }
 
 func (sm *ServiceManager) Restart(ctx context.Context, name string) (ServiceStatus, error) {

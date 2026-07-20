@@ -571,6 +571,9 @@ func (a *App) handleNFTClear(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) clearNFT(ctx context.Context) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	if runtime.GOOS != "linux" {
 		return "", fmt.Errorf("nftables is only supported on Linux")
 	}
@@ -580,7 +583,75 @@ func (a *App) clearNFT(ctx context.Context) (string, error) {
 	var output bytes.Buffer
 	ignoreNetworkCommandError(ctx, &output, 5*time.Second, "nft", "delete", "table", "inet", "msf")
 	runNetworkCommandsIgnoringErrors(ctx, &output, 5*time.Second, policyRouteClearCommands())
+	if err := ctx.Err(); err != nil {
+		return output.String(), err
+	}
+	if residual := managedNetworkStateResidual(ctx); len(residual) > 0 {
+		return output.String(), fmt.Errorf("managed network state remains after cleanup: %s", strings.Join(residual, "; "))
+	}
 	return output.String(), nil
+}
+
+func managedNetworkStateResidual(ctx context.Context) []string {
+	var residual []string
+	if _, err := combinedOutputWithTimeout(ctx, 3*time.Second, "nft", "list", "table", "inet", "msf"); err == nil {
+		residual = append(residual, "table inet msf")
+	}
+	for _, check := range []struct {
+		args []string
+		kind string
+	}{
+		{args: []string{"rule", "show"}, kind: "IPv4 fwmark rule"},
+		{args: []string{"-6", "rule", "show"}, kind: "IPv6 fwmark rule"},
+	} {
+		if out, err := combinedOutputWithTimeout(ctx, 3*time.Second, "ip", check.args...); err == nil && containsManagedPolicyRule(string(out)) {
+			residual = append(residual, check.kind)
+		}
+	}
+	for _, check := range []struct {
+		args []string
+		kind string
+	}{
+		{args: []string{"route", "show", "table", "100"}, kind: "IPv4 table 100 local route"},
+		{args: []string{"-6", "route", "show", "table", "100"}, kind: "IPv6 table 100 local route"},
+	} {
+		if out, err := combinedOutputWithTimeout(ctx, 3*time.Second, "ip", check.args...); err == nil && containsManagedLocalRoute(string(out)) {
+			residual = append(residual, check.kind)
+		}
+	}
+	return residual
+}
+
+func containsManagedPolicyRule(output string) bool {
+	for _, line := range strings.Split(strings.ToLower(output), "\n") {
+		fields := strings.Fields(line)
+		hasMark := false
+		hasTable := false
+		for index := 0; index+1 < len(fields); index++ {
+			switch fields[index] {
+			case "fwmark":
+				mark := fields[index+1]
+				hasMark = mark == "1" || mark == "0x1" || strings.HasPrefix(mark, "0x1/")
+			case "lookup", "table":
+				hasTable = fields[index+1] == "100"
+			}
+		}
+		if hasMark && hasTable {
+			return true
+		}
+	}
+	return false
+}
+
+func containsManagedLocalRoute(output string) bool {
+	for _, line := range strings.Split(strings.ToLower(output), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "local ") && strings.Contains(line, " dev lo") &&
+			(strings.Contains(line, "default") || strings.Contains(line, "0.0.0.0/0") || strings.Contains(line, "::/0")) {
+			return true
+		}
+	}
+	return false
 }
 
 func (a *App) nftStatus() map[string]any {

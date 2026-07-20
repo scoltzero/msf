@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -149,6 +150,9 @@ func (a *App) writeGeneratedConfigs(cfg SetupConfig) error {
 	if err := a.ensureMSSBTemplateDefaults(true); err != nil {
 		return err
 	}
+	if err := a.ensureMosDNSRuleFiles(); err != nil {
+		return err
+	}
 	files := map[string]string{
 		"configs/app.yaml":             a.renderAppYAML(cfg),
 		"configs/mosdns/config.yaml":   a.renderMosDNSYAML(cfg),
@@ -164,15 +168,17 @@ func (a *App) writeGeneratedConfigs(cfg SetupConfig) error {
 	if manual := renderMihomoManualProviderYAML(cfg.MihomoProxies); strings.TrimSpace(manual) != "" {
 		files["configs/mihomo/proxy_providers/msf_manual.yaml"] = manual
 	}
-	for rel, content := range files {
-		if err := a.writeTextFile(rel, content); err != nil {
-			return err
-		}
-	}
+	remove := []string{}
 	if isTUNProxyMode(cfg.LinuxProxyMode) {
-		_ = os.Remove(filepath.Join(a.DataDir, "configs/network/network.nft"))
+		remove = append(remove, "configs/network/network.nft")
 	}
-	if err := a.ensureMosDNSRuleFiles(); err != nil {
+	if strings.TrimSpace(renderMihomoManualProviderYAML(cfg.MihomoProxies)) == "" {
+		remove = append(remove, "configs/mihomo/proxy_providers/msf_manual.yaml")
+	}
+	if err := validateGeneratedConfigPayloads(cfg, files); err != nil {
+		return err
+	}
+	if err := a.replaceGeneratedConfigFiles(files, remove); err != nil {
 		return err
 	}
 	if a.mihomoConfigMode() == "custom" {
@@ -181,6 +187,197 @@ func (a *App) writeGeneratedConfigs(cfg SetupConfig) error {
 		}
 	}
 	return nil
+}
+
+type generatedConfigSnapshot struct {
+	Rel      string
+	Path     string
+	Content  []byte
+	Mode     os.FileMode
+	Existed  bool
+	TempPath string
+	Remove   bool
+	Changed  bool
+}
+
+func validateGeneratedConfigPayloads(cfg SetupConfig, files map[string]string) error {
+	for rel, content := range files {
+		switch strings.ToLower(filepath.Ext(rel)) {
+		case ".yaml", ".yml":
+			var parsed any
+			if err := yaml.Unmarshal([]byte(content), &parsed); err != nil {
+				return fmt.Errorf("validate generated %s: %w", rel, err)
+			}
+		case ".json":
+			if !json.Valid([]byte(content)) {
+				return fmt.Errorf("validate generated %s: invalid JSON", rel)
+			}
+		}
+	}
+	if _, ok := files[mihomoActiveConfigRelPath]; !ok {
+		return nil
+	}
+	var mihomo map[string]any
+	if err := yaml.Unmarshal([]byte(files[mihomoActiveConfigRelPath]), &mihomo); err != nil {
+		return err
+	}
+	var network map[string]any
+	if err := yaml.Unmarshal([]byte(files["configs/network/network.yaml"]), &network); err != nil {
+		return err
+	}
+	_, nftExists := files["configs/network/network.nft"]
+	return validateProxyModeDocuments(cfg, mihomo, network, nftExists)
+}
+
+func (a *App) replaceGeneratedConfigFiles(files map[string]string, remove []string) error {
+	desired := make(map[string]*string, len(files)+len(remove))
+	for rel, content := range files {
+		contentCopy := content
+		desired[filepath.ToSlash(rel)] = &contentCopy
+	}
+	for _, rel := range remove {
+		rel = filepath.ToSlash(rel)
+		if _, written := desired[rel]; !written {
+			desired[rel] = nil
+		}
+	}
+	rels := make([]string, 0, len(desired))
+	for rel := range desired {
+		rels = append(rels, rel)
+	}
+	sort.Strings(rels)
+	snapshots := make([]generatedConfigSnapshot, 0, len(rels))
+	cleanupTemps := func() {
+		for _, snapshot := range snapshots {
+			if snapshot.TempPath != "" {
+				_ = os.Remove(snapshot.TempPath)
+			}
+		}
+	}
+	defer cleanupTemps()
+
+	for _, rel := range rels {
+		path, err := a.safePath(rel)
+		if err != nil {
+			return err
+		}
+		snapshot := generatedConfigSnapshot{Rel: rel, Path: path, Mode: 0o644, Remove: desired[rel] == nil}
+		if info, err := os.Stat(path); err == nil {
+			snapshot.Existed = true
+			snapshot.Mode = info.Mode().Perm()
+			snapshot.Content, err = os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+		} else if !os.IsNotExist(err) {
+			return err
+		}
+		if snapshot.Remove {
+			snapshot.Changed = snapshot.Existed
+			snapshots = append(snapshots, snapshot)
+			continue
+		}
+		content := []byte(*desired[rel])
+		snapshot.Changed = !snapshot.Existed || !bytes.Equal(snapshot.Content, content)
+		if !snapshot.Changed {
+			snapshots = append(snapshots, snapshot)
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return err
+		}
+		tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".generated-*")
+		if err != nil {
+			return err
+		}
+		snapshot.TempPath = tmp.Name()
+		if _, err := tmp.Write(content); err != nil {
+			_ = tmp.Close()
+			snapshots = append(snapshots, snapshot)
+			return err
+		}
+		if err := tmp.Chmod(0o644); err != nil {
+			_ = tmp.Close()
+			snapshots = append(snapshots, snapshot)
+			return err
+		}
+		if err := tmp.Sync(); err != nil {
+			_ = tmp.Close()
+			snapshots = append(snapshots, snapshot)
+			return err
+		}
+		if err := tmp.Close(); err != nil {
+			snapshots = append(snapshots, snapshot)
+			return err
+		}
+		snapshots = append(snapshots, snapshot)
+	}
+
+	applied := make([]generatedConfigSnapshot, 0, len(snapshots))
+	rollback := func() {
+		for i := len(applied) - 1; i >= 0; i-- {
+			snapshot := applied[i]
+			if !snapshot.Existed {
+				_ = os.Remove(snapshot.Path)
+				continue
+			}
+			_ = restoreGeneratedConfigSnapshot(snapshot)
+		}
+	}
+	for i := range snapshots {
+		snapshot := &snapshots[i]
+		if !snapshot.Changed {
+			continue
+		}
+		if snapshot.Remove {
+			if err := os.Remove(snapshot.Path); err != nil && !os.IsNotExist(err) {
+				rollback()
+				return err
+			}
+		} else if err := os.Rename(snapshot.TempPath, snapshot.Path); err != nil {
+			rollback()
+			return err
+		} else {
+			snapshot.TempPath = ""
+		}
+		applied = append(applied, *snapshot)
+	}
+	for _, snapshot := range applied {
+		if !snapshot.Existed {
+			continue
+		}
+		_, _ = a.DB.Exec(`insert into config_histories(service,file_path,content,comment,created_by,created_at,updated_at) values(?,?,?,?,?,?,?)`,
+			serviceFromPath(snapshot.Rel), snapshot.Rel, string(snapshot.Content), "auto backup before generated config replace", "system", nowString(), nowString())
+	}
+	return nil
+}
+
+func restoreGeneratedConfigSnapshot(snapshot generatedConfigSnapshot) error {
+	if err := os.MkdirAll(filepath.Dir(snapshot.Path), 0o755); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(snapshot.Path), "."+filepath.Base(snapshot.Path)+".rollback-*")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+	if _, err := tmp.Write(snapshot.Content); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Chmod(snapshot.Mode); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, snapshot.Path)
 }
 
 func renderDisabledSingBoxJSON() string {
@@ -213,6 +410,10 @@ func renderDisabledSingBoxJSON() string {
 }
 
 func (a *App) renderAppYAML(cfg SetupConfig) string {
+	return a.renderAppYAMLWithSecret(cfg, a.currentSecret())
+}
+
+func (a *App) renderAppYAMLWithSecret(cfg SetupConfig, secret []byte) string {
 	return fmt.Sprintf(`server:
   host: 0.0.0.0
   port: %s
@@ -222,7 +423,7 @@ system:
   timezone: %s
 jwt:
   secret: %s
-`, cfg.WebPort, cfg.Timezone, string(a.Secret))
+`, cfg.WebPort, cfg.Timezone, string(secret))
 }
 
 func (a *App) renderMihomoYAML(cfg SetupConfig) string {

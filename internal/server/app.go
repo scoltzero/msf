@@ -18,6 +18,7 @@ import (
 	"runtime/debug"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/scoltzero/msf/internal/cloudflareredirect"
@@ -29,11 +30,22 @@ const apiPrefix = "/api/v1"
 type Options struct {
 	DataDir string
 	Version string
+	Build   BuildInfo
+}
+
+type BuildInfo struct {
+	Commit       string `json:"commit,omitempty"`
+	Tag          string `json:"tag,omitempty"`
+	TagCommit    string `json:"tag_commit,omitempty"`
+	SourceCommit string `json:"source_commit,omitempty"`
+	Dirty        string `json:"dirty,omitempty"`
+	BuildTime    string `json:"build_time,omitempty"`
 }
 
 type App struct {
 	DataDir string
 	Version string
+	Build   BuildInfo
 	DB      *sql.DB
 	Secret  []byte
 
@@ -45,6 +57,10 @@ type App struct {
 	mihomoTrafficMu    sync.Mutex
 	mihomoTrafficCache map[string]any
 	mihomoTrafficAt    time.Time
+	secretMu           sync.RWMutex
+	resetMu            sync.Mutex
+	resetGate          sync.RWMutex
+	resetInProgress    atomic.Bool
 }
 
 type APIError struct {
@@ -62,6 +78,9 @@ func New(opts Options) (*App, error) {
 	if err := os.MkdirAll(opts.DataDir, 0755); err != nil {
 		return nil, err
 	}
+	if err := recoverIncompleteFactoryReset(opts.DataDir); err != nil {
+		return nil, err
+	}
 	if err := MigrateLegacyLayout(opts.DataDir); err != nil {
 		return nil, err
 	}
@@ -75,7 +94,7 @@ func New(opts Options) (*App, error) {
 	}
 	db.SetMaxOpenConns(1)
 
-	app := &App{DataDir: opts.DataDir, Version: opts.Version, DB: db}
+	app := &App{DataDir: opts.DataDir, Version: opts.Version, Build: opts.Build, DB: db}
 	if err := app.migrate(); err != nil {
 		db.Close()
 		return nil, err
@@ -84,6 +103,7 @@ func New(opts Options) (*App, error) {
 		db.Close()
 		return nil, err
 	}
+	_, _ = app.DB.Exec(`delete from settings where key='factory_reset.completed_id'`)
 	app.Services = NewServiceManager(app)
 	return app, nil
 }
@@ -168,6 +188,26 @@ func (a *App) withCommonMiddleware(next http.Handler) http.Handler {
 			rec.WriteHeader(http.StatusNoContent)
 			return
 		}
+		if r.URL.Path == "/api/v1/setup/reset" && a.resetInProgress.Load() {
+			writeError(rec, http.StatusConflict, "reset_in_progress", "system factory reset is already in progress")
+			return
+		}
+		if r.URL.Path == "/api/v1/setup/activate" && a.resetInProgress.Load() {
+			writeError(rec, http.StatusServiceUnavailable, "system_resetting", "system factory reset is in progress")
+			return
+		}
+		if r.URL.Path != "/api/v1/setup/reset" && r.URL.Path != "/api/v1/setup/activate" && requestMutatesState(r) {
+			if a.resetInProgress.Load() {
+				writeError(rec, http.StatusServiceUnavailable, "system_resetting", "system factory reset is in progress")
+				return
+			}
+			a.resetGate.RLock()
+			defer a.resetGate.RUnlock()
+			if a.resetInProgress.Load() {
+				writeError(rec, http.StatusServiceUnavailable, "system_resetting", "system factory reset is in progress")
+				return
+			}
+		}
 		if strings.HasPrefix(r.URL.Path, apiPrefix) && !a.publicAPI(r.URL.Path) {
 			identity, err := a.authenticateRequest(r)
 			if err != nil {
@@ -184,6 +224,18 @@ func (a *App) withCommonMiddleware(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(rec, r)
 	})
+}
+
+func requestMutatesState(r *http.Request) bool {
+	if strings.HasPrefix(r.URL.Path, "/api/v1/setup/download/") {
+		return true
+	}
+	switch r.Method {
+	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+		return true
+	default:
+		return false
+	}
 }
 
 func (a *App) publicAPI(path string) bool {
@@ -335,10 +387,15 @@ func (a *App) handleVersion(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"success": true,
 		"data": map[string]any{
-			"version":    a.Version,
-			"go_version": runtime.Version(),
-			"platform":   runtime.GOOS + "/" + runtime.GOARCH,
-			"build_time": "",
+			"version":       a.Version,
+			"go_version":    runtime.Version(),
+			"platform":      runtime.GOOS + "/" + runtime.GOARCH,
+			"build_time":    a.Build.BuildTime,
+			"commit":        a.Build.Commit,
+			"tag":           a.Build.Tag,
+			"tag_commit":    a.Build.TagCommit,
+			"source_commit": a.Build.SourceCommit,
+			"dirty":         a.Build.Dirty,
 		},
 	})
 }
@@ -372,7 +429,7 @@ func (a *App) ensureSecret() error {
 	var value string
 	err := a.DB.QueryRow(`select value from settings where key='jwt_secret'`).Scan(&value)
 	if err == nil && value != "" {
-		a.Secret = []byte(value)
+		a.setSecret([]byte(value))
 		return nil
 	}
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -383,8 +440,20 @@ func (a *App) ensureSecret() error {
 	if err != nil {
 		return err
 	}
-	a.Secret = []byte(value)
+	a.setSecret([]byte(value))
 	return nil
+}
+
+func (a *App) currentSecret() []byte {
+	a.secretMu.RLock()
+	defer a.secretMu.RUnlock()
+	return append([]byte(nil), a.Secret...)
+}
+
+func (a *App) setSecret(secret []byte) {
+	a.secretMu.Lock()
+	a.Secret = append(a.Secret[:0], secret...)
+	a.secretMu.Unlock()
 }
 
 func localIPs() []string {
