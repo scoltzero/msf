@@ -209,6 +209,24 @@ func TestReservedPortConflictIsWarningOnly(t *testing.T) {
 	}
 }
 
+func TestSetupPreflightChecksMosDNSSingBoxHomeDNSPort(t *testing.T) {
+	withTestSetupSystemOps(t)
+	checks := setupReservedPortChecks(context.Background(), nil, "tun")
+	protocols := map[string]bool{}
+	for _, item := range checks {
+		if item.Port != 11011 {
+			continue
+		}
+		if item.Service != "MosDNS sing-box home DNS" {
+			t.Fatalf("11011 service = %q, want MosDNS sing-box home DNS", item.Service)
+		}
+		protocols[item.Protocol] = true
+	}
+	if !protocols["tcp"] || !protocols["udp"] {
+		t.Fatalf("11011 preflight protocols = %v, want TCP and UDP", protocols)
+	}
+}
+
 func TestMosDNSStartOnlyBlocksOnDNS53Blocked(t *testing.T) {
 	t.Run("warning does not preempt startup", func(t *testing.T) {
 		app := newTestApp(t)

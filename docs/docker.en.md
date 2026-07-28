@@ -526,3 +526,4 @@ Docker TUN does not use TProxy or Redirect ports by default.
 | `7892` | Mihomo mixed proxy |
 | `9090` | Mihomo controller / Zashboard |
 | `9099` | MosDNS observability |
+| `11011/tcp,udp` | MosDNS sing-box home DNS |

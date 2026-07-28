@@ -308,12 +308,12 @@ plugins:
     type: udp_server
     args:
       entry: sequence_for_singbox
-      listen: ":111"
+      listen: ":11011"
       enable_audit: true
 
   - tag: tcp_singbox
     type: tcp_server
     args:
       entry: sequence_for_singbox
-      listen: ":111"
+      listen: ":11011"
       enable_audit: true
