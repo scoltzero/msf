@@ -44,6 +44,7 @@
 | mosdns | `6666` | 与 mihomo/sing-box 的 DNS 对接 |
 | mosdns | `8888` | 内部 DNS（代理核心的默认上游 `default-nameserver`） |
 | mosdns | `9099` | MosDNS 统计 / API 接口 |
+| mosdns | `11011` | sing-box 回家 DNS（TCP/UDP） |
 | mihomo/sing-box | `7890` | HTTP 代理 |
 | mihomo/sing-box | `7891` | SOCKS5 代理 |
 | mihomo/sing-box | `7892` | 混合端口（Mixed） |

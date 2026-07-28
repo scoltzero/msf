@@ -509,6 +509,7 @@ func setupReservedPorts(proxyModes ...string) []setupReservedPort {
 		{6666, "Mihomo DNS"},
 		{8888, "MosDNS for_singbox"},
 		{9099, "MosDNS API"},
+		{11011, "MosDNS sing-box home DNS"},
 		{9090, "Mihomo external controller"},
 		{7890, "Mihomo HTTP proxy"},
 		{7891, "Mihomo SOCKS proxy"},

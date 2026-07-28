@@ -4,7 +4,15 @@
 
 ### 中文
 
+#### 修复
+
+- MosDNS 的 sing-box 回家 DNS 默认监听端口由 `111` 调整为 `11011`，避免与 NAS 上常见的 rpcbind/SunRPC 服务冲突；初始化预检同时检查该端口的 TCP/UDP 占用情况。常规升级不会直接覆盖已有配置；保存系统设置、恢复出厂设置或兼容性修复触发配置重新生成后，需同步更新外部客户端端口。
+
 ### English
+
+#### Fixed
+
+- Changed the default MosDNS sing-box home DNS listener from port `111` to `11011` to avoid conflicts with rpcbind/SunRPC commonly found on NAS systems, and added TCP/UDP setup preflight checks for the new port. Routine upgrades do not directly overwrite existing configs; external clients must be updated after settings changes, factory resets, or compatibility repairs regenerate the config.
 
 ## v0.3.9.5 - 2026-07-20
 

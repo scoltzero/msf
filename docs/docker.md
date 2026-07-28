@@ -526,3 +526,4 @@ Docker TUN 默认不使用 TProxy/Redirect 端口。
 | `7892` | Mihomo mixed proxy |
 | `9090` | Mihomo controller / Zashboard |
 | `9099` | MosDNS observability |
+| `11011/tcp,udp` | MosDNS sing-box 回家 DNS |

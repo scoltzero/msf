@@ -101,6 +101,12 @@ func TestSetupInitializeLoginAndGeneratedConfigs(t *testing.T) {
 			t.Fatalf("mosdns config missing %q:\n%s", want, mosdnsText)
 		}
 	}
+	if got := strings.Count(mosdnsText, `listen: ":11011"`); got != 2 {
+		t.Fatalf("mosdns config should expose TCP and UDP sing-box home DNS on 11011, got %d listeners:\n%s", got, mosdnsText)
+	}
+	if strings.Contains(mosdnsText, `listen: ":111"`) {
+		t.Fatalf("mosdns config should not use the privileged port 111 for sing-box home DNS:\n%s", mosdnsText)
+	}
 	mssbFiles := map[string][]string{
 		"configs/mosdns/sub_config/forward_1.yaml":        {"udp://127.0.0.1:6666", `listen: ":2222"`},
 		"configs/mosdns/sub_config/forward_nocn.yaml":     {`listen: ":3333"`},
