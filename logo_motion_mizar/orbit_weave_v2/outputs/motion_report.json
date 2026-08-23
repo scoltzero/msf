@@ -1,0 +1,52 @@
+{
+  "html": "logo_motion_mizar/orbit_weave_v2/logo_motion.html",
+  "times_ms": [
+    0,
+    220,
+    420,
+    650,
+    850,
+    1000,
+    1150,
+    1300,
+    1450,
+    1650,
+    1850,
+    2050,
+    2200
+  ],
+  "frames": [
+    "logo_motion_mizar/orbit_weave_v2/outputs/motion_frames/frame_000000ms.png",
+    "logo_motion_mizar/orbit_weave_v2/outputs/motion_frames/frame_000220ms.png",
+    "logo_motion_mizar/orbit_weave_v2/outputs/motion_frames/frame_000420ms.png",
+    "logo_motion_mizar/orbit_weave_v2/outputs/motion_frames/frame_000650ms.png",
+    "logo_motion_mizar/orbit_weave_v2/outputs/motion_frames/frame_000850ms.png",
+    "logo_motion_mizar/orbit_weave_v2/outputs/motion_frames/frame_001000ms.png",
+    "logo_motion_mizar/orbit_weave_v2/outputs/motion_frames/frame_001150ms.png",
+    "logo_motion_mizar/orbit_weave_v2/outputs/motion_frames/frame_001300ms.png",
+    "logo_motion_mizar/orbit_weave_v2/outputs/motion_frames/frame_001450ms.png",
+    "logo_motion_mizar/orbit_weave_v2/outputs/motion_frames/frame_001650ms.png",
+    "logo_motion_mizar/orbit_weave_v2/outputs/motion_frames/frame_001850ms.png",
+    "logo_motion_mizar/orbit_weave_v2/outputs/motion_frames/frame_002050ms.png",
+    "logo_motion_mizar/orbit_weave_v2/outputs/motion_frames/frame_002200ms.png"
+  ],
+  "strip": "logo_motion_mizar/orbit_weave_v2/outputs/motion_strip.png",
+  "same_pipeline_final_frame_contract": {
+    "animated_final": "logo_motion_mizar/orbit_weave_v2/outputs/motion_frames/frame_animated_same_pipeline.png",
+    "static_final": "logo_motion_mizar/orbit_weave_v2/outputs/motion_frames/frame_static_same_pipeline.png",
+    "exact": true,
+    "mean_abs_diff": 0.0,
+    "max_abs_diff": 0,
+    "pixels_changed": 0,
+    "pct_pixels_off_by_25plus": 0.0
+  },
+  "cross_pipeline_final_frame_contract": {
+    "animated_final": "logo_motion_mizar/orbit_weave_v2/outputs/motion_frames/frame_002200ms.png",
+    "reference_static": "logo_motion_mizar/orbit_weave_v2/outputs/final_render.png",
+    "exact": false,
+    "mean_abs_diff": 0.131523,
+    "max_abs_diff": 132,
+    "pixels_changed": 204053,
+    "pct_pixels_off_by_25plus": 0.274985
+  }
+}

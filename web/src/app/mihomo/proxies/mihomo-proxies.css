@@ -1,0 +1,16 @@
+[data-proxy-card-list][data-proxy-columns="double"] [data-proxy-card-material="classic-glass"] {
+  --gary-local-blur: 12px;
+}
+
+html[data-gary-quality="full"] [data-proxy-card-list][data-proxy-columns="single"] [data-proxy-card-material="classic-glass"] {
+  --gary-local-blur: 22px;
+}
+
+[data-proxy-card-material="classic-glass"]::after {
+  content: none;
+}
+
+[data-proxy-card-material="classic-glass"] {
+  --gary-local-shadow: none;
+  box-shadow: none;
+}

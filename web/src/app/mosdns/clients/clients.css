@@ -1,0 +1,184 @@
+.mosdns-mode-switch {
+  --mode-color-1: oklch(72% 0.19 230);
+  --mode-color-2: oklch(78% 0.17 170);
+  --mode-color-3: oklch(68% 0.2 285);
+  --mode-base: oklch(58% 0.2 235);
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.mosdns-mode-switch--white {
+  --mode-color-1: oklch(82% 0.18 165);
+  --mode-color-2: oklch(76% 0.17 200);
+  --mode-color-3: oklch(74% 0.18 135);
+  --mode-base: oklch(58% 0.18 158);
+}
+
+.mosdns-mode-switch--black {
+  --mode-color-1: oklch(72% 0.22 25);
+  --mode-color-2: oklch(74% 0.2 350);
+  --mode-color-3: oklch(70% 0.18 305);
+  --mode-base: oklch(56% 0.22 25);
+}
+
+.mosdns-mode-switch__indicator {
+  position: absolute;
+  inset: 0 auto 0 0;
+  z-index: 0;
+  width: calc((100% - 12px) / 3);
+  overflow: hidden;
+  border: 1px solid rgb(255 255 255 / 0.56);
+  border-radius: 6px;
+  background-color: var(--mode-base);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.72),
+    inset 0 -2px 4px rgb(7 31 54 / 0.22),
+    0 4px 8px rgb(15 64 94 / 0.18);
+  transform: translate3d(0, 0, 0);
+  will-change: transform;
+  transition:
+    transform 320ms cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 180ms ease-out;
+}
+
+.mosdns-mode-switch--white .mosdns-mode-switch__indicator {
+  transform: translate3d(calc(100% + 6px), 0, 0);
+}
+
+.mosdns-mode-switch--black .mosdns-mode-switch__indicator {
+  transform: translate3d(calc(200% + 12px), 0, 0);
+}
+
+.mosdns-mode-button {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  height: 36px;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  padding-inline: 0.5rem;
+  border: 1px solid color-mix(in srgb, var(--gary-edge-dim) 78%, transparent);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    color 180ms ease-out,
+    border-color 180ms ease-out;
+}
+
+.mosdns-mode-button--white {
+  color: oklch(58% 0.17 158);
+}
+
+.mosdns-mode-button--black {
+  color: oklch(56% 0.2 25);
+}
+
+.mosdns-mode-button--selected {
+  border-color: transparent;
+  color: white;
+  text-shadow: 0 1px 2px rgb(5 24 42 / 0.42);
+}
+
+.mosdns-mode-button:not(.mosdns-mode-button--selected):hover {
+  border-color: color-mix(in srgb, currentColor 34%, var(--gary-edge-dim));
+  background: color-mix(in srgb, currentColor 7%, transparent);
+}
+
+.mosdns-mode-button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.mosdns-mode-button:disabled {
+  cursor: wait;
+}
+
+.mosdns-mode-button__lights {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.mosdns-mode-button__light {
+  position: absolute;
+  width: clamp(42px, 22%, 92px);
+  aspect-ratio: 1;
+  border-radius: 999px;
+  background: var(--mode-color-1);
+  filter: blur(7px);
+  opacity: 0.78;
+  will-change: transform;
+  animation: mosdns-mode-light-drift 6.5s linear infinite;
+  transition: background-color 180ms ease-out;
+}
+
+.mosdns-mode-button__light:nth-child(1) {
+  left: -3%;
+  top: -72%;
+}
+
+.mosdns-mode-button__light:nth-child(2) {
+  left: 28%;
+  top: 18%;
+  background: var(--mode-color-2);
+  animation-delay: -1.8s;
+  animation-direction: reverse;
+}
+
+.mosdns-mode-button__light:nth-child(3) {
+  right: 20%;
+  top: -58%;
+  background: var(--mode-color-3);
+  animation-delay: -3.6s;
+}
+
+.mosdns-mode-button__light:nth-child(4) {
+  right: -2%;
+  bottom: -78%;
+  background: var(--mode-color-2);
+  animation-delay: -5.2s;
+  animation-direction: reverse;
+}
+
+.mosdns-mode-button__label {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  font-weight: 600;
+}
+
+@keyframes mosdns-mode-light-drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  33% {
+    transform: translate3d(80%, 16%, 0) scale(1.12);
+  }
+  66% {
+    transform: translate3d(34%, -18%, 0) scale(0.92);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mosdns-mode-switch__indicator {
+    transition-duration: 0.01ms;
+  }
+
+  .mosdns-mode-button__light {
+    animation: none;
+  }
+}

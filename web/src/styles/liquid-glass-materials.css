@@ -1,0 +1,181 @@
+.gary-glass {
+  --gary-local-fill: var(--gary-glass-fill-regular);
+  --gary-local-blur: var(--gary-blur-regular);
+  --gary-local-radius: var(--gary-radius-regular);
+  --gary-local-shadow: var(--gary-contact-shadow), var(--gary-environment-shadow);
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border: 1px solid var(--gary-edge-dim);
+  border-radius: var(--gary-local-radius);
+  background: var(--gary-local-fill);
+  box-shadow: var(--gary-local-shadow);
+  -webkit-backdrop-filter: blur(var(--gary-local-blur)) saturate(var(--gary-saturate)) contrast(var(--gary-contrast));
+  backdrop-filter: blur(var(--gary-local-blur)) saturate(var(--gary-saturate)) contrast(var(--gary-contrast));
+}
+
+.gary-glass::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  padding: 1px;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(
+    var(--gary-highlight-angle),
+    var(--gary-edge-highlight) 0%,
+    var(--gary-edge-soft) 24%,
+    transparent 52%,
+    var(--gary-edge-dim) 82%,
+    var(--gary-edge-shadow) 100%
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  opacity: 0.78;
+}
+
+.gary-glass::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background:
+    repeating-radial-gradient(circle at 28% 18%, var(--gary-frost-light) 0 0.32px, transparent 0.58px 3.1px),
+    repeating-radial-gradient(circle at 72% 74%, var(--gary-frost-dark) 0 0.28px, transparent 0.56px 3.4px);
+  background-size: 4px 4px, 5px 5px;
+  opacity: 0.12;
+  mix-blend-mode: soft-light;
+}
+
+.gary-glass > * {
+  position: relative;
+  z-index: 1;
+}
+
+.gary-glass--ultrathin {
+  --gary-local-fill: var(--gary-glass-fill-ultrathin);
+  --gary-local-blur: var(--gary-blur-ultrathin);
+  --gary-local-shadow: var(--gary-contact-shadow), var(--gary-floating-shadow);
+}
+
+.gary-glass--regular {
+  --gary-local-fill: var(--gary-glass-fill-regular);
+  --gary-local-blur: var(--gary-blur-regular);
+}
+
+.gary-glass--thick {
+  --gary-local-fill: var(--gary-glass-fill-thick);
+  --gary-local-blur: var(--gary-blur-thick);
+  --gary-local-radius: var(--gary-radius-card);
+}
+
+.gary-glass--strong {
+  --gary-local-fill: var(--gary-glass-fill-strong);
+}
+
+.gary-glass--refractive {
+  -webkit-backdrop-filter: url("#gary-edge-refraction") blur(var(--gary-local-blur)) saturate(var(--gary-saturate)) contrast(var(--gary-contrast));
+  backdrop-filter: url("#gary-edge-refraction") blur(var(--gary-local-blur)) saturate(var(--gary-saturate)) contrast(var(--gary-contrast));
+}
+
+.gary-solid-plate {
+  position: relative;
+  border: 1px solid color-mix(in srgb, var(--gary-edge-dim) 74%, transparent);
+  border-radius: var(--gary-radius-compact);
+  background: var(--gary-plate-display-fill-regular);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--gary-edge-soft) 52%, transparent),
+    0 1px 2px color-mix(in srgb, var(--gary-edge-shadow) 26%, transparent);
+}
+
+.gary-solid-plate--subtle {
+  background: var(--gary-plate-display-fill-subtle);
+}
+
+.gary-solid-plate--regular {
+  background: var(--gary-plate-display-fill-regular);
+}
+
+.gary-solid-plate--strong {
+  background: var(--gary-plate-display-fill-strong);
+}
+
+.gary-glass--flat {
+  box-shadow: var(--gary-contact-shadow);
+}
+
+.gary-glass--no-backdrop {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+.gary-glass--overflow-visible {
+  overflow: visible;
+}
+
+.gary-lab-grid {
+  background-color: color-mix(in srgb, var(--gary-scene-base) 58%, transparent);
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--foreground) 16%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--foreground) 16%, transparent) 1px, transparent 1px),
+    radial-gradient(circle at 22% 18%, var(--gary-scene-a), transparent 34%),
+    radial-gradient(circle at 82% 74%, var(--gary-scene-b), transparent 38%);
+  background-size: 22px 22px, 22px 22px, auto, auto;
+}
+
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .gary-glass {
+    background: var(--gary-solid-fill-strong);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .gary-glass {
+    background: var(--gary-solid-fill-strong) !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+}
+
+@media (max-width: 767px) {
+  .gary-page-enter .gary-glass--thick {
+    background: color-mix(in srgb, var(--gary-glass-fill-strong) 86%, transparent);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+html[data-gary-quality="balanced"] {
+  --gary-blur-ultrathin: 16px;
+  --gary-blur-regular: 18px;
+  --gary-blur-thick: 22px;
+}
+
+/* Reduced quality keeps the three content layers distinct while raising their minimum alpha. */
+html[data-gary-quality="reduced"] {
+  --gary-plate-display-fill-subtle: rgb(var(--gary-plate-rgb) / max(var(--gary-plate-opacity-subtle), 0.74));
+  --gary-plate-display-fill-regular: rgb(var(--gary-plate-rgb) / max(var(--gary-plate-opacity-regular), 0.84));
+  --gary-plate-display-fill-strong: rgb(var(--gary-plate-rgb) / max(var(--gary-plate-opacity-strong), 0.92));
+}
+
+html[data-gary-quality="reduced"] .gary-glass,
+html[data-gary-quality="reduced"] .glass-effect,
+html[data-gary-quality="reduced"] .glass-effect-strong {
+  background: var(--gary-solid-fill-strong) !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+/* System preference takes precedence over quality mode for the final display layer. */
+@media (prefers-reduced-transparency: reduce) {
+  html:root {
+    --gary-plate-display-fill-subtle: rgb(var(--gary-plate-rgb) / max(var(--gary-plate-opacity-subtle), 0.82));
+    --gary-plate-display-fill-regular: rgb(var(--gary-plate-rgb) / max(var(--gary-plate-opacity-regular), 0.90));
+    --gary-plate-display-fill-strong: rgb(var(--gary-plate-rgb) / max(var(--gary-plate-opacity-strong), 0.96));
+  }
+}

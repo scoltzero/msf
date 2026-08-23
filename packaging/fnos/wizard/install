@@ -1,0 +1,6 @@
+[{
+  "stepTitle": "安装 MSF Free",
+  "items": [
+    { "type": "tips", "helpText": "MSF Free 是 MosDNS + Mihomo 透明代理与 DNS 分流面板，需以 root 运行，支持 nftables/TProxy 与 TUN。安装后请在 WebUI（默认 7777 端口）完成初始化向导。" }
+  ]
+}]

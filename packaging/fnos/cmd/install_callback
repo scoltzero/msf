@@ -1,0 +1,3 @@
+#!/bin/bash
+mkdir -p "${TRIM_PKGVAR:-${TRIM_APPDEST}/var}"
+exit 0

@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" preserveAspectRatio="none">
+  <defs>
+    <linearGradient id="left" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#408080"/>
+      <stop offset="1" stop-color="#808080"/>
+    </linearGradient>
+    <linearGradient id="right" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#808080"/>
+      <stop offset="1" stop-color="#c08080"/>
+    </linearGradient>
+    <linearGradient id="top" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#804080"/>
+      <stop offset="1" stop-color="#808080"/>
+    </linearGradient>
+    <linearGradient id="bottom" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#808080"/>
+      <stop offset="1" stop-color="#80c080"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" fill="#808080"/>
+  <rect width="32" height="256" fill="url(#left)"/>
+  <rect x="224" width="32" height="256" fill="url(#right)"/>
+  <rect width="256" height="32" fill="url(#top)" style="mix-blend-mode:multiply"/>
+  <rect y="224" width="256" height="32" fill="url(#bottom)" style="mix-blend-mode:screen"/>
+</svg>

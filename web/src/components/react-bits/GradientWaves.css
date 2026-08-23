@@ -1,0 +1,16 @@
+.gradient-waves-container {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  pointer-events: none;
+  contain: strict;
+}
+
+.gradient-waves-container canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+/* Adapted from React Bits GradientWaves under its MIT + Commons Clause terms. */

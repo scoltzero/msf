@@ -1,0 +1,334 @@
+:root {
+  --p2m-duration: 2200ms;
+  --p2m-ease-orbit: cubic-bezier(0.37, 0, 0.16, 1);
+  --p2m-ease-weave: cubic-bezier(0.22, 0.74, 0.18, 1);
+  --p2m-ease-settle: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#motion-ribbons,
+#orbit-blue-ribbon,
+#orbit-cyan-ribbon,
+#weave-blue-ribbon,
+#weave-cyan-ribbon,
+#logo-geometry {
+  transform-box: view-box;
+  transform-origin: 627px 627px;
+  will-change: transform, opacity, clip-path;
+}
+
+#motion-ribbons {
+  animation: p2m-ribbon-stage var(--p2m-duration) linear both;
+}
+
+#orbit-blue-ribbon {
+  animation: p2m-blue-orbit-body var(--p2m-duration) linear both;
+}
+
+#orbit-cyan-ribbon {
+  animation: p2m-cyan-orbit-body var(--p2m-duration) linear both;
+}
+
+.orbit-blue-track {
+  animation: p2m-blue-orbit-dash var(--p2m-duration) linear both;
+}
+
+.orbit-cyan-track {
+  animation: p2m-cyan-orbit-dash var(--p2m-duration) linear both;
+}
+
+#weave-blue-ribbon {
+  animation: p2m-blue-weave-body var(--p2m-duration) linear both;
+}
+
+#weave-cyan-ribbon {
+  animation: p2m-cyan-weave-body var(--p2m-duration) linear both;
+}
+
+.weave-blue-track {
+  animation: p2m-blue-weave-dash var(--p2m-duration) linear both;
+}
+
+.weave-cyan-track {
+  animation: p2m-cyan-weave-dash var(--p2m-duration) linear both;
+}
+
+#logo-geometry {
+  animation: p2m-final-form var(--p2m-duration) linear both;
+}
+
+.orbit-shadow {
+  stroke-width: 82px;
+  stroke-opacity: 0.2;
+  filter: none;
+}
+
+.weave-shadow {
+  stroke-width: 122px;
+  stroke-opacity: 0.18;
+  filter: none;
+}
+
+.orbit-sheen,
+.weave-sheen {
+  display: none;
+}
+
+@keyframes p2m-ribbon-stage {
+  0%,
+  3% {
+    opacity: 0;
+    animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1); /* settle */
+  }
+  8%,
+  79% {
+    opacity: 1;
+    animation-timing-function: cubic-bezier(0.4, 0, 0.6, 1); /* premium fade */
+  }
+  88%,
+  100% {
+    opacity: 0;
+  }
+}
+
+/* The temporary ribbons orbit in mirrored arcs; no logo geometry moves yet. */
+@keyframes p2m-blue-orbit-body {
+  0% {
+    transform: rotate(-11deg) scale(0.9);
+    animation-timing-function: cubic-bezier(0.37, 0, 0.16, 1); /* orbit */
+  }
+  18% {
+    transform: rotate(-5deg) scale(0.96);
+    animation-timing-function: cubic-bezier(0.37, 0, 0.16, 1); /* orbit */
+  }
+  45% {
+    transform: rotate(4.5deg) scale(1.025);
+    animation-timing-function: cubic-bezier(0.22, 0.74, 0.18, 1); /* weave */
+  }
+  61%,
+  100% {
+    transform: rotate(8deg) scale(1.055);
+  }
+}
+
+@keyframes p2m-cyan-orbit-body {
+  0%,
+  3% {
+    transform: rotate(11deg) scale(0.9);
+    animation-timing-function: cubic-bezier(0.37, 0, 0.16, 1); /* orbit */
+  }
+  21% {
+    transform: rotate(5deg) scale(0.96);
+    animation-timing-function: cubic-bezier(0.37, 0, 0.16, 1); /* orbit */
+  }
+  48% {
+    transform: rotate(-4.5deg) scale(1.025);
+    animation-timing-function: cubic-bezier(0.22, 0.74, 0.18, 1); /* weave */
+  }
+  64%,
+  100% {
+    transform: rotate(-8deg) scale(1.055);
+  }
+}
+
+@keyframes p2m-blue-orbit-dash {
+  0%,
+  4% {
+    opacity: 0;
+    stroke-dasharray: 0.28 1.2;
+    stroke-dashoffset: 1.15;
+    animation-timing-function: cubic-bezier(0.37, 0, 0.16, 1); /* orbit */
+  }
+  10% {
+    opacity: 1;
+    stroke-dasharray: 0.28 1.2;
+    stroke-dashoffset: 0.95;
+    animation-timing-function: cubic-bezier(0.37, 0, 0.16, 1); /* orbit */
+  }
+  34% {
+    opacity: 1;
+    stroke-dasharray: 0.28 1.2;
+    stroke-dashoffset: 0.12;
+    animation-timing-function: cubic-bezier(0.22, 0.74, 0.18, 1); /* weave */
+  }
+  47% {
+    opacity: 0.54;
+    stroke-dasharray: 0.28 1.2;
+    stroke-dashoffset: -0.28;
+    animation-timing-function: cubic-bezier(0.4, 0, 0.6, 1); /* dissolve */
+  }
+  55%,
+  100% {
+    opacity: 0;
+    stroke-dasharray: 0.28 1.2;
+    stroke-dashoffset: -0.48;
+  }
+}
+
+@keyframes p2m-cyan-orbit-dash {
+  0%,
+  7% {
+    opacity: 0;
+    stroke-dasharray: 0.28 1.2;
+    stroke-dashoffset: 1.15;
+    animation-timing-function: cubic-bezier(0.37, 0, 0.16, 1); /* orbit */
+  }
+  13% {
+    opacity: 1;
+    stroke-dasharray: 0.28 1.2;
+    stroke-dashoffset: 0.95;
+    animation-timing-function: cubic-bezier(0.37, 0, 0.16, 1); /* orbit */
+  }
+  37% {
+    opacity: 1;
+    stroke-dasharray: 0.28 1.2;
+    stroke-dashoffset: 0.12;
+    animation-timing-function: cubic-bezier(0.22, 0.74, 0.18, 1); /* weave */
+  }
+  50% {
+    opacity: 0.54;
+    stroke-dasharray: 0.28 1.2;
+    stroke-dashoffset: -0.28;
+    animation-timing-function: cubic-bezier(0.4, 0, 0.6, 1); /* dissolve */
+  }
+  58%,
+  100% {
+    opacity: 0;
+    stroke-dasharray: 0.28 1.2;
+    stroke-dashoffset: -0.48;
+  }
+}
+
+/* The orbiting actors align with centerlines that echo the final blue/cyan fills. */
+@keyframes p2m-blue-weave-body {
+  0%,
+  40% {
+    transform: rotate(2.8deg) scale(0.955);
+    animation-timing-function: cubic-bezier(0.22, 0.74, 0.18, 1); /* weave */
+  }
+  70% {
+    transform: rotate(0deg) scale(1.008);
+    animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1); /* settle */
+  }
+  82%,
+  100% {
+    transform: none;
+  }
+}
+
+@keyframes p2m-cyan-weave-body {
+  0%,
+  43% {
+    transform: rotate(-2.8deg) scale(0.955);
+    animation-timing-function: cubic-bezier(0.22, 0.74, 0.18, 1); /* weave */
+  }
+  73% {
+    transform: rotate(0deg) scale(1.008);
+    animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1); /* settle */
+  }
+  84%,
+  100% {
+    transform: none;
+  }
+}
+
+@keyframes p2m-blue-weave-dash {
+  0%,
+  40% {
+    opacity: 0;
+    stroke-dasharray: 1 1.2;
+    stroke-dashoffset: 1.12;
+    animation-timing-function: cubic-bezier(0.22, 0.74, 0.18, 1); /* weave */
+  }
+  44% {
+    opacity: 1;
+    stroke-dasharray: 1 1.2;
+    stroke-dashoffset: 1;
+    animation-timing-function: cubic-bezier(0.22, 0.74, 0.18, 1); /* weave */
+  }
+  69% {
+    opacity: 1;
+    stroke-dasharray: 1 1.2;
+    stroke-dashoffset: 0;
+    animation-timing-function: cubic-bezier(0.4, 0, 0.6, 1); /* dissolve */
+  }
+  76% {
+    opacity: 0.46;
+    stroke-dasharray: 1 1.2;
+    stroke-dashoffset: 0;
+    animation-timing-function: cubic-bezier(0.4, 0, 0.6, 1); /* dissolve */
+  }
+  83%,
+  100% {
+    opacity: 0;
+    stroke-dasharray: 1 1.2;
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes p2m-cyan-weave-dash {
+  0%,
+  43% {
+    opacity: 0;
+    stroke-dasharray: 1 1.2;
+    stroke-dashoffset: 1.12;
+    animation-timing-function: cubic-bezier(0.22, 0.74, 0.18, 1); /* weave */
+  }
+  47% {
+    opacity: 1;
+    stroke-dasharray: 1 1.2;
+    stroke-dashoffset: 1;
+    animation-timing-function: cubic-bezier(0.22, 0.74, 0.18, 1); /* weave */
+  }
+  72% {
+    opacity: 1;
+    stroke-dasharray: 1 1.2;
+    stroke-dashoffset: 0;
+    animation-timing-function: cubic-bezier(0.4, 0, 0.6, 1); /* dissolve */
+  }
+  79% {
+    opacity: 0.42;
+    stroke-dasharray: 1 1.2;
+    stroke-dashoffset: 0;
+    animation-timing-function: cubic-bezier(0.4, 0, 0.6, 1); /* dissolve */
+  }
+  86%,
+  100% {
+    opacity: 0;
+    stroke-dasharray: 1 1.2;
+    stroke-dashoffset: 0;
+  }
+}
+
+/* The verified vector is revealed from the actual central crossing, then lands exactly. */
+@keyframes p2m-final-form {
+  0%,
+  64% {
+    opacity: 0;
+    transform: scale(0.965);
+    clip-path: circle(0% at 51.1% 41%);
+    animation-timing-function: cubic-bezier(0.22, 0.74, 0.18, 1); /* weave */
+  }
+  70% {
+    opacity: 0.34;
+    transform: scale(0.985);
+    clip-path: circle(32% at 51.1% 41%);
+    animation-timing-function: cubic-bezier(0.22, 0.74, 0.18, 1); /* weave */
+  }
+  81% {
+    opacity: 1;
+    transform: scale(1.008);
+    clip-path: circle(80% at 51.1% 41%);
+    animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1); /* settle */
+  }
+  90% {
+    opacity: 1;
+    transform: scale(1.0015);
+    clip-path: none;
+    animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1); /* settle */
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+    clip-path: none;
+  }
+}

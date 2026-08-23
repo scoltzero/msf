@@ -1,0 +1,273 @@
+.msf-setup-page {
+  --msf-setup-stepper-fill: color-mix(in srgb, var(--background) 30%, transparent);
+  --msf-setup-section-fill: color-mix(in srgb, var(--background) 36%, transparent);
+  --msf-setup-panel-fill: color-mix(in srgb, var(--background) 42%, transparent);
+  --msf-setup-footer-fill: color-mix(in srgb, var(--background) 32%, transparent);
+  --msf-setup-control-fill: color-mix(in srgb, var(--background) 16%, transparent);
+  --msf-setup-control-fill-hover: color-mix(in srgb, var(--background) 22%, transparent);
+  --msf-setup-status-fill: color-mix(in srgb, rgb(234 179 8) 10%, var(--background) 24%);
+  isolation: isolate;
+  background: #f3fbff;
+}
+
+.dark .msf-setup-page {
+  --msf-setup-stepper-fill: color-mix(in srgb, var(--background) 32%, transparent);
+  --msf-setup-section-fill: color-mix(in srgb, var(--background) 40%, transparent);
+  --msf-setup-panel-fill: color-mix(in srgb, var(--background) 46%, transparent);
+  --msf-setup-footer-fill: color-mix(in srgb, var(--background) 34%, transparent);
+  --msf-setup-control-fill: color-mix(in srgb, var(--background) 18%, transparent);
+  --msf-setup-control-fill-hover: color-mix(in srgb, var(--background) 24%, transparent);
+  --msf-setup-status-fill: color-mix(in srgb, rgb(234 179 8) 9%, var(--background) 22%);
+  background: #0d0f11;
+}
+
+.msf-setup-gradient-waves {
+  position: fixed;
+  z-index: 0;
+  opacity: 1;
+  filter: none;
+}
+
+.dark .msf-setup-gradient-waves {
+  filter: none;
+}
+
+.msf-setup-main {
+  position: relative;
+  z-index: 1;
+}
+
+.msf-setup-page .msf-setup-shell {
+  display: block;
+  isolation: isolate;
+}
+
+.msf-setup-page .msf-setup-shell > .glass-surface__content {
+  display: block;
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  align-items: initial;
+  justify-content: initial;
+}
+
+.msf-setup-page .msf-setup-stepper,
+.msf-setup-page .msf-setup-footer {
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--gary-edge-soft) 64%, transparent);
+}
+
+.msf-setup-page .msf-setup-stepper {
+  background: var(--msf-setup-stepper-fill);
+}
+
+.msf-setup-page .msf-setup-footer {
+  background: var(--msf-setup-footer-fill);
+}
+
+.msf-setup-page .msf-setup-content {
+  position: relative;
+}
+
+.msf-setup-page .msf-setup-section,
+.msf-setup-page .msf-setup-panel {
+  background: var(--msf-setup-section-fill);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--gary-edge-soft) 70%, transparent),
+    0 12px 34px rgb(27 77 108 / 0.055);
+}
+
+.msf-setup-page .msf-setup-panel {
+  background: var(--msf-setup-panel-fill);
+}
+
+.msf-setup-page .msf-setup-control,
+.msf-setup-page .msf-setup-shell .bg-background {
+  background-color: var(--msf-setup-control-fill) !important;
+}
+
+.msf-setup-page .msf-setup-shell .bg-card,
+.msf-setup-page .msf-setup-shell .bg-card\/50 {
+  background-color: var(--msf-setup-panel-fill) !important;
+}
+
+.msf-setup-page .msf-setup-control {
+  scroll-margin-block: 8.5rem 6rem;
+  border-color: color-mix(in srgb, var(--border) 82%, transparent) !important;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--gary-edge-soft) 48%, transparent) !important;
+}
+
+.msf-setup-page .msf-setup-control:hover:not(:disabled) {
+  background-color: var(--msf-setup-control-fill-hover) !important;
+  border-color: color-mix(in srgb, var(--border) 92%, var(--primary) 8%) !important;
+}
+
+.msf-setup-page .msf-setup-control:focus-visible {
+  background-color: var(--msf-setup-control-fill-hover) !important;
+}
+
+.msf-setup-page .msf-setup-button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  isolation: isolate;
+  color: var(--muted-foreground);
+  transition: transform 160ms var(--gary-ease), opacity 160ms var(--gary-ease), filter 160ms var(--gary-ease);
+}
+
+.msf-setup-page button.msf-setup-button--primary {
+  color: var(--primary-foreground);
+  border-color: color-mix(in srgb, var(--primary) 58%, white 12%);
+  background: color-mix(in srgb, var(--primary) 82%, var(--background));
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 48%, transparent),
+    0 2px 7px color-mix(in srgb, var(--primary) 20%, transparent);
+}
+
+.msf-setup-page button.msf-setup-button--secondary {
+  color: var(--foreground);
+  border-color: color-mix(in srgb, var(--gary-edge-dim) 78%, transparent);
+  background: color-mix(in srgb, var(--gary-solid-fill) 94%, var(--background));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 48%, transparent);
+}
+
+.dark .msf-setup-page button.msf-setup-button--secondary {
+  color: oklch(84% 0.006 240);
+  border-color: rgb(255 255 255 / 0.18);
+  background: color-mix(in srgb, white 14%, var(--background));
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.18);
+}
+
+.msf-setup-page .msf-setup-button:not(:disabled):hover {
+  transform: translateY(-1px);
+  filter: brightness(1.04);
+}
+
+.msf-setup-page .msf-setup-button:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--ring) 28%, transparent);
+  outline-offset: 2px;
+}
+
+.msf-setup-page .msf-setup-button:disabled {
+  opacity: 0.48;
+}
+
+.msf-setup-page .msf-setup-toggle[aria-pressed="true"] {
+  background-color: var(--primary) !important;
+}
+
+.msf-setup-page .msf-setup-toggle[aria-pressed="false"] {
+  background-color: var(--muted) !important;
+}
+
+.msf-setup-page .msf-setup-control:-webkit-autofill,
+.msf-setup-page .msf-setup-control:-webkit-autofill:hover,
+.msf-setup-page .msf-setup-control:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--foreground);
+  caret-color: var(--foreground);
+  box-shadow:
+    inset 0 0 0 1000px var(--msf-setup-control-fill-hover),
+    inset 0 1px 0 color-mix(in srgb, var(--gary-edge-soft) 48%, transparent);
+  transition: background-color 9999s ease-out 0s;
+}
+
+.msf-setup-page .msf-setup-status {
+  color: color-mix(in srgb, var(--foreground) 82%, rgb(161 98 7));
+  background: var(--msf-setup-status-fill);
+}
+
+.dark .msf-setup-page .msf-setup-status {
+  color: color-mix(in srgb, var(--foreground) 84%, rgb(253 224 71));
+}
+
+.msf-setup-field-error {
+  border-color: rgb(239 68 68 / 0.78) !important;
+  background-color: color-mix(in srgb, rgb(239 68 68) 7%, transparent) !important;
+  box-shadow: 0 0 0 3px rgb(239 68 68 / 0.13) !important;
+  animation: msf-setup-error-pulse 620ms cubic-bezier(0.16, 1, 0.3, 1) 1;
+}
+
+.msf-setup-field-error:focus-visible {
+  box-shadow: 0 0 0 4px rgb(239 68 68 / 0.2) !important;
+}
+
+@keyframes msf-setup-error-pulse {
+  0%, 100% { transform: translateX(0); }
+  28% { transform: translateX(-3px); }
+  56% { transform: translateX(3px); }
+}
+
+.msf-setup-step-enter {
+  animation: msf-setup-step-enter 240ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes msf-setup-step-enter {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .msf-setup-field-error,
+  .msf-setup-step-enter {
+    animation: none !important;
+  }
+}
+
+@media (max-width: 767px) {
+  .msf-setup-page .msf-setup-stepper button > span:nth-of-type(2) {
+    overflow: visible;
+    padding-inline: 0;
+    font-size: 0.625rem;
+    line-height: 1.25;
+    text-overflow: clip;
+    white-space: nowrap;
+  }
+
+  .msf-setup-page .msf-setup-stepper,
+  .msf-setup-page .msf-setup-footer {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .msf-setup-page .msf-setup-shell,
+  .msf-setup-page .msf-setup-stepper,
+  .msf-setup-page .msf-setup-section,
+  .msf-setup-page .msf-setup-panel,
+  .msf-setup-page .msf-setup-footer,
+  .msf-setup-page .msf-setup-button,
+  .msf-setup-page .msf-setup-control,
+  .msf-setup-page .msf-setup-shell .bg-background,
+  .msf-setup-page .msf-setup-shell .bg-card,
+  .msf-setup-page .msf-setup-shell .bg-card\/50,
+  .msf-setup-page .msf-setup-status {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+
+  .msf-setup-page .msf-setup-shell {
+    background: var(--gary-solid-fill-strong) !important;
+  }
+
+  .msf-setup-page .msf-setup-stepper,
+  .msf-setup-page .msf-setup-section,
+  .msf-setup-page .msf-setup-panel,
+  .msf-setup-page .msf-setup-footer,
+  .msf-setup-page .msf-setup-status {
+    background: var(--gary-solid-fill) !important;
+  }
+
+  .msf-setup-page .msf-setup-control,
+  .msf-setup-page .msf-setup-shell .bg-background,
+  .msf-setup-page .msf-setup-shell .bg-card,
+  .msf-setup-page .msf-setup-shell .bg-card\/50 {
+    background: var(--background) !important;
+  }
+
+  .msf-setup-page button.msf-setup-button--primary {
+    background: var(--primary) !important;
+  }
+
+  .msf-setup-page button.msf-setup-button--secondary {
+    background: var(--gary-solid-fill) !important;
+  }
+}

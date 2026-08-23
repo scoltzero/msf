@@ -1,0 +1,4 @@
+.gary-glass[data-dashboard-widget-card] {
+  --gary-local-shadow: none;
+  box-shadow: none;
+}

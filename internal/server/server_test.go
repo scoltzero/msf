@@ -1,0 +1,3121 @@
+package server
+
+import (
+	"archive/zip"
+	"bytes"
+	"compress/zlib"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"mime/multipart"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"reflect"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestSetupInitializeLoginAndGeneratedConfigs(t *testing.T) {
+	app := newTestApp(t)
+	body := map[string]any{
+		"username":             "root",
+		"password":             "test-password-123",
+		"confirmPassword":      "test-password-123",
+		"webPort":              "17777",
+		"selected_interface":   "eth0",
+		"subscription_urls":    "机场A|https://example.com/a.yaml\nhttps://example.com/b.yaml",
+		"mihomo_proxies":       "vless://00000000-0000-4000-8000-000000000000@example.com:443?encryption=none&security=reality&type=tcp&sni=example.com&fp=chrome&pbk=abc&sid=123&flow=xtls-rprx-vision#manual-test-node",
+		"enableIPv6":           true,
+		"nft_proxy_policy":     "direct_default",
+		"fakeIPRangeV4":        "28.0.0.0/8",
+		"linux_proxy_mode":     "nft",
+		"mihomo_core_type":     "meta",
+		"auto_set_dns":         true,
+		"proxyCore":            "mihomo",
+		"mosdnsEnabled":        true,
+		"github_proxy_enabled": false,
+	}
+	res := requestJSON(t, app, http.MethodPost, "/api/v1/setup/initialize", "", body)
+	if res.Code != http.StatusOK {
+		t.Fatalf("initialize status=%d body=%s", res.Code, res.Body.String())
+	}
+	if !app.IsInitialized() {
+		t.Fatal("app should be initialized")
+	}
+	if got := app.setting(serviceDesiredKey("mihomo"), ""); got != "true" {
+		t.Fatalf("mihomo should be enabled after setup, got %q", got)
+	}
+	if got := app.setting(serviceDesiredKey("mosdns"), ""); got != "true" {
+		t.Fatalf("mosdns should be enabled after setup, got %q", got)
+	}
+	if got := app.setting(nftDesiredKey, ""); got != "true" {
+		t.Fatalf("nftables should be enabled after setup, got %q", got)
+	}
+	login := requestJSON(t, app, http.MethodPost, "/api/v1/auth/login", "", map[string]string{"username": "root", "password": "test-password-123"})
+	if login.Code != http.StatusOK {
+		t.Fatalf("login status=%d body=%s", login.Code, login.Body.String())
+	}
+	var loginBody map[string]any
+	_ = json.Unmarshal(login.Body.Bytes(), &loginBody)
+	if loginBody["token"] == "" {
+		t.Fatal("login response missing token")
+	}
+	cfg, err := os.ReadFile(filepath.Join(app.DataDir, "configs/mihomo/config.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(cfg)
+	for _, want := range []string{"proxy-providers:", "msf_manual:", "https://example.com/a.yaml", "机场A", "机场1", "tproxy-port: 7896", "geox-url:", "geo-auto-update: false", "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geosite.dat", "listen: 0.0.0.0:6666", "fake-ip-range: 28.0.0.1/8", "UrlTest: &UrlTest", "sniffer:", "enable: true", "name: Google", "Private-Domain:", "Private-IP:", "RULE-SET,Google,Google", "RULE-SET,Microsoft-CN,Direct", "name: Airport, type: select, include-all: true, include-all-proxies: true, include-all-providers: true"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("mihomo config missing %q:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "geo-auto-update: true") {
+		t.Fatalf("mihomo config should not enable geo auto update by default:\n%s", text)
+	}
+	if strings.Contains(text, "global-client-fingerprint") {
+		t.Fatalf("mihomo config should not contain removed global-client-fingerprint:\n%s", text)
+	}
+	if strings.Contains(text, "detectportal.firefox.com") || !strings.Contains(text, "https://www.gstatic.com/generate_204") {
+		t.Fatalf("mihomo default tests and provider health checks should use the HTTPS gstatic endpoint:\n%s", text)
+	}
+	if index := strings.LastIndex(text, "\nproxy-providers:"); index < 0 || strings.TrimSpace(text[index:]) == "" || strings.Contains(text[index+1:], "\nrules:") {
+		t.Fatalf("proxy-providers should remain the final top-level section:\n%s", text)
+	}
+	manualProvider, err := os.ReadFile(filepath.Join(app.DataDir, "configs/mihomo/proxy_providers/msf_manual.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manualText := string(manualProvider)
+	for _, want := range []string{"proxies:", "type: vless", "server: example.com", "port: 443", "uuid: 00000000-0000-4000-8000-000000000000", "reality-opts:", "public-key: abc", "short-id: \"123\"", "flow: xtls-rprx-vision"} {
+		if !strings.Contains(manualText, want) {
+			t.Fatalf("manual provider missing %q:\n%s", want, manualText)
+		}
+	}
+	mosdnsConfig, err := os.ReadFile(filepath.Join(app.DataDir, "configs/mosdns/config.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mosdnsText := string(mosdnsConfig)
+	for _, want := range []string{"sequence_6666", `listen: ":53"`, `listen: ":66"`, `listen: ":77"`} {
+		if !strings.Contains(mosdnsText, want) {
+			t.Fatalf("mosdns config missing %q:\n%s", want, mosdnsText)
+		}
+	}
+	for _, obsolete := range []string{"127.0.0.1:5656", "forward_all_in", "tag: udp_main", "tag: tcp_main"} {
+		if strings.Contains(mosdnsText, obsolete) {
+			t.Fatalf("mosdns config contains unused loopback entry %q:\n%s", obsolete, mosdnsText)
+		}
+	}
+	runtimeFiles := map[string][]string{
+		"configs/mosdns/sub_config/forward_1.yaml":        {"udp://127.0.0.1:6666", `listen: ":2222"`},
+		"configs/mosdns/sub_config/forward_nocn.yaml":     {`listen: ":3333"`},
+		"configs/mosdns/sub_config/forward_nocn_ecs.yaml": {`listen: ":4444"`},
+		"configs/mosdns/sub_config/for_singbox.yaml":      {`listen: ":7778"`, `listen: ":8888"`},
+	}
+	for rel, wants := range runtimeFiles {
+		b, err := os.ReadFile(filepath.Join(app.DataDir, rel))
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := string(b)
+		for _, want := range wants {
+			if !strings.Contains(got, want) {
+				t.Fatalf("%s missing %q:\n%s", rel, want, got)
+			}
+		}
+	}
+	if _, err := os.Stat(filepath.Join(app.DataDir, "configs/mosdns/sub_config/forward_2.yaml")); !os.IsNotExist(err) {
+		t.Fatalf("unused forward_2.yaml should not be generated, err=%v", err)
+	}
+	nft, err := os.ReadFile(filepath.Join(app.DataDir, "configs/network/network.nft"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(nft), "flush ruleset") || !strings.Contains(string(nft), `iifname { "lo", "eth0" }`) || !strings.Contains(string(nft), "tproxy to :7896") || !strings.Contains(string(nft), "redirect to :7877") || !strings.Contains(string(nft), "28.0.0.0/8") || !strings.Contains(string(nft), "set dns_ipv4 {\n    type ipv4_addr\n    flags interval") {
+		t.Fatalf("nft template not rendered correctly:\n%s", nft)
+	}
+}
+
+func TestSetupConfigNormalizesSubscriptionInputs(t *testing.T) {
+	app := newTestApp(t)
+	token := tokenForRole(t, app, "admin")
+
+	res := requestJSON(t, app, http.MethodPut, "/api/v1/setup/config", token, map[string]any{
+		"username":           "root",
+		"selected_interface": "eth0",
+		"subscription_urls": []any{
+			map[string]any{"name": "机场A", "url": "https://example.com/a.yaml"},
+			"https://example.com/b.yaml",
+		},
+		"proxy_core":      "mihomo",
+		"mos_dns_enabled": true,
+	})
+	if res.Code != http.StatusOK {
+		t.Fatalf("setup config with array subscriptions failed: status=%d body=%s", res.Code, res.Body.String())
+	}
+	if !strings.Contains(res.Body.String(), "机场A|https://example.com/a.yaml") || !strings.Contains(res.Body.String(), "https://example.com/b.yaml") {
+		t.Fatalf("setup config should normalize subscription rows, got: %s", res.Body.String())
+	}
+	cfg, err := os.ReadFile(filepath.Join(app.DataDir, "configs/mihomo/config.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(cfg)
+	if strings.Contains(text, `url: "[]"`) || !strings.Contains(text, `url: "https://example.com/a.yaml"`) || !strings.Contains(text, `url: "https://example.com/b.yaml"`) {
+		t.Fatalf("mihomo providers should contain valid subscription URLs:\n%s", text)
+	}
+
+	bad := requestJSON(t, app, http.MethodPut, "/api/v1/setup/config", token, map[string]any{
+		"username":           "root",
+		"selected_interface": "eth0",
+		"subscription_urls":  []any{"ftp://example.com/a.yaml"},
+	})
+	if bad.Code != http.StatusBadRequest {
+		t.Fatalf("invalid subscription url should fail, status=%d body=%s", bad.Code, bad.Body.String())
+	}
+}
+
+func TestComponentDownloadURLForRuntimeArch(t *testing.T) {
+	tests := []struct {
+		name          string
+		component     string
+		goos          string
+		goarch        string
+		mihomoCore    string
+		amd64v3       bool
+		wantSubstring string
+	}{
+		{
+			name:          "mihomo meta amd64",
+			component:     "mihomo",
+			goos:          "linux",
+			goarch:        "amd64",
+			mihomoCore:    "meta",
+			wantSubstring: "MetaCubeX/mihomo/releases/latest",
+		},
+		{
+			name:          "legacy mihomo alpha uses official meta release",
+			component:     "mihomo",
+			goos:          "linux",
+			goarch:        "amd64",
+			mihomoCore:    "alpha",
+			amd64v3:       true,
+			wantSubstring: "MetaCubeX/mihomo/releases/latest",
+		},
+		{
+			name:          "mihomo arm64",
+			component:     "mihomo",
+			goos:          "linux",
+			goarch:        "arm64",
+			mihomoCore:    "meta",
+			amd64v3:       true,
+			wantSubstring: "MetaCubeX/mihomo/releases/latest",
+		},
+		{
+			name:          "mosdns amd64v3",
+			component:     "mosdns",
+			goos:          "linux",
+			goarch:        "amd64",
+			amd64v3:       true,
+			wantSubstring: "yyysuo/mosdns/releases/latest/download/mosdns-linux-amd64-v3.zip",
+		},
+		{
+			name:          "mosdns arm64",
+			component:     "mosdns",
+			goos:          "linux",
+			goarch:        "arm64",
+			amd64v3:       true,
+			wantSubstring: "yyysuo/mosdns/releases/latest/download/mosdns-linux-arm64.zip",
+		},
+		{
+			name:          "mihomo darwin arm64",
+			component:     "mihomo",
+			goos:          "darwin",
+			goarch:        "arm64",
+			mihomoCore:    "meta",
+			wantSubstring: "MetaCubeX/mihomo/releases/latest",
+		},
+		{
+			name:          "mihomo darwin amd64 compatible",
+			component:     "mihomo",
+			goos:          "darwin",
+			goarch:        "amd64",
+			mihomoCore:    "meta",
+			wantSubstring: "MetaCubeX/mihomo/releases/latest",
+		},
+		{
+			name:          "mosdns darwin arm64",
+			component:     "mosdns",
+			goos:          "darwin",
+			goarch:        "arm64",
+			wantSubstring: "yyysuo/mosdns/releases/latest/download/mosdns-darwin-arm64.zip",
+		},
+		{
+			name:          "mosdns darwin amd64",
+			component:     "mosdns",
+			goos:          "darwin",
+			goarch:        "amd64",
+			wantSubstring: "yyysuo/mosdns/releases/latest/download/mosdns-darwin-amd64.zip",
+		},
+		{
+			name:          "zashboard is architecture independent",
+			component:     "zashboard",
+			goos:          "linux",
+			goarch:        "arm64",
+			wantSubstring: "dist.zip",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := componentDownloadURLFor(tt.component, tt.goos, tt.goarch, tt.mihomoCore, tt.amd64v3)
+			if !strings.Contains(got, tt.wantSubstring) {
+				t.Fatalf("componentDownloadURLFor() = %q, want substring %q", got, tt.wantSubstring)
+			}
+		})
+	}
+	if got := normalizeMihomoCoreType("alpha"); got != "meta" {
+		t.Fatalf("legacy alpha core type should migrate to meta, got %q", got)
+	}
+}
+
+func TestMihomoOfficialReleaseAssetNameForRuntimeArch(t *testing.T) {
+	release := githubRelease{TagName: "v1.19.30"}
+	tests := []struct {
+		name    string
+		goos    string
+		goarch  string
+		amd64v3 bool
+		want    string
+	}{
+		{name: "linux amd64", goos: "linux", goarch: "amd64", want: "mihomo-linux-amd64-v1-v1.19.30.gz"},
+		{name: "linux amd64 v3", goos: "linux", goarch: "amd64", amd64v3: true, want: "mihomo-linux-amd64-v3-v1.19.30.gz"},
+		{name: "linux arm64", goos: "linux", goarch: "arm64", want: "mihomo-linux-arm64-v1.19.30.gz"},
+		{name: "darwin amd64", goos: "darwin", goarch: "amd64", want: "mihomo-darwin-amd64-compatible-v1.19.30.gz"},
+		{name: "darwin arm64", goos: "darwin", goarch: "arm64", want: "mihomo-darwin-arm64-v1.19.30.gz"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := componentReleaseAssetNameFor(release, "mihomo", tt.goos, tt.goarch, tt.amd64v3, "")
+			if got != tt.want {
+				t.Fatalf("componentReleaseAssetNameFor() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMihomoOfficialReleaseAssetFallbacks(t *testing.T) {
+	const tag = "v1.19.30"
+	asset := func(name string) githubAsset {
+		return githubAsset{Name: name, BrowserDownloadURL: "https://example.invalid/" + name}
+	}
+	v3 := asset("mihomo-linux-amd64-v3-" + tag + ".gz")
+	v1 := asset("mihomo-linux-amd64-v1-" + tag + ".gz")
+	unversioned := asset("mihomo-linux-amd64-" + tag + ".gz")
+	tests := []struct {
+		name    string
+		amd64v3 bool
+		assets  []githubAsset
+		want    string
+	}{
+		{name: "v1 selected explicitly", assets: []githubAsset{unversioned, v1, v3}, want: v1.Name},
+		{name: "v1 falls back to unversioned", assets: []githubAsset{unversioned}, want: unversioned.Name},
+		{name: "v3 selected explicitly", amd64v3: true, assets: []githubAsset{unversioned, v1, v3}, want: v3.Name},
+		{name: "v3 falls back to v1", amd64v3: true, assets: []githubAsset{unversioned, v1}, want: v1.Name},
+		{name: "v3 falls back to unversioned last", amd64v3: true, assets: []githubAsset{unversioned}, want: unversioned.Name},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := componentReleaseAssetFor(githubRelease{TagName: tag, Assets: tt.assets}, "mihomo", "linux", "amd64", tt.amd64v3, "")
+			if !ok {
+				t.Fatal("componentReleaseAssetFor() did not select an asset")
+			}
+			if got.Name != tt.want {
+				t.Fatalf("componentReleaseAssetFor() = %q, want %q", got.Name, tt.want)
+			}
+		})
+	}
+}
+
+func TestMihomoAlphaMetadataNormalizesToMeta(t *testing.T) {
+	app := newTestApp(t)
+	now := time.Now()
+	if _, err := app.DB.Exec(`insert into system_setups(created_at,updated_at,username,mihomo_core_type) values(?,?,?,?)`, now, now, "legacy", "alpha"); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.normalizePersistedRows(); err != nil {
+		t.Fatal(err)
+	}
+	var coreType string
+	if err := app.DB.QueryRow(`select mihomo_core_type from system_setups where username='legacy'`).Scan(&coreType); err != nil {
+		t.Fatal(err)
+	}
+	if coreType != "meta" {
+		t.Fatalf("legacy core type = %q, want meta", coreType)
+	}
+}
+
+func TestComponentDownloadAssetFromReleaseRequiresDigest(t *testing.T) {
+	app := newTestApp(t)
+	digest := testSHA256Digest([]byte("dist archive"))
+	release := githubRelease{Assets: []githubAsset{{
+		Name:               "dist.zip",
+		BrowserDownloadURL: "https://example.invalid/dist.zip",
+		Digest:             digest,
+	}}}
+	asset, err := app.componentDownloadAssetFromRelease("zashboard", release)
+	if err != nil {
+		t.Fatalf("componentDownloadAssetFromRelease returned error: %v", err)
+	}
+	if asset.URL != "https://example.invalid/dist.zip" || asset.Digest != digest || asset.VerificationSource != componentVerificationSourceGitHubAssetDigest {
+		t.Fatalf("unexpected asset metadata: %#v", asset)
+	}
+
+	release.Assets[0].Digest = ""
+	if _, err := app.componentDownloadAssetFromRelease("zashboard", release); err == nil || !strings.Contains(err.Error(), "no valid SHA-256 digest") {
+		t.Fatalf("missing digest should fail, got %v", err)
+	}
+	release.Assets[0].Digest = "sha256:not-a-digest"
+	if _, err := app.componentDownloadAssetFromRelease("zashboard", release); err == nil || !strings.Contains(err.Error(), "no valid SHA-256 digest") {
+		t.Fatalf("invalid digest should fail, got %v", err)
+	}
+	release.Assets[0].Digest = digest
+	release.Assets[0].BrowserDownloadURL = ""
+	if _, err := app.componentDownloadAssetFromRelease("zashboard", release); err == nil || !strings.Contains(err.Error(), "no download URL") {
+		t.Fatalf("missing browser download URL should fail, got %v", err)
+	}
+	if _, err := app.componentDownloadAssetFromRelease("zashboard", githubRelease{Assets: []githubAsset{{Name: "other.zip", BrowserDownloadURL: "https://example.invalid/other.zip", Digest: digest}}}); err == nil || !strings.Contains(err.Error(), "expected asset") {
+		t.Fatalf("missing expected asset should fail, got %v", err)
+	}
+}
+
+func TestVerifySHA256File(t *testing.T) {
+	data := []byte("verified artifact")
+	expected := testSHA256Digest(data)
+	path := filepath.Join(t.TempDir(), "artifact.bin")
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := verifySHA256File(path, expected)
+	if err != nil {
+		t.Fatalf("verifySHA256File returned error: %v", err)
+	}
+	if got != expected {
+		t.Fatalf("verified digest = %q, want %q", got, expected)
+	}
+	withoutPrefix, err := canonicalSHA256Digest(strings.TrimPrefix(expected, "sha256:"))
+	if err != nil || withoutPrefix != expected {
+		t.Fatalf("canonical digest without prefix = %q, %v", withoutPrefix, err)
+	}
+	actual, err := verifySHA256File(path, testSHA256Digest([]byte("different artifact")))
+	if err == nil || !strings.Contains(err.Error(), "verification failed") {
+		t.Fatalf("mismatched digest should fail, actual=%q err=%v", actual, err)
+	}
+	if actual != expected {
+		t.Fatalf("mismatch should return actual digest %q, got %q", expected, actual)
+	}
+	if _, err := canonicalSHA256Digest("sha256:1234"); err == nil {
+		t.Fatal("short digest should fail")
+	}
+}
+
+func testSHA256Digest(data []byte) string {
+	sum := sha256.Sum256(data)
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+func TestSelfUpdateAssetContainsForRuntimeArch(t *testing.T) {
+	if got := selfUpdateAssetContainsFor("linux", "arm64"); got != "linux-arm64" {
+		t.Fatalf("selfUpdateAssetContainsFor(linux, arm64) = %q", got)
+	}
+	if got := selfUpdateAssetContainsFor("linux", "amd64"); got != "linux-amd64" {
+		t.Fatalf("selfUpdateAssetContainsFor(linux, amd64) = %q", got)
+	}
+}
+
+func TestSupportsAMD64v3AcceptsABMAsLZCNTCompat(t *testing.T) {
+	cpuInfo := `processor : 0
+vendor_id : GenuineIntel
+model name : 12th Gen Intel(R) Core(TM) i9-12900HK
+flags : fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ss ht syscall nx rdtscp lm constant_tsc rep_good nopl xtopology cpuid tsc_known_freq pni pclmulqdq ssse3 fma cx16 pcid sse4_1 sse4_2 movbe popcnt aes xsave avx f16c rdrand hypervisor lahf_lm abm 3dnowprefetch cpuid_fault invpcid_single pti ssbd ibrs ibpb stibp fsgsbase bmi1 avx2 bmi2 invpcid rdseed adx clflushopt xsaveopt arat umip
+`
+	if !supportsAMD64v3Flags(cpuInfo) {
+		t.Fatal("expected Intel/KVM flags with abm to satisfy AMD64 v3 lzcnt requirement")
+	}
+}
+
+func TestSupportsAMD64v3RequiresLZCNTOrABM(t *testing.T) {
+	cpuInfo := `flags : avx avx2 bmi1 bmi2 fma movbe xsave`
+	if supportsAMD64v3Flags(cpuInfo) {
+		t.Fatal("expected AMD64 v3 detection to fail without lzcnt or abm")
+	}
+}
+
+func TestSetupDefaultsMatchWebUIFakeIPRanges(t *testing.T) {
+	var cfg SetupConfig
+	cfg.defaults()
+	if cfg.FakeIPRangeV4 != "28.0.0.0/8" {
+		t.Fatalf("FakeIPRangeV4 default mismatch, got %q", cfg.FakeIPRangeV4)
+	}
+	if cfg.FakeIPRangeV6 != "f2b0::/18" {
+		t.Fatalf("FakeIPRangeV6 default mismatch, got %q", cfg.FakeIPRangeV6)
+	}
+	if got := normalizeMihomoFakeIPv4Range(cfg.FakeIPRangeV4); got != "28.0.0.1/8" {
+		t.Fatalf("mihomo fake-ip range normalization mismatch, got %q", got)
+	}
+	if got := fakeIPv4RouteCIDR(cfg.FakeIPRangeV4); got != "28.0.0.0/8" {
+		t.Fatalf("IPv4 route CIDR mismatch, got %q", got)
+	}
+	if got := fakeIPv6RouteCIDR(""); got != "f2b0::/18" {
+		t.Fatalf("IPv6 route CIDR default mismatch, got %q", got)
+	}
+}
+
+func TestEnsureSetupProviderArtifactsBackfillsManualProvider(t *testing.T) {
+	app := newTestApp(t)
+	cfg := SetupConfig{
+		SelectedInterface: "eth0",
+		SubscriptionURLs:  "imm|https://example.com/imm.yaml",
+		MihomoProxies:     "trojan://pass@example.org:443?sni=example.org#manual-node",
+		ProxyCore:         "mihomo",
+		MosDNSEnabled:     true,
+	}
+	cfg.defaults()
+	if err := app.writeTextFile("configs/mihomo/config.yaml", "mode: rule\nproxy-providers: {}\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(app.DataDir, "configs/mihomo/proxy_providers/msf_manual.yaml")); err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	if err := app.ensureSetupProviderArtifacts(cfg); err != nil {
+		t.Fatal(err)
+	}
+	manualProvider, err := os.ReadFile(filepath.Join(app.DataDir, "configs/mihomo/proxy_providers/msf_manual.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(manualProvider), "name: manual-node") || !strings.Contains(string(manualProvider), "type: trojan") {
+		t.Fatalf("manual provider not backfilled:\n%s", string(manualProvider))
+	}
+	config, err := os.ReadFile(filepath.Join(app.DataDir, "configs/mihomo/config.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	configText := string(config)
+	for _, want := range []string{"proxy-providers:", "msf_manual:", "imm", "https://example.com/imm.yaml", "./proxy_providers/imm.yaml"} {
+		if !strings.Contains(configText, want) {
+			t.Fatalf("mihomo provider section missing %q:\n%s", want, configText)
+		}
+	}
+}
+
+func TestRenderMihomoManualProviderParsesCommonShareLinks(t *testing.T) {
+	encode := func(s string) string {
+		return base64.RawURLEncoding.EncodeToString([]byte(s))
+	}
+	vmessPayload := encode(`{"v":"2","ps":"vmess-node","add":"vmess.example.com","port":"443","id":"00000000-0000-4000-8000-000000000001","aid":"0","scy":"auto","net":"ws","type":"none","host":"cdn.example.com","path":"/ws","tls":"tls","sni":"vmess.example.com"}`)
+	ssrPayload := encode("ssr.example.com:8388:origin:aes-128-gcm:plain:" + encode("ssr-pass") + "/?remarks=" + encode("ssr-node"))
+	input := strings.Join([]string{
+		"ss://" + encode("aes-128-gcm:ss-pass@ss.example.com:8388") + "#ss-node",
+		"ssr://" + ssrPayload,
+		"vmess://" + vmessPayload,
+		"hysteria2://hy-pass@hy.example.com:443?sni=hy.example.com#hy2-node",
+		"tuic://00000000-0000-4000-8000-000000000002:tuic-pass@tuic.example.com:443?sni=tuic.example.com#tuic-node",
+	}, "\n")
+	text := renderMihomoManualProviderYAML(input)
+	for _, want := range []string{
+		"type: ss", "name: ss-node", "cipher: aes-128-gcm", "password: ss-pass",
+		"type: ssr", "name: ssr-node", "protocol: origin", "obfs: plain",
+		"type: vmess", "name: vmess-node", "ws-opts:", "Host: cdn.example.com",
+		"type: hysteria2", "name: hy2-node", "sni: hy.example.com",
+		"type: tuic", "name: tuic-node", "congestion-controller: bbr",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("manual provider missing %q:\n%s", want, text)
+		}
+	}
+}
+
+func TestNewLogEventLinesOnlyReturnsFreshNonDuplicateRows(t *testing.T) {
+	previous := []string{"a", "b", "c"}
+	if got := newLogEventLines(previous, []string{"a", "b", "c"}); len(got) != 0 {
+		t.Fatalf("unchanged logs should not emit rows, got %#v", got)
+	}
+	got := newLogEventLines(previous, []string{"b", "c", "d"})
+	if len(got) != 1 || got[0] != "d" {
+		t.Fatalf("rotated tail should emit only new row, got %#v", got)
+	}
+	got = newLogEventLines(previous, []string{"x", "y"})
+	if len(got) != 2 || got[0] != "x" || got[1] != "y" {
+		t.Fatalf("truncated/replaced log should emit current rows, got %#v", got)
+	}
+}
+
+func TestSafePathRejectsEscape(t *testing.T) {
+	app := newTestApp(t)
+	if _, err := app.safePath("../etc/passwd"); err == nil {
+		t.Fatal("expected path escape to fail")
+	}
+	if _, err := app.safePath("data/binaries/mihomo/mihomo"); err == nil {
+		t.Fatal("expected non-config/log/backup path to fail")
+	}
+	if _, err := app.safePath("configs/mihomo/config.yaml"); err != nil {
+		t.Fatalf("expected config path to pass: %v", err)
+	}
+}
+
+func TestStaticSetupRouteServesFreshSPAEntry(t *testing.T) {
+	app := newTestApp(t)
+	req := httptest.NewRequest(http.MethodGet, "/setup", nil)
+	res := httptest.NewRecorder()
+	app.Router().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("setup route status=%d body=%s", res.Code, res.Body.String())
+	}
+	if got := res.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("setup route should disable HTML cache, got %q", got)
+	}
+	if body := res.Body.String(); !strings.Contains(body, "msf-spa-recovery") || !strings.Contains(body, "id=\"root\"") {
+		t.Fatalf("setup route did not serve recovered SPA index:\n%s", body)
+	}
+}
+
+func TestOriginalMSFAPICompatibilityShims(t *testing.T) {
+	app := newTestApp(t)
+	token := tokenForRole(t, app, "admin")
+
+	daemon := requestJSON(t, app, http.MethodGet, "/api/v1/daemon/status", token, nil)
+	if daemon.Code != http.StatusOK {
+		t.Fatalf("daemon status=%d body=%s", daemon.Code, daemon.Body.String())
+	}
+	if !strings.Contains(daemon.Body.String(), `"pid"`) || !strings.Contains(daemon.Body.String(), `"services"`) {
+		t.Fatalf("daemon status missing compatibility fields:\n%s", daemon.Body.String())
+	}
+
+	overview := requestJSON(t, app, http.MethodGet, "/api/v1/mosdns/overview/dashboard", token, nil)
+	if overview.Code != http.StatusOK {
+		t.Fatalf("mosdns dashboard status=%d body=%s", overview.Code, overview.Body.String())
+	}
+	if !strings.Contains(overview.Body.String(), `"success":true`) {
+		t.Fatalf("mosdns dashboard should return a normal overview payload:\n%s", overview.Body.String())
+	}
+
+	imported := requestJSON(t, app, http.MethodPost, "/api/v1/mosdns/rules/whitelist/import", token, map[string]any{
+		"rules": []string{"full:example.com", "domain:example.org"},
+	})
+	if imported.Code != http.StatusOK {
+		t.Fatalf("rule import status=%d body=%s", imported.Code, imported.Body.String())
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/mosdns/rules/whitelist/export", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	res := httptest.NewRecorder()
+	app.Router().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("rule export status=%d body=%s", res.Code, res.Body.String())
+	}
+	if got := res.Body.String(); !strings.Contains(got, "full:example.com") || !strings.Contains(got, "domain:example.org") {
+		t.Fatalf("rule export missing imported rules:\n%s", got)
+	}
+}
+
+func TestSetupNetworkInterfacesResponseMatchesExportedWebUI(t *testing.T) {
+	app := newTestApp(t)
+	res := requestJSON(t, app, http.MethodGet, "/api/v1/setup/network-interfaces", "", nil)
+	if res.Code != http.StatusOK {
+		t.Fatalf("network interfaces status=%d body=%s", res.Code, res.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(res.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	data, ok := body["data"].([]any)
+	if !ok {
+		t.Fatalf("exported WebUI expects data array, got %#v", body["data"])
+	}
+	interfaces, ok := body["interfaces"].([]any)
+	if !ok || len(interfaces) != len(data) {
+		t.Fatalf("interfaces and data should both expose the same array: %#v", body)
+	}
+	if len(data) > 0 {
+		item, ok := data[0].(map[string]any)
+		if !ok || item["name"] == nil || item["ip"] == nil || item["speed"] == nil {
+			t.Fatalf("interface rows should include name/ip/speed for setup UI: %#v", data[0])
+		}
+	}
+}
+
+func TestCompatibilityLayoutMatchesMSFTreeShape(t *testing.T) {
+	app := newTestApp(t)
+	for _, rel := range []string{
+		"database/msf.db",
+		"logs/msf.log",
+		"logs/supervisor/supervisord.log",
+		"configs/logs/mosdns.log",
+		"configs/supervisor/supervisord.conf",
+		"configs/supervisor/services/mihomo.ini",
+		"configs/supervisor/services/mosdns.ini",
+		"configs/network/history/.keep",
+		"configs/mosdns/cache/.keep",
+		"configs/mosdns/unpack/.keep",
+		"configs/mihomo/config.yaml.backup",
+	} {
+		if _, err := os.Stat(filepath.Join(app.DataDir, rel)); err != nil {
+			t.Fatalf("expected MSF-compatible layout path %s: %v", rel, err)
+		}
+	}
+}
+
+func TestUpdateConfigPersistsGlobalAndComponentSettings(t *testing.T) {
+	app := newTestApp(t)
+	token := tokenForRole(t, app, "admin")
+
+	put := requestJSON(t, app, http.MethodPut, "/api/v1/update/config", token, map[string]any{
+		"auto_check":          false,
+		"auto_update":         true,
+		"check_interval":      604800,
+		"notify":              false,
+		"mosdns_upgrade_mode": "incremental",
+		"mihomo_upgrade_mode": "full",
+	})
+	if put.Code != http.StatusOK {
+		t.Fatalf("update config put failed: status=%d body=%s", put.Code, put.Body.String())
+	}
+	get := requestJSON(t, app, http.MethodGet, "/api/v1/update/config", token, nil)
+	for _, want := range []string{`"auto_check":false`, `"auto_update":true`, `"check_interval":604800`, `"notify":false`, `"mosdns_upgrade_mode":"incremental"`, `"mihomo_upgrade_mode":"full"`} {
+		if !strings.Contains(get.Body.String(), want) {
+			t.Fatalf("update config get missing %q: status=%d body=%s", want, get.Code, get.Body.String())
+		}
+	}
+	bad := requestJSON(t, app, http.MethodPut, "/api/v1/update/config", token, map[string]any{"mosdns_upgrade_mode": "custom"})
+	if bad.Code != http.StatusBadRequest {
+		t.Fatalf("invalid upgrade mode should fail, status=%d body=%s", bad.Code, bad.Body.String())
+	}
+
+	component := requestJSON(t, app, http.MethodPut, "/api/v1/component-updates/mihomo/config", token, map[string]any{
+		"auto_check":     false,
+		"auto_update":    true,
+		"check_interval": 43200,
+	})
+	if component.Code != http.StatusOK {
+		t.Fatalf("component update config put failed: status=%d body=%s", component.Code, component.Body.String())
+	}
+	componentGet := requestJSON(t, app, http.MethodGet, "/api/v1/component-updates/mihomo/config", token, nil)
+	for _, want := range []string{`"component":"mihomo"`, `"auto_check":false`, `"auto_update":true`, `"check_interval":43200`} {
+		if !strings.Contains(componentGet.Body.String(), want) {
+			t.Fatalf("component update config get missing %q: status=%d body=%s", want, componentGet.Code, componentGet.Body.String())
+		}
+	}
+}
+
+func TestSelfUpdateStateExposesInstallAndAcceleratedDownloadURL(t *testing.T) {
+	app := newTestApp(t)
+	token := tokenForRole(t, app, "admin")
+	now := time.Now()
+	if _, err := app.DB.Exec(`insert into system_setups(created_at,updated_at,username,web_port,github_accelerator_enabled,github_accelerator_url,is_initialized)
+		values(?,?,?,?,?,?,?)`, now, now, "root", "7777", true, "https://gh-proxy.example", true); err != nil {
+		t.Fatal(err)
+	}
+	rawURL := "https://github.com/scoltzero/msf/releases/download/v9.9.9/msf-linux-amd64.tar.gz"
+	updateDir := filepath.Join(app.DataDir, "data", "updates")
+	if err := os.MkdirAll(updateDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(updateDir, filepath.Base(rawURL)), []byte("archive"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.DB.Exec(`insert into update_info(component,current_version,latest_version,has_update,status,progress,error_message,download_url,release_notes,last_check_time,created_at,updated_at)
+		values('msf',?,?,?,?,?,?,?,?,?,?,?)`, app.Version, "v9.9.9", true, "downloaded", 100, "", rawURL, "", now, now, now); err != nil {
+		t.Fatal(err)
+	}
+	status := requestJSON(t, app, http.MethodGet, "/api/v1/update/status", token, nil)
+	for _, want := range []string{
+		`"status":"downloaded"`,
+		`"phase":"downloaded"`,
+		`"message":"更新包已下载"`,
+		`"can_install":true`,
+		`"effective_download_url":"https://gh-proxy.example/https://github.com/scoltzero/msf/releases/download/v9.9.9/msf-linux-amd64.tar.gz"`,
+	} {
+		if !strings.Contains(status.Body.String(), want) {
+			t.Fatalf("self update status missing %q: status=%d body=%s", want, status.Code, status.Body.String())
+		}
+	}
+}
+
+func TestSelfUpdateDownloadFailurePersistsStatusEvents(t *testing.T) {
+	app := newTestApp(t)
+	token := tokenForRole(t, app, "admin")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	rawURL := server.URL + "/msf-linux-amd64.tar.gz"
+	server.Close()
+	now := time.Now()
+	if _, err := app.DB.Exec(`insert into update_info(component,current_version,latest_version,has_update,status,progress,error_message,download_url,release_notes,last_check_time,created_at,updated_at)
+		values('msf',?,?,?,?,?,?,?,?,?,?,?)`, app.Version, "v9.9.9", true, "checked", 0, "", rawURL, "", now, now, now); err != nil {
+		t.Fatal(err)
+	}
+	download := requestJSON(t, app, http.MethodPost, "/api/v1/update/download", token, nil)
+	body := download.Body.String()
+	for _, want := range []string{
+		`"success":false`,
+		`"status":"failed"`,
+		`"phase":"failed"`,
+		`"message":"下载更新失败"`,
+		`"开始连接下载地址"`,
+		`"下载更新失败:`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("download failure status missing %q: status=%d body=%s", want, download.Code, body)
+		}
+	}
+}
+
+func TestSelfUpdateDownloadSuccessPersistsProgressAndEvents(t *testing.T) {
+	app := newTestApp(t)
+	token := tokenForRole(t, app, "admin")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "12")
+		_, _ = w.Write([]byte("hello update"))
+	}))
+	defer server.Close()
+	rawURL := server.URL + "/msf-linux-amd64.tar.gz"
+	now := time.Now()
+	if _, err := app.DB.Exec(`insert into update_info(component,current_version,latest_version,has_update,status,progress,error_message,download_url,release_notes,last_check_time,created_at,updated_at)
+		values('msf',?,?,?,?,?,?,?,?,?,?,?)`, app.Version, "v9.9.9", true, "checked", 0, "", rawURL, "", now, now, now); err != nil {
+		t.Fatal(err)
+	}
+	download := requestJSON(t, app, http.MethodPost, "/api/v1/update/download", token, nil)
+	if download.Code != http.StatusOK {
+		t.Fatalf("download status=%d body=%s", download.Code, download.Body.String())
+	}
+	status := requestJSON(t, app, http.MethodGet, "/api/v1/update/status", token, nil)
+	body := status.Body.String()
+	for _, want := range []string{
+		`"status":"downloaded"`,
+		`"phase":"downloaded"`,
+		`"progress":100`,
+		`"message":"更新包已下载"`,
+		`"已连接下载地址"`,
+		`"更新包下载完成"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("download success status missing %q: status=%d body=%s", want, status.Code, body)
+		}
+	}
+}
+
+func TestSystemdRunSelfUpdateArgsDetachInstaller(t *testing.T) {
+	args := systemdRunSelfUpdateArgs("msf-self-update-test", "/tmp/msf-update/install.sh", []string{
+		"--prefix", "/usr/local",
+		"--data-dir", "/opt/msf",
+		"--service-name", "msf",
+		"--port", "7777",
+	})
+	joined := strings.Join(args, "\x00")
+	for _, want := range []string{
+		"--unit\x00msf-self-update-test",
+		"--collect",
+		"--no-block",
+		"--setenv=MSF_INSTALL_DETACHED=1",
+		"--property=Type=oneshot",
+		`sleep "${MSF_SELF_UPDATE_GRACE_SECONDS:-2}"; exec "$@"`,
+	} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("systemd-run args missing %q: %#v", want, args)
+		}
+	}
+	wantSuffix := []string{
+		"/bin/sh",
+		"-c",
+		`sleep "${MSF_SELF_UPDATE_GRACE_SECONDS:-2}"; exec "$@"`,
+		"msf-self-update",
+		"/bin/sh",
+		"/tmp/msf-update/install.sh",
+		"--prefix",
+		"/usr/local",
+		"--data-dir",
+		"/opt/msf",
+		"--service-name",
+		"msf",
+		"--port",
+		"7777",
+	}
+	if len(args) < len(wantSuffix) || !reflect.DeepEqual(args[len(args)-len(wantSuffix):], wantSuffix) {
+		t.Fatalf("systemd-run args suffix mismatch:\n got %#v\nwant %#v", args, wantSuffix)
+	}
+}
+
+func TestComponentRemoteVersionParsesReleaseMetadata(t *testing.T) {
+	app := newTestApp(t)
+
+	mosdns := githubRelease{
+		TagName: "v5-ph-srs-20260730-b93784b",
+		Body:    "Built with Go 1.26.5\n\nFull Changelog: https://github.com/yyysuo/mosdns/compare/v5-ph-srs-20260729-5124b1e...v5-ph-srs-20260730-b93784b",
+	}
+	if got := app.componentRemoteVersion("mosdns", mosdns); got != "v5-ph-srs-20260730-b93784b" {
+		t.Fatalf("mosdns remote version = %q", got)
+	}
+	legacyMosDNS := githubRelease{
+		TagName: "mosdns",
+		Body:    "源码时间: 2026-05-15 16:16:33\n版本号: ph-yyds-20260515-7a2a3f3\nCommit: 7a2a3f397561f750874b0fcbd1ba131e2844af46\n",
+	}
+	if got := app.componentRemoteVersion("mosdns", legacyMosDNS); got != "ph-yyds-20260515-7a2a3f3" {
+		t.Fatalf("legacy mosdns remote version = %q", got)
+	}
+
+	if got := app.componentRemoteVersion("mihomo", githubRelease{TagName: "v1.19.30"}); got != "v1.19.30" {
+		t.Fatalf("mihomo official remote version = %q", got)
+	}
+
+	if got := app.componentRemoteVersion("zashboard", githubRelease{TagName: "v3.7.1"}); got != "v3.7.1" {
+		t.Fatalf("zashboard remote version = %q", got)
+	}
+	if componentHasUpdate("dev-20260604-7a2a3f3", "ph-yyds-20260515-7a2a3f3") {
+		t.Fatal("mosdns builds with the same commit should not report an update")
+	}
+	if !componentHasUpdate("dev-20260604-1111111", "ph-yyds-20260515-7a2a3f3") {
+		t.Fatal("different component commits should report an update")
+	}
+}
+
+func TestComponentUpdateStateUsesLiveVersionAndDropsPlaceholders(t *testing.T) {
+	app := newTestApp(t)
+	bin := filepath.Join(app.DataDir, "data/binaries/mosdns/mosdns")
+	if err := os.MkdirAll(filepath.Dir(bin), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\necho 'mosdns version ph-yyds-20260515-7a2a3f3'\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	if _, err := app.DB.Exec(`insert into component_update_info(component,current_version,latest_version,has_update,download_url,status,progress,last_check_time,created_at,updated_at)
+		values(?,?,?,?,?,?,?,?,?,?)`, "mosdns", "installed-202606071234", "latest", true, "https://example.com/mosdns.zip", "checked", 0, now, now, now); err != nil {
+		t.Fatal(err)
+	}
+
+	state := app.componentUpdateState("mosdns")
+	if got := state["current_version"].(string); !strings.Contains(got, "ph-yyds-20260515-7a2a3f3") {
+		t.Fatalf("current version should come from binary, got %q", got)
+	}
+	if got := state["latest_version"]; got != "-" {
+		t.Fatalf("placeholder latest version should be hidden, got %#v", got)
+	}
+	if got := state["has_update"]; got != false {
+		t.Fatalf("placeholder latest version should not report update, got %#v", got)
+	}
+}
+
+func TestComponentUpdateStateDisplaysEquivalentMosDNSPackageVersion(t *testing.T) {
+	app := newTestApp(t)
+	bin := filepath.Join(app.DataDir, "data/binaries/mosdns/mosdns")
+	if err := os.MkdirAll(filepath.Dir(bin), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\necho 'dev-20260604-7a2a3f3'\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	if _, err := app.DB.Exec(`insert into component_update_info(component,current_version,latest_version,has_update,download_url,status,progress,last_check_time,created_at,updated_at)
+		values(?,?,?,?,?,?,?,?,?,?)`, "mosdns", "dev-20260604-7a2a3f3", "ph-yyds-20260515-7a2a3f3", false, "https://example.com/mosdns.zip", "checked", 0, now, now, now); err != nil {
+		t.Fatal(err)
+	}
+
+	state := app.componentUpdateState("mosdns")
+	if got := state["current_version"]; got != "ph-yyds-20260515-7a2a3f3" {
+		t.Fatalf("equivalent mosdns build should display package version, got %#v", got)
+	}
+	if got := state["current_version_detail"]; got != "dev-20260604-7a2a3f3" {
+		t.Fatalf("mosdns raw binary version should be kept as detail, got %#v", got)
+	}
+	if got := state["has_update"]; got != false {
+		t.Fatalf("same commit should not report update, got %#v", got)
+	}
+	if got := state["can_update"]; got != false {
+		t.Fatalf("known same version should not enable update, got %#v", got)
+	}
+}
+
+func TestMosDNSStatusDisplaysEquivalentYYYSuoReleaseVersion(t *testing.T) {
+	app := newTestApp(t)
+	token := tokenForRole(t, app, "admin")
+	bin := filepath.Join(app.DataDir, "data/binaries/mosdns/mosdns")
+	if err := os.MkdirAll(filepath.Dir(bin), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\necho 'dev-20260604-7a2a3f3'\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	if _, err := app.DB.Exec(`insert into component_update_info(component,current_version,latest_version,has_update,download_url,status,progress,last_check_time,created_at,updated_at)
+		values(?,?,?,?,?,?,?,?,?,?)`, "mosdns", "dev-20260604-7a2a3f3", "ph-yyds-20260515-7a2a3f3", false, "https://github.com/yyysuo/mosdns/releases", "checked", 0, now, now, now); err != nil {
+		t.Fatal(err)
+	}
+
+	status := requestJSON(t, app, http.MethodGet, "/api/v1/mosdns/status", token, nil)
+	if status.Code != http.StatusOK || !strings.Contains(status.Body.String(), `"version":"ph-yyds-20260515-7a2a3f3"`) {
+		t.Fatalf("MosDNS status should expose the matching yyysuo release version: status=%d body=%s", status.Code, status.Body.String())
+	}
+}
+
+func TestComponentUpdateStateExtractsMihomoVersionAndAllowsUncertainOverwrite(t *testing.T) {
+	app := newTestApp(t)
+	bin := filepath.Join(app.DataDir, "data/binaries/mihomo/mihomo")
+	if err := os.MkdirAll(filepath.Dir(bin), 0755); err != nil {
+		t.Fatal(err)
+	}
+	rawVersion := "Mihomo Meta v1.19.26 linux amd64 with go1.26.4 Fri Jun  5 06:04:11 CST 2026 Use tags: with_gvisor"
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\necho '"+rawVersion+"'\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	if _, err := app.DB.Exec(`insert into component_update_info(component,current_version,latest_version,has_update,download_url,status,progress,last_check_time,created_at,updated_at)
+		values(?,?,?,?,?,?,?,?,?,?)`, "mihomo", rawVersion, "latest", false, "https://example.com/mihomo.tar.gz", "checked", 0, now, now, now); err != nil {
+		t.Fatal(err)
+	}
+
+	state := app.componentUpdateState("mihomo")
+	if got := state["current_version"]; got != "v1.19.26" {
+		t.Fatalf("mihomo current version should be compact, got %#v", got)
+	}
+	if got := state["current_version_detail"]; got != rawVersion {
+		t.Fatalf("mihomo raw version should be kept as detail, got %#v", got)
+	}
+	if got := state["has_update"]; got != false {
+		t.Fatalf("unknown latest should not claim update, got %#v", got)
+	}
+	if got := state["can_update"]; got != true {
+		t.Fatalf("unknown latest should allow overwrite update, got %#v", got)
+	}
+}
+
+func TestComponentStateStringDoesNotRenderMissingValueAsNil(t *testing.T) {
+	if got := componentStateString(map[string]any{}, "missing"); got != "" {
+		t.Fatalf("missing state value = %q", got)
+	}
+	if got := componentStateString(map[string]any{"value": nil}, "value"); got != "" {
+		t.Fatalf("nil state value = %q", got)
+	}
+}
+
+func TestComponentUpdateStateAllowsZashboardOverwriteWhenCurrentUnknown(t *testing.T) {
+	app := newTestApp(t)
+	index := filepath.Join(app.DataDir, "configs/mihomo/ui/index.html")
+	if err := os.MkdirAll(filepath.Dir(index), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(index, []byte("<!doctype html><html></html>"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	if _, err := app.DB.Exec(`insert into component_update_info(component,current_version,latest_version,has_update,download_url,status,progress,last_check_time,created_at,updated_at)
+		values(?,?,?,?,?,?,?,?,?,?)`, "zashboard", "installed", "v3.7.1", false, "https://example.com/dist.zip", "checked", 0, now, now, now); err != nil {
+		t.Fatal(err)
+	}
+
+	state := app.componentUpdateState("zashboard")
+	if got := state["current_version"]; got != "installed" {
+		t.Fatalf("zashboard unknown current version = %#v", got)
+	}
+	if got := state["has_update"]; got != false {
+		t.Fatalf("unknown zashboard version should not claim update, got %#v", got)
+	}
+	if got := state["can_update"]; got != true {
+		t.Fatalf("unknown zashboard version should allow overwrite, got %#v", got)
+	}
+
+	if _, err := app.DB.Exec(`update component_update_info set current_version=? where component=?`, "<nil>", "zashboard"); err != nil {
+		t.Fatal(err)
+	}
+	state = app.componentUpdateState("zashboard")
+	if got := state["current_version"]; got != "installed" {
+		t.Fatalf("dirty nil zashboard version should fall back to installed, got %#v", got)
+	}
+	if got := state["has_update"]; got != false {
+		t.Fatalf("dirty nil zashboard version should not claim update, got %#v", got)
+	}
+	if got := state["can_update"]; got != true {
+		t.Fatalf("dirty nil zashboard version should allow overwrite, got %#v", got)
+	}
+}
+
+func TestComponentUpdateStateExposesVerificationFields(t *testing.T) {
+	app := newTestApp(t)
+	now := time.Now()
+	downloadDigest := testSHA256Digest([]byte("download"))
+	verifiedDigest := testSHA256Digest([]byte("verified"))
+	if _, err := app.DB.Exec(`insert into component_update_info(component,current_version,latest_version,has_update,download_url,download_digest,verified_digest,verified,verification_source,status,progress,last_check_time,created_at,updated_at)
+		values(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, "zashboard", "v1.0.0", "v1.0.1", false, "https://example.invalid/dist.zip", downloadDigest, verifiedDigest, true, componentVerificationSourceGitHubAssetDigest, "completed", 100, now, now, now); err != nil {
+		t.Fatal(err)
+	}
+
+	state := app.componentUpdateState("zashboard")
+	if state["download_digest"] != downloadDigest {
+		t.Fatalf("download_digest mismatch: %#v", state)
+	}
+	if state["verified_digest"] != verifiedDigest {
+		t.Fatalf("verified_digest mismatch: %#v", state)
+	}
+	if state["verified"] != true {
+		t.Fatalf("verified should be true: %#v", state)
+	}
+	if state["verification_source"] != componentVerificationSourceGitHubAssetDigest {
+		t.Fatalf("verification_source mismatch: %#v", state)
+	}
+	if state["installed_verified_digest"] != verifiedDigest {
+		t.Fatalf("installed_verified_digest should be backfilled from verified digest: %#v", state)
+	}
+	if state["installed_verification_source"] != componentVerificationSourceGitHubAssetDigest {
+		t.Fatalf("installed_verification_source should be backfilled: %#v", state)
+	}
+	if got, ok := state["installed_verified_at"].(time.Time); !ok || got.IsZero() {
+		t.Fatalf("installed_verified_at should be backfilled from last_check_time: %#v", state)
+	}
+}
+
+func TestPreservedComponentVerification(t *testing.T) {
+	digest := testSHA256Digest([]byte("dist.zip"))
+	state := map[string]any{
+		"download_digest":     digest,
+		"verified_digest":     digest,
+		"verified":            true,
+		"verification_source": componentVerificationSourceGitHubAssetDigest,
+	}
+	verifiedDigest, verified := preservedComponentVerification(state, digest, false)
+	if !verified || verifiedDigest != digest {
+		t.Fatalf("expected same digest verification to be preserved, got verified=%v digest=%q", verified, verifiedDigest)
+	}
+
+	if verifiedDigest, verified := preservedComponentVerification(state, digest, true); verified || verifiedDigest != "" {
+		t.Fatalf("has_update should clear verification, got verified=%v digest=%q", verified, verifiedDigest)
+	}
+	if verifiedDigest, verified := preservedComponentVerification(state, testSHA256Digest([]byte("changed.zip")), false); verified || verifiedDigest != "" {
+		t.Fatalf("changed download digest should clear verification, got verified=%v digest=%q", verified, verifiedDigest)
+	}
+
+	state["verification_source"] = componentVerificationSourceLocalUpload
+	if verifiedDigest, verified := preservedComponentVerification(state, digest, false); verified || verifiedDigest != "" {
+		t.Fatalf("local upload should not be promoted to project verification, got verified=%v digest=%q", verified, verifiedDigest)
+	}
+}
+
+func TestComponentUpdateUploadInstallsZashboardZip(t *testing.T) {
+	app := newTestApp(t)
+	token := tokenForRole(t, app, "admin")
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	index, err := zw.Create("dist/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := index.Write([]byte(`<!doctype html><html><body>Zashboard</body></html>`)); err != nil {
+		t.Fatal(err)
+	}
+	asset, err := zw.Create("dist/assets/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := asset.Write([]byte(`console.log("ok")`)); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	uploaded := requestMultipartFile(t, app, http.MethodPost, "/api/v1/component-updates/zashboard/upload", token, "file", "zashboard.zip", buf.Bytes(), nil)
+	if uploaded.Code != http.StatusOK || !strings.Contains(uploaded.Body.String(), `"success":true`) || !strings.Contains(uploaded.Body.String(), "local-upload-") || !strings.Contains(uploaded.Body.String(), `"verification_source":"local-upload"`) || !strings.Contains(uploaded.Body.String(), `"verified":false`) {
+		t.Fatalf("zashboard upload status=%d body=%s", uploaded.Code, uploaded.Body.String())
+	}
+	body, err := os.ReadFile(filepath.Join(app.DataDir, "configs/mihomo/ui/index.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), "Zashboard") {
+		t.Fatalf("zashboard index not installed:\n%s", string(body))
+	}
+	state := requestJSON(t, app, http.MethodGet, "/api/v1/component-updates/zashboard", token, nil)
+	if state.Code != http.StatusOK || !strings.Contains(state.Body.String(), `"status":"completed"`) || !strings.Contains(state.Body.String(), `"has_update":false`) || !strings.Contains(state.Body.String(), `"verification_source":"local-upload"`) || !strings.Contains(state.Body.String(), `"verified":false`) {
+		t.Fatalf("zashboard update state mismatch: status=%d body=%s", state.Code, state.Body.String())
+	}
+}
+
+func TestStructuredMSFJSONLogsFormatLikeOriginal(t *testing.T) {
+	app := newTestApp(t)
+	app.LogInfo("app/app.go:114", "MSF 后端服务启动中...", nil)
+	app.LogInfo("app/app.go:945", "gin", map[string]any{"message": `[GIN] 2026/05/31 - 12:58:40 | 200 | 1ms | 192.168.10.223 | GET      "/api/v1/logs/msf/stats"`})
+	logs := requestJSON(t, app, http.MethodGet, "/api/v1/logs/msf?lines=10", tokenForRole(t, app, "admin"), nil)
+	if logs.Code != http.StatusOK {
+		t.Fatalf("logs status=%d body=%s", logs.Code, logs.Body.String())
+	}
+	body := logs.Body.String()
+	if !strings.Contains(body, "[app/app.go:114] MSF 后端服务启动中...") || !strings.Contains(body, "[app/app.go:945] gin: [GIN]") {
+		t.Fatalf("structured MSF JSON logs were not formatted for WebUI:\n%s", body)
+	}
+	if !strings.Contains(body, `"level":"info"`) || !strings.Contains(body, `"raw":"{`) {
+		t.Fatalf("structured MSF JSON logs should preserve level and raw JSON:\n%s", body)
+	}
+}
+
+func TestStructuredServiceLogsSplitTimeLevelAndMessage(t *testing.T) {
+	entries := structuredLogLines([]string{
+		`time="2026-06-02T15:50:44.905225194+08:00" level=info msg="[TCP] 127.0.0.1:44074 --> 127.0.0.1:7877 match Match using 漏网之鱼[placeholder-vless-node]"`,
+		`2026/05/31 12:43:58 [adguard_rule] working directory is: adguard/`,
+	})
+	if len(entries) != 2 {
+		t.Fatalf("entries len=%d", len(entries))
+	}
+	if got := fmtAny(entries[0]["time"]); got != "2026-06-02T15:50:44.905225194+08:00" {
+		t.Fatalf("mihomo logfmt time mismatch: %q", got)
+	}
+	if got := fmtAny(entries[0]["level"]); got != "info" {
+		t.Fatalf("mihomo logfmt level mismatch: %q", got)
+	}
+	if got := fmtAny(entries[0]["message"]); strings.Contains(got, `time=`) || !strings.HasPrefix(got, "[TCP] ") {
+		t.Fatalf("mihomo logfmt message was not split: %q", got)
+	}
+	if got := fmtAny(entries[1]["time"]); got != "2026-05-31 12:43:58" {
+		t.Fatalf("mosdns slash time mismatch: %q", got)
+	}
+	if got := fmtAny(entries[1]["message"]); strings.Contains(got, "2026/05/31") || !strings.HasPrefix(got, "[adguard_rule] ") {
+		t.Fatalf("mosdns message was not split: %q", got)
+	}
+}
+
+func TestSetupDownloadSkipIfExists(t *testing.T) {
+	app := newTestApp(t)
+	target := app.componentTarget("mihomo")
+	if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("#!/bin/sh\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	uiTarget := app.componentTarget("zashboard")
+	if err := os.MkdirAll(filepath.Dir(uiTarget), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(uiTarget, []byte("<!doctype html>"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/setup/download/mihomo?skip_if_exists=1", nil)
+	res := httptest.NewRecorder()
+	app.Router().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("download status=%d body=%s", res.Code, res.Body.String())
+	}
+	if body := res.Body.String(); !strings.Contains(body, `"status":"skipped"`) {
+		t.Fatalf("expected skipped download event, got:\n%s", body)
+	}
+}
+
+func TestSetupCheckReportsRecoveryWhenConfiguredComponentsAreMissing(t *testing.T) {
+	app := newTestApp(t)
+
+	initial := requestJSON(t, app, http.MethodGet, "/api/v1/setup/check", "", nil)
+	if initial.Code != http.StatusOK || !strings.Contains(initial.Body.String(), `"is_initialized":false`) || !strings.Contains(initial.Body.String(), `"needs_recovery":false`) {
+		t.Fatalf("initial setup check mismatch: status=%d body=%s", initial.Code, initial.Body.String())
+	}
+
+	body := map[string]any{
+		"username":           "root",
+		"password":           "test-password-123",
+		"confirmPassword":    "test-password-123",
+		"webPort":            "17777",
+		"selected_interface": "eth0",
+		"proxyCore":          "mihomo",
+		"mosdnsEnabled":      true,
+	}
+	res := requestJSON(t, app, http.MethodPost, "/api/v1/setup/initialize", "", body)
+	if res.Code != http.StatusOK {
+		t.Fatalf("initialize status=%d body=%s", res.Code, res.Body.String())
+	}
+
+	recovery := requestJSON(t, app, http.MethodGet, "/api/v1/setup/check", "", nil)
+	if recovery.Code != http.StatusOK ||
+		!strings.Contains(recovery.Body.String(), `"is_initialized":true`) ||
+		!strings.Contains(recovery.Body.String(), `"needs_recovery":true`) ||
+		!strings.Contains(recovery.Body.String(), `"mosdns"`) ||
+		!strings.Contains(recovery.Body.String(), `"mihomo"`) {
+		t.Fatalf("setup check should report missing components: status=%d body=%s", recovery.Code, recovery.Body.String())
+	}
+
+	for _, component := range []string{"mosdns", "mihomo", "zashboard"} {
+		target := app.componentTarget(component)
+		if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(target, []byte("ok"), 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ready := requestJSON(t, app, http.MethodGet, "/api/v1/setup/check", "", nil)
+	if ready.Code != http.StatusOK || !strings.Contains(ready.Body.String(), `"needs_recovery":false`) || !strings.Contains(ready.Body.String(), `"download_component":[]`) {
+		t.Fatalf("setup check should clear recovery when components exist: status=%d body=%s", ready.Code, ready.Body.String())
+	}
+}
+
+func TestLicenseStatusIsFreeUnlocked(t *testing.T) {
+	app := newTestApp(t)
+	res := requestJSON(t, app, http.MethodGet, "/api/v1/license-activation/status", "", nil)
+	if res.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", res.Code, res.Body.String())
+	}
+	if !strings.Contains(res.Body.String(), "unlocked") || !strings.Contains(res.Body.String(), "free") {
+		t.Fatalf("license response not free/unlocked: %s", res.Body.String())
+	}
+}
+
+func TestMosDNSObservabilityAndRuleCategories(t *testing.T) {
+	app := newTestApp(t)
+	token := tokenForRole(t, app, "admin")
+	lines := []string{
+		`{"query_name":"chatgpt.com","client_ip":"192.168.10.223","query_type":"A","domain_set":"my_fakeiprule","response_code":"NOERROR","duration_ms":0.08,"answers":["A: 28.0.0.218"]}`,
+		`client_ip=192.168.10.235 query_name=google.com qtype=A rule=unmatched_rule rcode=NOERROR A: 142.250.192.142 (TTL: 5s) 0.06ms`,
+		`client_ip=192.168.10.223 query_name=www.google.com qtype=HTTPS rule=BANHTTPS rcode=NOERROR 0.01ms`,
+	}
+	entries := mosDNSQueryEntries(lines)
+	if len(entries) != 3 {
+		t.Fatalf("expected 3 entries, got %d", len(entries))
+	}
+	meta := mosDNSQueryMeta(entries)
+	if !containsString(meta["query_types"].([]string), "HTTPS") {
+		t.Fatalf("meta missing HTTPS: %#v", meta)
+	}
+	stats := mosDNSAuditStats(entries)
+	if stats["fakeip_queries"].(int) == 0 || stats["blocked_queries"].(int) == 0 {
+		t.Fatalf("stats should include fakeip and blocked queries: %#v", stats)
+	}
+	cache := mosDNSCacheSummary(entries)
+	if cache["entries"].(int) == 0 {
+		t.Fatalf("cache summary should include fakeip answer: %#v", cache)
+	}
+	res := requestJSON(t, app, http.MethodGet, "/api/v1/mosdns/rules/categories", token, nil)
+	if res.Code != http.StatusOK {
+		t.Fatalf("categories status=%d body=%s", res.Code, res.Body.String())
+	}
+	for _, want := range []string{"redirect", "adguard", "online"} {
+		if !strings.Contains(res.Body.String(), want) {
+			t.Fatalf("categories missing %s: %s", want, res.Body.String())
+		}
+	}
+	var categories map[string]any
+	_ = json.Unmarshal(res.Body.Bytes(), &categories)
+	personal := categories["data"].([]any)
+	gotIDs := make([]string, 0, len(personal))
+	for _, item := range personal {
+		id := item.(map[string]any)["id"].(string)
+		gotIDs = append(gotIDs, id)
+		if id == "adguard" || id == "online" || id == "rewrite" || id == "pcdnlist" {
+			t.Fatalf("special rule-source tabs must not be returned in personal-list categories: %s", res.Body.String())
+		}
+	}
+	wantIDs := []string{"whitelist", "blocklist", "greylist", "ddnslist", "direct_ip", "redirect"}
+	if !reflect.DeepEqual(gotIDs, wantIDs) {
+		t.Fatalf("personal-list categories should match MSF order, got %#v want %#v", gotIDs, wantIDs)
+	}
+	redirectPattern := "domain:codex-redirect.example.com 1.2.3.4"
+	addRedirect := requestJSON(t, app, http.MethodPost, "/api/v1/mosdns/rules/redirect", token, map[string]any{"pattern": redirectPattern})
+	if addRedirect.Code != http.StatusOK || !strings.Contains(addRedirect.Body.String(), redirectPattern) {
+		t.Fatalf("redirect rule add failed: status=%d body=%s", addRedirect.Code, addRedirect.Body.String())
+	}
+	rewriteFile := filepath.Join(app.DataDir, "configs/mosdns/rule/rewrite.txt")
+	rewriteContent, err := os.ReadFile(rewriteFile)
+	if err != nil {
+		t.Fatalf("rewrite rule file should exist after redirect write: %v", err)
+	}
+	if !strings.Contains(string(rewriteContent), redirectPattern) {
+		t.Fatalf("redirect category should write MosDNS rewrite.txt, got %s", string(rewriteContent))
+	}
+	special := categories["special_categories"].([]any)
+	if len(special) != 2 {
+		t.Fatalf("expected adguard/online in special categories: %s", res.Body.String())
+	}
+	for _, category := range []string{"adguard", "online"} {
+		ruleRes := requestJSON(t, app, http.MethodGet, "/api/v1/mosdns/rules/"+category, token, nil)
+		if ruleRes.Code != http.StatusOK {
+			t.Fatalf("special category fallback status=%d body=%s", ruleRes.Code, ruleRes.Body.String())
+		}
+		var payload map[string]any
+		_ = json.Unmarshal(ruleRes.Body.Bytes(), &payload)
+		if _, ok := payload["data"].([]any); !ok {
+			t.Fatalf("special category fallback data must remain an array for stale WebUI URLs: %s", ruleRes.Body.String())
+		}
+	}
+}
+
+func TestMosDNSRuleSourceManagementAndUpdate(t *testing.T) {
+	app := newTestApp(t)
+	token := tokenForRole(t, app, "admin")
+	ruleServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("domain:example.com\nkeyword:ads\n# ignored\nfull:test.example\n"))
+	}))
+	defer ruleServer.Close()
+
+	create := requestJSON(t, app, http.MethodPost, "/api/v1/mosdns/rule-sets", token, map[string]any{
+		"source_type": "adguard",
+		"name":        "unit-adguard",
+		"type":        "adguard",
+		"url":         ruleServer.URL + "/rules.txt",
+		"enabled":     true,
+	})
+	if create.Code != http.StatusCreated {
+		t.Fatalf("create source status=%d body=%s", create.Code, create.Body.String())
+	}
+	var created map[string]any
+	_ = json.Unmarshal(create.Body.Bytes(), &created)
+	source := created["data"].(map[string]any)
+	id := source["id"].(string)
+	list := requestJSON(t, app, http.MethodGet, "/api/v1/mosdns/rule-sets?source_type=adguard", token, nil)
+	if list.Code != http.StatusOK || !strings.Contains(list.Body.String(), "unit-adguard") || !strings.Contains(list.Body.String(), ruleServer.URL) {
+		t.Fatalf("rule source list missing created source: status=%d body=%s", list.Code, list.Body.String())
+	}
+	update := requestJSON(t, app, http.MethodPost, "/api/v1/mosdns/rule-sets/"+id+"/update", token, nil)
+	if update.Code != http.StatusOK || !strings.Contains(update.Body.String(), `"success":true`) || !strings.Contains(update.Body.String(), `"rule_count":3`) {
+		t.Fatalf("rule source update failed: status=%d body=%s", update.Code, update.Body.String())
+	}
+	local := filepath.Join(app.DataDir, "configs/mosdns/adguard", id+".rules")
+	b, err := os.ReadFile(local)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "domain:example.com") {
+		t.Fatalf("downloaded rule file mismatch: %s", string(b))
+	}
+	cats := requestJSON(t, app, http.MethodGet, "/api/v1/mosdns/rules/categories", token, nil)
+	if cats.Code != http.StatusOK || !strings.Contains(cats.Body.String(), `"id":"adguard"`) {
+		t.Fatalf("categories missing adguard source count: %s", cats.Body.String())
+	}
+	del := requestJSON(t, app, http.MethodDelete, "/api/v1/mosdns/rule-sets/"+id+"?delete_file=true", token, nil)
+	if del.Code != http.StatusOK {
+		t.Fatalf("delete source status=%d body=%s", del.Code, del.Body.String())
+	}
+	if _, err := os.Stat(local); !os.IsNotExist(err) {
+		t.Fatalf("expected local rule file deleted, err=%v", err)
+	}
+}
+
+func TestMosDNSMSFCompatRuleAndSystemEndpoints(t *testing.T) {
+	app := newTestApp(t)
+	token := tokenForRole(t, app, "admin")
+	ruleServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload bytes.Buffer
+		payload.WriteString("SRS")
+		payload.WriteByte(3)
+		zw := zlib.NewWriter(&payload)
+		_, _ = zw.Write([]byte{0})
+		_ = zw.Close()
+		_, _ = w.Write(payload.Bytes())
+	}))
+	defer ruleServer.Close()
+
+	adguard := requestJSON(t, app, http.MethodGet, "/api/v1/mosdns/adguard/rules", token, nil)
+	if adguard.Code != http.StatusOK || !strings.Contains(adguard.Body.String(), "httpdns") || !strings.Contains(adguard.Body.String(), "pcdn1") {
+		t.Fatalf("adguard compat endpoint missing defaults: status=%d body=%s", adguard.Code, adguard.Body.String())
+	}
+	geosite := requestJSON(t, app, http.MethodGet, "/api/v1/mosdns/geosite/rules", token, nil)
+	if geosite.Code != http.StatusOK || !strings.Contains(geosite.Body.String(), "geosite_cn") || !strings.Contains(geosite.Body.String(), "geoip_cn") || !strings.Contains(geosite.Body.String(), "tiktok") {
+		t.Fatalf("geosite compat endpoint missing defaults: status=%d body=%s", geosite.Code, geosite.Body.String())
+	}
+	filtered := requestJSON(t, app, http.MethodGet, "/api/v1/mosdns/geosite/rules?type=geosite_no_cn", token, nil)
+	if filtered.Code != http.StatusOK || !strings.Contains(filtered.Body.String(), "geosite_no_cn") || strings.Contains(filtered.Body.String(), "geoip_cn") {
+		t.Fatalf("geosite filter mismatch: status=%d body=%s", filtered.Code, filtered.Body.String())
+	}
+	upsert := requestJSON(t, app, http.MethodPut, "/api/v1/mosdns/geosite/rules/cusnocn/unit_rule", token, map[string]any{
+		"name": "unit_rule", "type": "cusnocn", "files": "srs/unit_rule.srs", "url": ruleServer.URL + "/unit_rule.srs", "enabled": true,
+	})
+	if upsert.Code != http.StatusOK || !strings.Contains(upsert.Body.String(), "unit_rule") {
+		t.Fatalf("geosite upsert failed: status=%d body=%s", upsert.Code, upsert.Body.String())
+	}
+	overrides := requestJSON(t, app, http.MethodGet, "/api/v1/mosdns/system/overrides", token, nil)
+	if overrides.Code != http.StatusOK || !strings.Contains(overrides.Body.String(), "127.0.0.1:7891") || !strings.Contains(overrides.Body.String(), "2408:8214:213::1") {
+		t.Fatalf("system overrides should fall back to runtime template: status=%d body=%s", overrides.Code, overrides.Body.String())
+	}
+	upstreams := requestJSON(t, app, http.MethodGet, "/api/v1/mosdns/system/upstream-overrides", token, nil)
+	if upstreams.Code != http.StatusOK || !strings.Contains(upstreams.Body.String(), "domestic") || !strings.Contains(upstreams.Body.String(), "nocnfake") {
+		t.Fatalf("upstream overrides should fall back to runtime template: status=%d body=%s", upstreams.Code, upstreams.Body.String())
+	}
+	capacity := requestJSON(t, app, http.MethodGet, "/api/v1/mosdns/system/log-capacity", token, nil)
+	if capacity.Code != http.StatusOK || !strings.Contains(capacity.Body.String(), "100000") {
+		t.Fatalf("log capacity should use runtime audit default: status=%d body=%s", capacity.Code, capacity.Body.String())
+	}
+}
+
+func TestMosDNSClientScanMSFCompatShape(t *testing.T) {
+	app := newTestApp(t)
+	token := tokenForRole(t, app, "admin")
+	api := httptest.NewServer(http.NotFoundHandler())
+	defer api.Close()
+	app.setSetting("mosdns_api_endpoint", api.URL)
+	now := time.Now()
+	if err := os.MkdirAll(filepath.Join(app.DataDir, "logs"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(app.DataDir, "logs/mosdns.out.log"), []byte(`client_ip=192.168.10.60 query_name=client.example qtype=A rule=local rcode=NOERROR`+"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.DB.Exec(`insert into mosdns_client_ips(ip,comment,created_at,updated_at) values(?,?,?,?)`, "192.168.10.50", "unit", now, now); err != nil {
+		t.Fatal(err)
+	}
+	scan := requestJSON(t, app, http.MethodPost, "/api/v1/mosdns/clients/scan", token, nil)
+	if scan.Code != http.StatusOK || !strings.Contains(scan.Body.String(), `"task_id":"latest"`) || !strings.Contains(scan.Body.String(), `"status":"success"`) || !strings.Contains(scan.Body.String(), `"found_count"`) {
+		t.Fatalf("scan response shape mismatch: status=%d body=%s", scan.Code, scan.Body.String())
+	}
+	if !strings.Contains(scan.Body.String(), "192.168.10.50") {
+		t.Fatalf("scan should include allowlist clients even when ARP is empty: %s", scan.Body.String())
+	}
+	if !strings.Contains(scan.Body.String(), "192.168.10.60") || !strings.Contains(scan.Body.String(), `"source":"mosdns"`) {
+		t.Fatalf("scan should include MosDNS query-log clients with mosdns source: %s", scan.Body.String())
+	}
+	task := requestJSON(t, app, http.MethodGet, "/api/v1/mosdns/clients/scan/latest", token, nil)
+	if task.Code != http.StatusOK || !strings.Contains(task.Body.String(), `"status":"success"`) || !strings.Contains(task.Body.String(), `"found_count"`) {
+		t.Fatalf("scan task response shape mismatch: status=%d body=%s", task.Code, task.Body.String())
+	}
+	clients := requestJSON(t, app, http.MethodGet, "/api/v1/mosdns/clients?page=1&page_size=10", token, nil)
+	if clients.Code != http.StatusOK || !strings.Contains(clients.Body.String(), `"data":{"clients":[`) || !strings.Contains(clients.Body.String(), `"requires_scan":false`) {
+		t.Fatalf("clients response should keep MSF-compatible data object: status=%d body=%s", clients.Code, clients.Body.String())
+	}
+	clientIPs := requestJSON(t, app, http.MethodGet, "/api/v1/mosdns/system/client-ip-list", token, nil)
+	if clientIPs.Code != http.StatusOK || !strings.Contains(clientIPs.Body.String(), `"data":{"ips":[`) || strings.Contains(clientIPs.Body.String(), `"ips":null`) {
+		t.Fatalf("client ip list response should expose non-null ips object: status=%d body=%s", clientIPs.Code, clientIPs.Body.String())
+	}
+}
+
+func TestMosDNS9099TakesPriorityForQueryLogsAndOverview(t *testing.T) {
+	app := newTestApp(t)
+	token := tokenForRole(t, app, "admin")
+	if err := os.WriteFile(filepath.Join(app.DataDir, "logs/mosdns.out.log"), []byte(`client_ip=192.168.10.9 query_name=local.example qtype=A rule=local rcode=NOERROR`+"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/query-logs":
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{
+				{"query_name": "remote.example", "client_ip": "192.168.10.8", "query_type": "A", "domain_set": "my_fakeiprule", "response_code": "NOERROR", "answers": []string{"A: 28.0.0.2"}},
+			}})
+		case "/stats":
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"query_count": 77}})
+		case "/cache":
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"entries": 12, "hit_rate": 88}})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer api.Close()
+	app.setSetting("mosdns_api_endpoint", api.URL)
+
+	logs := requestJSON(t, app, http.MethodGet, "/api/v1/mosdns/query-logs", token, nil)
+	if logs.Code != http.StatusOK || !strings.Contains(logs.Body.String(), "remote.example") || strings.Contains(logs.Body.String(), "local.example") {
+		t.Fatalf("query logs should prefer 9099: status=%d body=%s", logs.Code, logs.Body.String())
+	}
+	overview := requestJSON(t, app, http.MethodGet, "/api/v1/mosdns/overview", token, nil)
+	if overview.Code != http.StatusOK || !strings.Contains(overview.Body.String(), `"source":"mosdns_9099"`) || !strings.Contains(overview.Body.String(), `"query_count":77`) || !strings.Contains(overview.Body.String(), `"upstream_stats":[`) || !strings.Contains(overview.Body.String(), `"detailed_cache"`) || !strings.Contains(overview.Body.String(), `"audit_stats"`) {
+		t.Fatalf("overview should include 9099 stats: status=%d body=%s", overview.Code, overview.Body.String())
+	}
+}
+
+func TestMosDNSSystemCacheUsesGeneratedDomainBuckets(t *testing.T) {
+	app := newTestApp(t)
+	token := tokenForRole(t, app, "admin")
+	genDir := filepath.Join(app.DataDir, "configs/mosdns/gen")
+	if err := os.WriteFile(filepath.Join(genDir, "realiplist.txt"), []byte("2026-06-08 apple.com 3\nfull:example.cn\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(genDir, "fakeiplist.txt"), []byte("domain:chatgpt.com\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(genDir, "nov4list.txt"), []byte("no-a.example\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(genDir, "nov6list.txt"), []byte("domain:no-aaaa.example\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(app.DataDir, "logs/mosdns.out.log"), []byte(`client_ip=192.168.10.9 query_name=query-only.example qtype=A rule=my_fakeiprule rcode=NOERROR A: 28.0.0.2`+"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	res := requestJSON(t, app, http.MethodGet, "/api/v1/mosdns/system/cache", token, nil)
+	if res.Code != http.StatusOK {
+		t.Fatalf("system cache status=%d body=%s", res.Code, res.Body.String())
+	}
+	var body map[string]any
+	_ = json.Unmarshal(res.Body.Bytes(), &body)
+	data := body["data"].(map[string]any)
+	stats := data["stats"].(map[string]any)
+	if stats["realIp"].(float64) != 2 || stats["fakeIp"].(float64) != 1 || stats["noV4"].(float64) != 1 || stats["noV6"].(float64) != 1 || stats["totalDomains"].(float64) != 5 {
+		t.Fatalf("system cache stats should use generated buckets: %s", res.Body.String())
+	}
+	domains := data["domains"].(map[string]any)
+	if !strings.Contains(fmt.Sprint(domains["realIp"]), "apple.com") || !strings.Contains(fmt.Sprint(domains["fakeIp"]), "chatgpt.com") {
+		t.Fatalf("system cache domains should expose generated buckets: %s", res.Body.String())
+	}
+	if strings.Contains(fmt.Sprint(domains), "query-only.example") {
+		t.Fatalf("system cache domains must not include query-log fallback rows: %s", fmt.Sprint(domains))
+	}
+
+	detail := requestJSON(t, app, http.MethodGet, "/api/v1/mosdns/cache/detailed", token, nil)
+	if detail.Code != http.StatusOK || !strings.Contains(detail.Body.String(), `"totalDomains":5`) || !strings.Contains(detail.Body.String(), "no-aaaa.example") {
+		t.Fatalf("detailed cache should expose generated stats/domains: status=%d body=%s", detail.Code, detail.Body.String())
+	}
+	var detailBody map[string]any
+	_ = json.Unmarshal(detail.Body.Bytes(), &detailBody)
+	detailData := detailBody["data"].(map[string]any)
+	detailDomains := detailData["domains"].(map[string]any)
+	if strings.Contains(fmt.Sprint(detailDomains), "query-only.example") {
+		t.Fatalf("detailed cache domains must not include query-log fallback rows: %s", fmt.Sprint(detailDomains))
+	}
+}
+
+func TestMosDNSQueryLogsKeepEmpty9099AuditResult(t *testing.T) {
+	app := newTestApp(t)
+	token := tokenForRole(t, app, "admin")
+	if err := os.WriteFile(filepath.Join(app.DataDir, "logs/mosdns.out.log"), []byte(`client_ip=192.168.10.9 query_name=local.example qtype=A rule=local rcode=NOERROR`+"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v2/audit/logs":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"pagination": map[string]any{"total_items": 0, "total_pages": 0, "current_page": 1, "items_per_page": 100},
+				"logs":       []any{},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer api.Close()
+	app.setSetting("mosdns_api_endpoint", api.URL)
+
+	logs := requestJSON(t, app, http.MethodGet, "/api/v1/mosdns/query-logs", token, nil)
+	if logs.Code != http.StatusOK || strings.Contains(logs.Body.String(), "local.example") || !strings.Contains(logs.Body.String(), `"logs":[]`) {
+		t.Fatalf("empty 9099 audit result should not fall back to service logs: status=%d body=%s", logs.Code, logs.Body.String())
+	}
+}
+
+func TestMosDNSClientMoveSyncsWhitelistFile(t *testing.T) {
+	app := newTestApp(t)
+	token := tokenForRole(t, app, "admin")
+	create := requestJSON(t, app, http.MethodPost, "/api/v1/mosdns/clients", token, map[string]any{
+		"ip": "192.168.10.88", "mac": "00:11:22:33:44:55", "hostname": "unit-client",
+	})
+	if create.Code != http.StatusOK {
+		t.Fatalf("create client status=%d body=%s", create.Code, create.Body.String())
+	}
+	move := requestJSON(t, app, http.MethodPost, "/api/v1/mosdns/clients/192.168.10.88/move", token, map[string]string{"status": "allow"})
+	if move.Code != http.StatusOK {
+		t.Fatalf("move status=%d body=%s", move.Code, move.Body.String())
+	}
+	listFile, err := os.ReadFile(filepath.Join(app.DataDir, "configs/mosdns/client_ip.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(listFile), "192.168.10.88") {
+		t.Fatalf("client_ip.txt missing moved client: %s", string(listFile))
+	}
+	clients := requestJSON(t, app, http.MethodGet, "/api/v1/mosdns/clients?status=allow", token, nil)
+	if clients.Code != http.StatusOK || !strings.Contains(clients.Body.String(), `"status":"allow"`) {
+		t.Fatalf("allow clients response mismatch: status=%d body=%s", clients.Code, clients.Body.String())
+	}
+	disable := requestJSON(t, app, http.MethodPost, "/api/v1/mosdns/clients/192.168.10.88/move", token, map[string]string{"status": "disabled"})
+	if disable.Code != http.StatusOK {
+		t.Fatalf("disable status=%d body=%s", disable.Code, disable.Body.String())
+	}
+	listFile, err = os.ReadFile(filepath.Join(app.DataDir, "configs/mosdns/client_ip.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(listFile), "192.168.10.88") {
+		t.Fatalf("client_ip.txt should remove disabled client: %s", string(listFile))
+	}
+}
+
+func TestMosDNSClientScanResetClearsClientIPList(t *testing.T) {
+	app := newTestApp(t)
+	token := tokenForRole(t, app, "admin")
+	create := requestJSON(t, app, http.MethodPost, "/api/v1/mosdns/clients", token, map[string]any{
+		"ip": "192.168.10.91", "hostname": "reset-listed-client",
+	})
+	if create.Code != http.StatusOK {
+		t.Fatalf("create client status=%d body=%s", create.Code, create.Body.String())
+	}
+	move := requestJSON(t, app, http.MethodPost, "/api/v1/mosdns/clients/192.168.10.91/move", token, map[string]string{"status": "allow"})
+	if move.Code != http.StatusOK {
+		t.Fatalf("move status=%d body=%s", move.Code, move.Body.String())
+	}
+	listFile, err := os.ReadFile(filepath.Join(app.DataDir, "configs/mosdns/client_ip.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(listFile), "192.168.10.91") {
+		t.Fatalf("client_ip.txt missing moved client before reset: %s", string(listFile))
+	}
+
+	reset := requestJSON(t, app, http.MethodPost, "/api/v1/mosdns/clients/scan/reset", token, nil)
+	if reset.Code != http.StatusOK {
+		t.Fatalf("reset scan status=%d body=%s", reset.Code, reset.Body.String())
+	}
+	clientIPs := requestJSON(t, app, http.MethodGet, "/api/v1/mosdns/system/client-ip-list", token, nil)
+	if clientIPs.Code != http.StatusOK || strings.Contains(clientIPs.Body.String(), "192.168.10.91") || !strings.Contains(clientIPs.Body.String(), `"ips":[]`) {
+		t.Fatalf("reset should clear persisted client list: status=%d body=%s", clientIPs.Code, clientIPs.Body.String())
+	}
+	listFile, err = os.ReadFile(filepath.Join(app.DataDir, "configs/mosdns/client_ip.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(listFile), "192.168.10.91") {
+		t.Fatalf("client_ip.txt should be cleared by scan reset: %s", string(listFile))
+	}
+}
+
+func TestMosDNSClientProxyModeKeepsSingleClientIPList(t *testing.T) {
+	app := newTestApp(t)
+	token := tokenForRole(t, app, "admin")
+	create := requestJSON(t, app, http.MethodPost, "/api/v1/mosdns/clients", token, map[string]any{
+		"ip": "192.168.10.90", "hostname": "listed-client",
+	})
+	if create.Code != http.StatusOK {
+		t.Fatalf("create client status=%d body=%s", create.Code, create.Body.String())
+	}
+	move := requestJSON(t, app, http.MethodPost, "/api/v1/mosdns/clients/192.168.10.90/move", token, map[string]string{"status": "allow"})
+	if move.Code != http.StatusOK {
+		t.Fatalf("move status=%d body=%s", move.Code, move.Body.String())
+	}
+	black := requestJSON(t, app, http.MethodPost, "/api/v1/mosdns/client-proxy-mode", token, map[string]string{"mode": "black"})
+	if black.Code != http.StatusOK {
+		t.Fatalf("black mode status=%d body=%s", black.Code, black.Body.String())
+	}
+	listFile, err := os.ReadFile(filepath.Join(app.DataDir, "configs/mosdns/client_ip.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(listFile), "192.168.10.90") {
+		t.Fatalf("client_ip.txt should keep the single active list after black mode: %s", string(listFile))
+	}
+	switch2, err := os.ReadFile(filepath.Join(app.DataDir, "configs/mosdns/rule/switch2.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	switch12, err := os.ReadFile(filepath.Join(app.DataDir, "configs/mosdns/rule/switch12.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(switch2)) != "B" || strings.TrimSpace(string(switch12)) != "A" {
+		t.Fatalf("black mode should set switch2=B switch12=A, got switch2=%q switch12=%q", string(switch2), string(switch12))
+	}
+	clients := requestJSON(t, app, http.MethodGet, "/api/v1/mosdns/clients", token, nil)
+	if clients.Code != http.StatusOK || !strings.Contains(clients.Body.String(), `"status":"deny"`) || !strings.Contains(clients.Body.String(), `"in_client_ip_list":true`) {
+		t.Fatalf("black mode clients response mismatch: status=%d body=%s", clients.Code, clients.Body.String())
+	}
+	off := requestJSON(t, app, http.MethodPost, "/api/v1/mosdns/client-proxy-mode", token, map[string]string{"mode": "off"})
+	if off.Code != http.StatusOK {
+		t.Fatalf("off mode status=%d body=%s", off.Code, off.Body.String())
+	}
+	listFile, err = os.ReadFile(filepath.Join(app.DataDir, "configs/mosdns/client_ip.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(listFile), "192.168.10.90") {
+		t.Fatalf("client_ip.txt should remain available while mode is off: %s", string(listFile))
+	}
+	switch2, err = os.ReadFile(filepath.Join(app.DataDir, "configs/mosdns/rule/switch2.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	switch12, err = os.ReadFile(filepath.Join(app.DataDir, "configs/mosdns/rule/switch12.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(switch2)) != "B" || strings.TrimSpace(string(switch12)) != "B" {
+		t.Fatalf("off mode should set switch2=B switch12=B, got switch2=%q switch12=%q", string(switch2), string(switch12))
+	}
+	white := requestJSON(t, app, http.MethodPost, "/api/v1/mosdns/client-proxy-mode", token, map[string]string{"mode": "white"})
+	if white.Code != http.StatusOK {
+		t.Fatalf("white mode status=%d body=%s", white.Code, white.Body.String())
+	}
+	switch2, err = os.ReadFile(filepath.Join(app.DataDir, "configs/mosdns/rule/switch2.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	switch12, err = os.ReadFile(filepath.Join(app.DataDir, "configs/mosdns/rule/switch12.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(switch2)) != "A" || strings.TrimSpace(string(switch12)) != "B" {
+		t.Fatalf("white mode should set switch2=A switch12=B, got switch2=%q switch12=%q", string(switch2), string(switch12))
+	}
+}
+
+func TestMosDNSRuleReorderAndClear(t *testing.T) {
+	app := newTestApp(t)
+	token := tokenForRole(t, app, "admin")
+	reorder := requestJSON(t, app, http.MethodPut, "/api/v1/mosdns/rules/whitelist/reorder", token, map[string]any{
+		"items": []map[string]string{{"pattern": "domain:b.example"}, {"pattern": "domain:a.example"}},
+	})
+	if reorder.Code != http.StatusOK {
+		t.Fatalf("reorder status=%d body=%s", reorder.Code, reorder.Body.String())
+	}
+	content, err := os.ReadFile(filepath.Join(app.DataDir, "configs/mosdns/rule/whitelist.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(content); !strings.Contains(got, "domain:b.example\ndomain:a.example\n") {
+		t.Fatalf("rule order not persisted: %s", got)
+	}
+	clear := requestJSON(t, app, http.MethodDelete, "/api/v1/mosdns/rules/whitelist/all", token, nil)
+	if clear.Code != http.StatusOK {
+		t.Fatalf("clear status=%d body=%s", clear.Code, clear.Body.String())
+	}
+	content, err = os.ReadFile(filepath.Join(app.DataDir, "configs/mosdns/rule/whitelist.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(content)) != "" {
+		t.Fatalf("rule clear not persisted: %s", string(content))
+	}
+}
+
+func TestMosDNSRoutingTaskGeneratesRuleFiles(t *testing.T) {
+	app := newTestApp(t)
+	token := tokenForRole(t, app, "admin")
+	api := httptest.NewServer(http.NotFoundHandler())
+	defer api.Close()
+	app.setSetting("mosdns_api_endpoint", api.URL)
+	lines := strings.Join([]string{
+		`{"query_name":"fake.example","client_ip":"192.168.10.2","query_type":"A","domain_set":"my_fakeiprule","response_code":"NOERROR","answers":["A: 28.0.0.9"]}`,
+		`client_ip=192.168.10.3 query_name=real.example qtype=A rule=unmatched_rule rcode=NOERROR A: 223.5.5.5`,
+	}, "\n") + "\n"
+	if err := os.WriteFile(filepath.Join(app.DataDir, "logs/mosdns.out.log"), []byte(lines), 0644); err != nil {
+		t.Fatal(err)
+	}
+	start := requestJSON(t, app, http.MethodPost, "/api/v1/mosdns/system/routing/start", token, nil)
+	if start.Code != http.StatusOK || !strings.Contains(start.Body.String(), `"status":"completed"`) {
+		t.Fatalf("routing start status=%d body=%s", start.Code, start.Body.String())
+	}
+	fakeRules, err := os.ReadFile(filepath.Join(app.DataDir, "configs/mosdns/gen/fakeiprule.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	realRules, err := os.ReadFile(filepath.Join(app.DataDir, "configs/mosdns/gen/realiprule.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(fakeRules), "domain:fake.example") || !strings.Contains(string(realRules), "domain:real.example") {
+		t.Fatalf("routing files mismatch fake=%s real=%s", string(fakeRules), string(realRules))
+	}
+}
+
+func TestMosDNSConfigSaveCreatesHistory(t *testing.T) {
+	app := newTestApp(t)
+	token := tokenForRole(t, app, "admin")
+	put := requestJSON(t, app, http.MethodPut, "/api/v1/mosdns/config/file", token, map[string]string{
+		"path": "configs/mosdns/config.yaml", "content": "log:\n  level: info\n",
+	})
+	if put.Code != http.StatusOK || !strings.Contains(put.Body.String(), "restart_required") {
+		t.Fatalf("config put status=%d body=%s", put.Code, put.Body.String())
+	}
+	var count int
+	if err := app.DB.QueryRow(`select count(*) from config_histories where service='mosdns' and file_path='configs/mosdns/config.yaml'`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count == 0 {
+		t.Fatal("expected MosDNS config save to create history")
+	}
+}
+
+func TestMihomoControllerBackedOverviewAndTraffic(t *testing.T) {
+	app := newTestApp(t)
+	token := tokenForRole(t, app, "admin")
+	api := newFakeMihomoController(t)
+	defer api.Close()
+	app.setSetting("mihomo_controller_endpoint", api.URL)
+
+	overview := requestJSON(t, app, http.MethodGet, "/api/v1/mihomo/overview", token, nil)
+	if overview.Code != http.StatusOK || !strings.Contains(overview.Body.String(), `"version":"v1.19.9"`) || !strings.Contains(overview.Body.String(), `"connection_count":2`) || !strings.Contains(overview.Body.String(), `"lightweight":true`) {
+		t.Fatalf("mihomo overview should use controller data: status=%d body=%s", overview.Code, overview.Body.String())
+	}
+	full := requestJSON(t, app, http.MethodGet, "/api/v1/mihomo/overview?full=1", token, nil)
+	if full.Code != http.StatusOK || !strings.Contains(full.Body.String(), `"proxy_provider_count":1`) || !strings.Contains(full.Body.String(), `"proxy_group_count":1`) {
+		t.Fatalf("mihomo full overview should keep legacy aggregate data: status=%d body=%s", full.Code, full.Body.String())
+	}
+	traffic := requestJSON(t, app, http.MethodGet, "/api/v1/mihomo/traffic?fresh=1", token, nil)
+	if traffic.Code != http.StatusOK || !strings.Contains(traffic.Body.String(), `"download":4096`) || !strings.Contains(traffic.Body.String(), `"upload":1024`) {
+		t.Fatalf("mihomo traffic mismatch: status=%d body=%s", traffic.Code, traffic.Body.String())
+	}
+	stats := requestJSON(t, app, http.MethodGet, "/api/v1/mihomo/stats", token, nil)
+	if stats.Code != http.StatusOK || !strings.Contains(stats.Body.String(), `"downloadSpeed":4096`) || !strings.Contains(stats.Body.String(), `"uploadSpeed":1024`) || !strings.Contains(stats.Body.String(), `"downloadTotal":8192`) || !strings.Contains(stats.Body.String(), `"activeConnections":2`) {
+		t.Fatalf("mihomo stats should expose overview-compatible counters: status=%d body=%s", stats.Code, stats.Body.String())
+	}
+	proxy := requestJSON(t, app, http.MethodGet, "/api/v1/proxy/overview", token, nil)
+	if proxy.Code != http.StatusOK || !strings.Contains(proxy.Body.String(), `"core":"mihomo"`) || !strings.Contains(proxy.Body.String(), `"mode":"rule"`) {
+		t.Fatalf("proxy overview mismatch: status=%d body=%s", proxy.Code, proxy.Body.String())
+	}
+}
+
+func TestMihomoOverviewAndStatsDoNotBlockOnTrafficStream(t *testing.T) {
+	app := newTestApp(t)
+	token := tokenForRole(t, app, "admin")
+	api := newSlowTrafficMihomoController(t)
+	defer api.Close()
+	app.setSetting("mihomo_controller_endpoint", api.URL)
+
+	start := time.Now()
+	overview := requestJSON(t, app, http.MethodGet, "/api/v1/mihomo/overview", token, nil)
+	if elapsed := time.Since(start); elapsed > 300*time.Millisecond {
+		t.Fatalf("lightweight overview should not wait for /traffic, elapsed=%s body=%s", elapsed, overview.Body.String())
+	}
+	if overview.Code != http.StatusOK || !strings.Contains(overview.Body.String(), `"connection_count":1`) {
+		t.Fatalf("overview mismatch: status=%d body=%s", overview.Code, overview.Body.String())
+	}
+
+	start = time.Now()
+	stats := requestJSON(t, app, http.MethodGet, "/api/v1/mihomo/stats", token, nil)
+	if elapsed := time.Since(start); elapsed > 300*time.Millisecond {
+		t.Fatalf("stats should not wait for /traffic, elapsed=%s body=%s", elapsed, stats.Body.String())
+	}
+	if stats.Code != http.StatusOK || !strings.Contains(stats.Body.String(), `"activeConnections":1`) {
+		t.Fatalf("stats mismatch: status=%d body=%s", stats.Code, stats.Body.String())
+	}
+
+	start = time.Now()
+	traffic := requestJSON(t, app, http.MethodGet, "/api/v1/mihomo/traffic", token, nil)
+	if elapsed := time.Since(start); elapsed > 300*time.Millisecond {
+		t.Fatalf("traffic should return cached/nonblocking payload by default, elapsed=%s body=%s", elapsed, traffic.Body.String())
+	}
+	if traffic.Code != http.StatusOK {
+		t.Fatalf("traffic status=%d body=%s", traffic.Code, traffic.Body.String())
+	}
+}
+
+func TestMihomoRuntimeRoutesServeMSFPage(t *testing.T) {
+	app := newTestApp(t)
+	for _, path := range []string{"/mihomo", "/mihomo/overview", "/mihomo/proxies", "/mihomo/rules", "/mihomo/connections"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		res := httptest.NewRecorder()
+		app.Router().ServeHTTP(res, req)
+		if res.Code != http.StatusOK || strings.Contains(res.Body.String(), "msf-mihomo-zashboard-bridge") {
+			t.Fatalf("%s should serve MSF page without zashboard route takeover, status=%d location=%q body=%s", path, res.Code, res.Header().Get("Location"), res.Body.String())
+		}
+	}
+}
+
+func TestNetworkInfoProvidesOverviewLocalIPShape(t *testing.T) {
+	app := newTestApp(t)
+	token := tokenForRole(t, app, "admin")
+	if err := os.MkdirAll(filepath.Join(app.DataDir, "configs/network"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(app.DataDir, "configs/network/network.yaml"), []byte("interface: lo\nmode: tproxy\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res := requestJSON(t, app, http.MethodGet, "/api/v1/network/info", token, nil)
+	if res.Code != http.StatusOK {
+		t.Fatalf("network info status=%d body=%s", res.Code, res.Body.String())
+	}
+	if !strings.Contains(res.Body.String(), `"data"`) || !strings.Contains(res.Body.String(), `"localIP"`) || !strings.Contains(res.Body.String(), `"interfaces"`) || !strings.Contains(res.Body.String(), `"selected_interface":"lo"`) {
+		t.Fatalf("network info should provide frontend overview shape: %s", res.Body.String())
+	}
+}
+
+func TestMihomoConnectionsProxiesRulesAndClose(t *testing.T) {
+	app := newTestApp(t)
+	token := tokenForRole(t, app, "admin")
+	api := newFakeMihomoController(t)
+	defer api.Close()
+	app.setSetting("mihomo_controller_endpoint", api.URL)
+
+	connections := requestJSON(t, app, http.MethodGet, "/api/v1/mihomo/connections?search=google&page=1&page_size=1", token, nil)
+	if connections.Code != http.StatusOK || !strings.Contains(connections.Body.String(), `"total":1`) || !strings.Contains(connections.Body.String(), `"host":"google.com"`) {
+		t.Fatalf("connection filtering mismatch: status=%d body=%s", connections.Code, connections.Body.String())
+	}
+	closeAll := requestJSON(t, app, http.MethodDelete, "/api/v1/mihomo/connections", token, nil)
+	if closeAll.Code != http.StatusOK || !strings.Contains(closeAll.Body.String(), `"success":true`) {
+		t.Fatalf("connection close failed: status=%d body=%s", closeAll.Code, closeAll.Body.String())
+	}
+	proxies := requestJSON(t, app, http.MethodGet, "/api/v1/mihomo/proxies?search=proxy", token, nil)
+	if proxies.Code != http.StatusOK || !strings.Contains(proxies.Body.String(), `"name":"Proxy"`) || !strings.Contains(proxies.Body.String(), `"name":"proxy-a"`) || !strings.Contains(proxies.Body.String(), `"provider-name":"airport"`) || !strings.Contains(proxies.Body.String(), `"proxy_list"`) || !strings.Contains(proxies.Body.String(), `"Proxy":{`) {
+		t.Fatalf("proxy list mismatch: status=%d body=%s", proxies.Code, proxies.Body.String())
+	}
+	selectProxy := requestJSON(t, app, http.MethodPut, "/api/v1/mihomo/proxies/Proxy", token, map[string]string{"name": "proxy-a"})
+	if selectProxy.Code != http.StatusOK || !strings.Contains(selectProxy.Body.String(), `"updated":true`) {
+		t.Fatalf("proxy select mismatch: status=%d body=%s", selectProxy.Code, selectProxy.Body.String())
+	}
+	rules := requestJSON(t, app, http.MethodGet, "/api/v1/mihomo/rules?type=DOMAIN-SUFFIX", token, nil)
+	if rules.Code != http.StatusOK || !strings.Contains(rules.Body.String(), `"payload":"google.com"`) || !strings.Contains(rules.Body.String(), `"hit_count":12`) || !strings.Contains(rules.Body.String(), `"miss_count":3`) || !strings.Contains(rules.Body.String(), `"hit_at":"2026-05-30T10:00:00Z"`) || strings.Contains(rules.Body.String(), "geoip") {
+		t.Fatalf("rules filtering mismatch: status=%d body=%s", rules.Code, rules.Body.String())
+	}
+}
+
+func TestMergeMihomoProviderProxiesSupportsOldAndNewControllerShapes(t *testing.T) {
+	existing := map[string]any{"name": "shared", "type": "Trojan", "history": []any{map[string]any{"delay": 11}}}
+	merged := mergeMihomoProviderProxies(
+		map[string]any{"proxies": map[string]any{
+			"DIRECT": map[string]any{"name": "DIRECT", "type": "Direct"},
+			"shared": existing,
+		}},
+		map[string]any{"providers": map[string]any{
+			"airport": map[string]any{"vehicleType": "HTTP", "proxies": []any{
+				map[string]any{"name": "provider-only", "type": "Vless"},
+				map[string]any{"name": "shared", "type": "Shadowsocks"},
+			}},
+			"compatible": map[string]any{"vehicleType": "Compatible", "proxies": []any{
+				map[string]any{"name": "compatible-only", "type": "Shadowsocks"},
+			}},
+		}},
+	)
+
+	proxyMap, _ := merged["proxies"].(map[string]any)
+	if len(proxyMap) != 3 {
+		t.Fatalf("expected two existing proxies plus one provider proxy, got %#v", proxyMap)
+	}
+	if !reflect.DeepEqual(proxyMap["shared"], existing) {
+		t.Fatal("existing /proxies entry should take precedence for old Mihomo controller responses")
+	}
+	providerOnly, _ := proxyMap["provider-only"].(map[string]any)
+	if stringMapValue(providerOnly, "provider-name") != "airport" {
+		t.Fatalf("provider-only proxy should keep its provider identity: %#v", providerOnly)
+	}
+	if _, ok := proxyMap["compatible-only"]; ok {
+		t.Fatal("Compatible pseudo-provider entries must not be merged as standalone nodes")
+	}
+}
+
+func TestMihomoProviderConfigManagementCreatesHistory(t *testing.T) {
+	app := newTestApp(t)
+	token := tokenForRole(t, app, "admin")
+	api := newFakeMihomoController(t)
+	defer api.Close()
+	app.setSetting("mihomo_controller_endpoint", api.URL)
+
+	runtimeList := requestJSON(t, app, http.MethodGet, "/api/v1/mihomo/proxy-providers", token, nil)
+	if runtimeList.Code != http.StatusOK {
+		t.Fatalf("runtime proxy provider list status=%d body=%s", runtimeList.Code, runtimeList.Body.String())
+	}
+	var runtimeBody map[string]any
+	if err := json.Unmarshal(runtimeList.Body.Bytes(), &runtimeBody); err != nil {
+		t.Fatal(err)
+	}
+	runtimeData, _ := runtimeBody["data"].(map[string]any)
+	if items := anyMapSlice(runtimeData["items"]); len(items) != 0 {
+		t.Fatalf("runtime-only providers should not be editable config items: %s", runtimeList.Body.String())
+	}
+	runtimeItems := anyMapSlice(runtimeData["runtime_items"])
+	if len(runtimeItems) != 1 || stringMapValue(runtimeItems[0], "name") != "airport" {
+		t.Fatalf("runtime_items should expose non-compatible controller providers only: %s", runtimeList.Body.String())
+	}
+
+	put := requestJSON(t, app, http.MethodPut, "/api/v1/mihomo/proxy-providers/airport", token, map[string]any{
+		"url":      "https://example.com/sub.yaml",
+		"interval": 3600,
+	})
+	if put.Code != http.StatusOK || !strings.Contains(put.Body.String(), `"restart_required":false`) || !strings.Contains(put.Body.String(), `"mode":"generated"`) {
+		t.Fatalf("proxy provider put status=%d body=%s", put.Code, put.Body.String())
+	}
+	if mode := app.mihomoConfigMode(); mode != "generated" {
+		t.Fatalf("proxy provider edits should keep generated mode, got %q", mode)
+	}
+	cfg, err := os.ReadFile(filepath.Join(app.DataDir, "configs/mihomo/config.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(cfg), "airport:") || !strings.Contains(string(cfg), "https://example.com/sub.yaml") {
+		t.Fatalf("proxy provider not persisted:\n%s", string(cfg))
+	}
+	fileProvider := requestJSON(t, app, http.MethodPut, "/api/v1/mihomo/proxy-providers/msf_manual", token, map[string]any{
+		"type": "file",
+		"path": "./proxy_providers/msf_manual.yaml",
+	})
+	if fileProvider.Code != http.StatusOK || !strings.Contains(fileProvider.Body.String(), `"restart_required":false`) {
+		t.Fatalf("file proxy provider without url should save: status=%d body=%s", fileProvider.Code, fileProvider.Body.String())
+	}
+	update := requestJSON(t, app, http.MethodPost, "/api/v1/mihomo/proxy-providers/airport/update", token, nil)
+	if update.Code != http.StatusOK || !strings.Contains(update.Body.String(), `"healthcheck":true`) {
+		t.Fatalf("proxy provider update status=%d body=%s", update.Code, update.Body.String())
+	}
+	rulePut := requestJSON(t, app, http.MethodPut, "/api/v1/mihomo/rule-providers/directlist", token, map[string]any{
+		"url":      "https://example.com/rules.yaml",
+		"behavior": "domain",
+	})
+	if rulePut.Code != http.StatusOK || !strings.Contains(rulePut.Body.String(), `"restart_required":false`) || !strings.Contains(rulePut.Body.String(), `"mode":"custom"`) {
+		t.Fatalf("rule provider put status=%d body=%s", rulePut.Code, rulePut.Body.String())
+	}
+	if mode := app.mihomoConfigMode(); mode != "custom" {
+		t.Fatalf("rule provider edits should switch to custom mode, got %q", mode)
+	}
+	list := requestJSON(t, app, http.MethodGet, "/api/v1/mihomo/providers", token, nil)
+	if list.Code != http.StatusOK || !strings.Contains(list.Body.String(), `"name":"airport"`) || !strings.Contains(list.Body.String(), `"name":"directlist"`) {
+		t.Fatalf("providers list mismatch: status=%d body=%s", list.Code, list.Body.String())
+	}
+	var count int
+	if err := app.DB.QueryRow(`select count(*) from config_histories where service='mihomo' and file_path='configs/mihomo/config.yaml'`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count == 0 {
+		t.Fatal("expected Mihomo provider config updates to create history")
+	}
+	del := requestJSON(t, app, http.MethodDelete, "/api/v1/mihomo/proxy-providers/airport", token, nil)
+	if del.Code != http.StatusOK || !strings.Contains(del.Body.String(), `"restart_required":false`) {
+		t.Fatalf("proxy provider delete status=%d body=%s", del.Code, del.Body.String())
+	}
+}
+
+func TestMihomoDefaultConfigOnlyAllowsProxyProviderEdits(t *testing.T) {
+	app := newTestApp(t)
+	token := tokenForRole(t, app, "admin")
+	original, err := app.readTextFile(mihomoActiveConfigRelPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	providerYAML := "proxy-providers:\n  airport:\n    type: http\n    url: https://example.com/sub.yaml\n    interval: 3600\n    path: ./proxy_providers/airport.yaml\n"
+	providerOnly := replaceMihomoProxyProviders(original, providerYAML)
+	providerPut := requestJSON(t, app, http.MethodPut, "/api/v1/mihomo/config/config.yaml", token, map[string]any{"content": providerOnly})
+	if providerPut.Code != http.StatusOK || !strings.Contains(providerPut.Body.String(), `"mode":"generated"`) {
+		t.Fatalf("provider-only default config put status=%d body=%s", providerPut.Code, providerPut.Body.String())
+	}
+	if mode := app.mihomoConfigMode(); mode != "generated" {
+		t.Fatalf("provider-only default config save should keep generated mode, got %q", mode)
+	}
+	changedMode := strings.Replace(providerOnly, "mode: rule", "mode: global", 1)
+	nonProviderPut := requestJSON(t, app, http.MethodPut, "/api/v1/mihomo/config/config.yaml", token, map[string]any{"content": changedMode})
+	if nonProviderPut.Code != http.StatusBadRequest || !strings.Contains(nonProviderPut.Body.String(), "default_config_requires_user_config") {
+		t.Fatalf("non-provider default config put should be rejected: status=%d body=%s", nonProviderPut.Code, nonProviderPut.Body.String())
+	}
+	if mode := app.mihomoConfigMode(); mode != "generated" {
+		t.Fatalf("rejected default config save should keep generated mode, got %q", mode)
+	}
+}
+
+func TestMihomoCustomConfigModeProtectsGeneratedConfigAndRestoresCurrentDefault(t *testing.T) {
+	app := newTestApp(t)
+	token := tokenForRole(t, app, "admin")
+	original, err := app.readTextFile(mihomoActiveConfigRelPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	custom := testMihomoConfigYAML("Custom")
+
+	imported := requestMultipartFile(t, app, http.MethodPost, "/api/v1/mihomo/config/import", token, "file", "custom.yaml", []byte(custom), map[string]string{"restart": "false"})
+	if imported.Code != http.StatusOK || !strings.Contains(imported.Body.String(), `"success":true`) || !strings.Contains(imported.Body.String(), `"path":"configs/mihomo/user_configs/custom.yaml"`) {
+		t.Fatalf("custom config import status=%d body=%s", imported.Code, imported.Body.String())
+	}
+	if active, err := app.readTextFile(mihomoActiveConfigRelPath); err != nil || active != original {
+		t.Fatalf("import should not overwrite active config before apply, err=%v\n%s", err, active)
+	}
+	conflict := requestJSON(t, app, http.MethodPut, "/api/v1/mihomo/user-configs", token, map[string]any{"name": "custom.yaml", "content": custom})
+	if conflict.Code != http.StatusConflict {
+		t.Fatalf("saving same user config without overwrite should conflict: status=%d body=%s", conflict.Code, conflict.Body.String())
+	}
+	overwrite := requestJSON(t, app, http.MethodPut, "/api/v1/mihomo/user-configs", token, map[string]any{"name": "custom.yaml", "content": testMihomoConfigYAML("Custom"), "overwrite": true})
+	if overwrite.Code != http.StatusOK || !strings.Contains(overwrite.Body.String(), `"success":true`) {
+		t.Fatalf("saving same user config with overwrite should pass: status=%d body=%s", overwrite.Code, overwrite.Body.String())
+	}
+	applied := requestJSON(t, app, http.MethodPost, "/api/v1/mihomo/user-configs/apply", token, map[string]any{"path": "configs/mihomo/user_configs/custom.yaml", "restart": false})
+	if applied.Code != http.StatusOK || !strings.Contains(applied.Body.String(), `"mode":"custom"`) || !strings.Contains(applied.Body.String(), `"restarted":false`) {
+		t.Fatalf("apply user config status=%d body=%s", applied.Code, applied.Body.String())
+	}
+	userConfigs := requestJSON(t, app, http.MethodGet, "/api/v1/mihomo/user-configs", token, nil)
+	if userConfigs.Code != http.StatusOK || !strings.Contains(userConfigs.Body.String(), `"active_path":"configs/mihomo/user_configs/custom.yaml"`) || !strings.Contains(userConfigs.Body.String(), `"active":true`) {
+		t.Fatalf("user configs should expose applied config: status=%d body=%s", userConfigs.Code, userConfigs.Body.String())
+	}
+	modePayload := requestJSON(t, app, http.MethodGet, "/api/v1/mihomo/config/mode", token, nil)
+	if modePayload.Code != http.StatusOK || !strings.Contains(modePayload.Body.String(), `"active_path":"configs/mihomo/user_configs/custom.yaml"`) || !strings.Contains(modePayload.Body.String(), `"active_name":"custom.yaml"`) || !strings.Contains(modePayload.Body.String(), `"is_default":false`) {
+		t.Fatalf("mode payload should expose active user config: status=%d body=%s", modePayload.Code, modePayload.Body.String())
+	}
+	backupPath, err := app.safePath(mihomoGeneratedBackupRelPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(backupPath); err != nil {
+		t.Fatalf("generated config backup should exist: %v", err)
+	}
+	saveApplied := requestJSON(t, app, http.MethodPut, "/api/v1/mihomo/user-configs", token, map[string]any{"name": "custom.yaml", "content": testMihomoConfigYAML("SavedApplied"), "overwrite": true})
+	if saveApplied.Code != http.StatusOK || !strings.Contains(saveApplied.Body.String(), `"success":true`) {
+		t.Fatalf("saving applied user config should pass: status=%d body=%s", saveApplied.Code, saveApplied.Body.String())
+	}
+	activeAfterSave, err := app.readTextFile(mihomoActiveConfigRelPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(activeAfterSave, "SavedApplied") || strings.Contains(activeAfterSave, "Custom") {
+		t.Fatalf("saving applied user config should sync active runtime config:\n%s", activeAfterSave)
+	}
+	genericSaveApplied := requestJSON(t, app, http.MethodPut, "/api/v1/config/file", token, map[string]any{"path": "configs/mihomo/user_configs/custom.yaml", "content": testMihomoConfigYAML("GenericApplied"), "comment": "generic save applied user config"})
+	if genericSaveApplied.Code != http.StatusOK {
+		t.Fatalf("generic save of applied user config should pass: status=%d body=%s", genericSaveApplied.Code, genericSaveApplied.Body.String())
+	}
+	activeAfterGenericSave, err := app.readTextFile(mihomoActiveConfigRelPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(activeAfterGenericSave, "GenericApplied") || strings.Contains(activeAfterGenericSave, "SavedApplied") {
+		t.Fatalf("generic save of applied user config should sync active runtime config:\n%s", activeAfterGenericSave)
+	}
+	if err := app.writeTextFile("configs/mihomo/user_configs/copy-source.yaml", testMihomoConfigYAML("CopiedApplied")); err != nil {
+		t.Fatal(err)
+	}
+	copyApplied := requestJSON(t, app, http.MethodPost, "/api/v1/config/copy", token, map[string]any{"source": "configs/mihomo/user_configs/copy-source.yaml", "target": "configs/mihomo/user_configs/custom.yaml"})
+	if copyApplied.Code != http.StatusOK {
+		t.Fatalf("copy over applied user config should pass: status=%d body=%s", copyApplied.Code, copyApplied.Body.String())
+	}
+	activeAfterCopy, err := app.readTextFile(mihomoActiveConfigRelPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(activeAfterCopy, "CopiedApplied") || strings.Contains(activeAfterCopy, "GenericApplied") {
+		t.Fatalf("copy over applied user config should sync active runtime config:\n%s", activeAfterCopy)
+	}
+	deleteApplied := requestJSON(t, app, http.MethodDelete, "/api/v1/config/file?path=configs/mihomo/user_configs/custom.yaml", token, nil)
+	if deleteApplied.Code != http.StatusBadRequest || !strings.Contains(deleteApplied.Body.String(), "protected_applied_user_config") {
+		t.Fatalf("generic delete of applied user config should be protected: status=%d body=%s", deleteApplied.Code, deleteApplied.Body.String())
+	}
+	renameApplied := requestJSON(t, app, http.MethodPost, "/api/v1/config/rename", token, map[string]any{"source": "configs/mihomo/user_configs/custom.yaml", "target": "configs/mihomo/user_configs/renamed.yaml"})
+	if renameApplied.Code != http.StatusBadRequest || !strings.Contains(renameApplied.Body.String(), "protected_applied_user_config") {
+		t.Fatalf("generic rename of applied user config should be protected: status=%d body=%s", renameApplied.Code, renameApplied.Body.String())
+	}
+	if err := app.writeTextFileDirect(mihomoActiveConfigRelPath, testMihomoConfigYAML("RuntimeDrift")); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.EnsureBaseLayout(); err != nil {
+		t.Fatal(err)
+	}
+	activeAfterReconcile, err := app.readTextFile(mihomoActiveConfigRelPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(activeAfterReconcile, "CopiedApplied") || strings.Contains(activeAfterReconcile, "RuntimeDrift") {
+		t.Fatalf("startup reconcile should restore runtime config from applied user config:\n%s", activeAfterReconcile)
+	}
+
+	cfg := SetupConfig{
+		SelectedInterface: "eth0",
+		SubscriptionURLs:  "airport|https://example.com/sub.yaml",
+		ProxyCore:         "mihomo",
+		MosDNSEnabled:     true,
+	}
+	if err := app.writeGeneratedConfigs(cfg); err != nil {
+		t.Fatal(err)
+	}
+	active, err := app.readTextFile(mihomoActiveConfigRelPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	userConfigAfterSetupSync, err := app.readTextFile("configs/mihomo/user_configs/custom.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for path, text := range map[string]string{
+		mihomoActiveConfigRelPath:                 active,
+		"configs/mihomo/user_configs/custom.yaml": userConfigAfterSetupSync,
+	} {
+		if !strings.Contains(text, "CopiedApplied") || !strings.Contains(text, "https://example.com/sub.yaml") {
+			t.Fatalf("custom config should keep user fields while syncing setup providers in %s:\n%s", path, text)
+		}
+		if strings.Contains(text, "name: Airport") || strings.Contains(text, "RULE-SET,Google,Google") {
+			t.Fatalf("setup provider sync should not replace full user config in %s:\n%s", path, text)
+		}
+	}
+
+	syncedProvider := requestJSON(t, app, http.MethodPut, "/api/v1/mihomo/proxy-providers/synced", token, map[string]any{
+		"url":      "https://example.com/synced.yaml",
+		"interval": 3600,
+	})
+	if syncedProvider.Code != http.StatusOK || !strings.Contains(syncedProvider.Body.String(), `"restart_required":false`) {
+		t.Fatalf("synced proxy provider put status=%d body=%s", syncedProvider.Code, syncedProvider.Body.String())
+	}
+	active, err = app.readTextFile(mihomoActiveConfigRelPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	userConfig, err := app.readTextFile("configs/mihomo/user_configs/custom.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for path, text := range map[string]string{
+		mihomoActiveConfigRelPath:                 active,
+		"configs/mihomo/user_configs/custom.yaml": userConfig,
+	} {
+		if !strings.Contains(text, "synced:") || !strings.Contains(text, "https://example.com/synced.yaml") {
+			t.Fatalf("synced provider missing from %s:\n%s", path, text)
+		}
+		if !strings.Contains(text, "CopiedApplied") {
+			t.Fatalf("provider sync should preserve user config fields outside proxy-providers in %s:\n%s", path, text)
+		}
+	}
+	var userHistoryCount int
+	if err := app.DB.QueryRow(`select count(*) from config_histories where service='mihomo' and file_path='configs/mihomo/user_configs/custom.yaml'`).Scan(&userHistoryCount); err != nil {
+		t.Fatal(err)
+	}
+	if userHistoryCount == 0 {
+		t.Fatal("expected applied user config sync to create history")
+	}
+	deletedProvider := requestJSON(t, app, http.MethodDelete, "/api/v1/mihomo/proxy-providers/synced", token, nil)
+	if deletedProvider.Code != http.StatusOK || !strings.Contains(deletedProvider.Body.String(), `"restart_required":false`) {
+		t.Fatalf("synced proxy provider delete status=%d body=%s", deletedProvider.Code, deletedProvider.Body.String())
+	}
+	active, err = app.readTextFile(mihomoActiveConfigRelPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	userConfig, err = app.readTextFile("configs/mihomo/user_configs/custom.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for path, text := range map[string]string{
+		mihomoActiveConfigRelPath:                 active,
+		"configs/mihomo/user_configs/custom.yaml": userConfig,
+	} {
+		if strings.Contains(text, "synced:") || strings.Contains(text, "https://example.com/synced.yaml") {
+			t.Fatalf("synced provider should be deleted from %s:\n%s", path, text)
+		}
+	}
+
+	groups := requestJSON(t, app, http.MethodPut, "/api/v1/mihomo/proxy-groups-config", token, map[string]any{
+		"proxy-groups": []any{
+			map[string]any{"name": "Edited", "type": "select", "proxies": []any{"DIRECT"}, "url": "https://www.gstatic.com/generate_204", "interval": 300},
+		},
+	})
+	if groups.Code != http.StatusOK || !strings.Contains(groups.Body.String(), `"restart_required":false`) {
+		t.Fatalf("proxy groups save status=%d body=%s", groups.Code, groups.Body.String())
+	}
+	active, err = app.readTextFile(mihomoActiveConfigRelPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(active, "Edited") || strings.Contains(active, "Custom") {
+		t.Fatalf("proxy group section should be replaced without leaving old group names:\n%s", active)
+	}
+
+	restored := requestJSON(t, app, http.MethodPost, "/api/v1/mihomo/config/restore-default?restart=false", token, nil)
+	if restored.Code != http.StatusOK || !strings.Contains(restored.Body.String(), `"mode":"generated"`) || !strings.Contains(restored.Body.String(), `"active_path":""`) || !strings.Contains(restored.Body.String(), `"is_default":true`) {
+		t.Fatalf("restore default status=%d body=%s", restored.Code, restored.Body.String())
+	}
+	restoredText, err := app.readTextFile(mihomoActiveConfigRelPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"name: Proxies", "RULE-SET,Google,Google", "airport:", "https://example.com/sub.yaml"} {
+		if !strings.Contains(restoredText, want) {
+			t.Fatalf("restored current default is missing %q:\n%s", want, restoredText)
+		}
+	}
+	for _, removed := range []string{"name: Edited", "CopiedApplied", "MATCH,CopiedApplied"} {
+		if strings.Contains(restoredText, removed) {
+			t.Fatalf("restored current default kept custom content %q:\n%s", removed, restoredText)
+		}
+	}
+}
+
+func TestMihomoSetupAndPanelProviderFieldsStayInSync(t *testing.T) {
+	app := newTestApp(t)
+	token := tokenForRole(t, app, "admin")
+
+	custom := testMihomoConfigYAML("KeepUserGroup")
+	save := requestJSON(t, app, http.MethodPut, "/api/v1/mihomo/user-configs", token, map[string]any{"name": "custom.yaml", "content": custom, "overwrite": true})
+	if save.Code != http.StatusOK {
+		t.Fatalf("user config save status=%d body=%s", save.Code, save.Body.String())
+	}
+	apply := requestJSON(t, app, http.MethodPost, "/api/v1/mihomo/user-configs/apply", token, map[string]any{"path": "configs/mihomo/user_configs/custom.yaml", "restart": false})
+	if apply.Code != http.StatusOK {
+		t.Fatalf("user config apply status=%d body=%s", apply.Code, apply.Body.String())
+	}
+
+	setupSave := requestJSON(t, app, http.MethodPut, "/api/v1/setup/config", token, map[string]any{
+		"selected_interface": "eth0",
+		"subscription_urls":  "airport|https://example.com/sub.yaml",
+		"mihomo_proxies":     "vless://00000000-0000-4000-8000-000000000000@example.com:443?encryption=none#manual-node",
+		"enable_ipv6":        false,
+		"proxy_core":         "mihomo",
+		"mos_dns_enabled":    true,
+	})
+	if setupSave.Code != http.StatusOK {
+		t.Fatalf("setup config save status=%d body=%s", setupSave.Code, setupSave.Body.String())
+	}
+
+	active, err := app.readTextFile(mihomoActiveConfigRelPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	userConfig, err := app.readTextFile("configs/mihomo/user_configs/custom.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for path, text := range map[string]string{
+		mihomoActiveConfigRelPath:                 active,
+		"configs/mihomo/user_configs/custom.yaml": userConfig,
+	} {
+		for _, want := range []string{"KeepUserGroup", "proxy-providers:", "airport", "https://example.com/sub.yaml", "msf_manual:", "./proxy_providers/msf_manual.yaml"} {
+			if !strings.Contains(text, want) {
+				t.Fatalf("setup provider sync missing %q in %s:\n%s", want, path, text)
+			}
+		}
+		for _, unwanted := range []string{"type: vless", "server: example.com", "uuid: 00000000-0000-4000-8000-000000000000"} {
+			if strings.Contains(text, unwanted) {
+				t.Fatalf("user/runtime config should contain provider references, not manual provider nodes, in %s:\n%s", path, text)
+			}
+		}
+	}
+	manualProvider, err := app.readTextFile("configs/mihomo/proxy_providers/msf_manual.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(manualProvider, "type: vless") || !strings.Contains(manualProvider, "manual-node") {
+		t.Fatalf("manual nodes should be written to provider file:\n%s", manualProvider)
+	}
+
+	setupGet := requestJSON(t, app, http.MethodGet, "/api/v1/setup/config", token, nil)
+	if setupGet.Code != http.StatusOK || !strings.Contains(setupGet.Body.String(), "https://example.com/sub.yaml") || !strings.Contains(setupGet.Body.String(), "manual-node") {
+		t.Fatalf("setup config should read providers from effective config: status=%d body=%s", setupGet.Code, setupGet.Body.String())
+	}
+	assertSetupManualSource := func(res *httptest.ResponseRecorder) {
+		t.Helper()
+		var body map[string]any
+		if err := json.Unmarshal(res.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		data, _ := body["data"].(map[string]any)
+		manual := firstNonEmpty(stringMapValue(data, "mihomo_proxies"), stringMapValue(body, "mihomo_proxies"))
+		if !strings.Contains(manual, "vless://") || !strings.Contains(manual, "manual-node") {
+			t.Fatalf("setup config should preserve editable share links, got %q in body=%s", manual, res.Body.String())
+		}
+		if strings.HasPrefix(strings.TrimSpace(manual), "proxies:") || strings.Contains(manual, "type: vless") {
+			t.Fatalf("setup config should not return generated manual provider YAML as editable source, got %q", manual)
+		}
+	}
+	assertSetupManualSource(setupGet)
+
+	panelSave := requestJSON(t, app, http.MethodPut, "/api/v1/mihomo/proxy-providers/panel", token, map[string]any{
+		"url":      "https://example.com/panel.yaml",
+		"interval": 3600,
+	})
+	if panelSave.Code != http.StatusOK || !strings.Contains(panelSave.Body.String(), `"restart_required":false`) {
+		t.Fatalf("panel provider save status=%d body=%s", panelSave.Code, panelSave.Body.String())
+	}
+	userConfig, err = app.readTextFile("configs/mihomo/user_configs/custom.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(userConfig, "panel:") || !strings.Contains(userConfig, "https://example.com/panel.yaml") || !strings.Contains(userConfig, "KeepUserGroup") {
+		t.Fatalf("panel provider should sync only proxy-providers to user config:\n%s", userConfig)
+	}
+	if strings.Contains(userConfig, "vehicleType") || strings.Contains(userConfig, "updatedAt") {
+		t.Fatalf("panel provider sync should not write controller provider runtime payload:\n%s", userConfig)
+	}
+	setupGet = requestJSON(t, app, http.MethodGet, "/api/v1/setup/config", token, nil)
+	if setupGet.Code != http.StatusOK || !strings.Contains(setupGet.Body.String(), "https://example.com/panel.yaml") {
+		t.Fatalf("setup config should reflect panel provider changes: status=%d body=%s", setupGet.Code, setupGet.Body.String())
+	}
+	assertSetupManualSource(setupGet)
+
+	panelDelete := requestJSON(t, app, http.MethodDelete, "/api/v1/mihomo/proxy-providers/panel", token, nil)
+	if panelDelete.Code != http.StatusOK {
+		t.Fatalf("panel provider delete status=%d body=%s", panelDelete.Code, panelDelete.Body.String())
+	}
+	setupGet = requestJSON(t, app, http.MethodGet, "/api/v1/setup/config", token, nil)
+	if setupGet.Code != http.StatusOK || strings.Contains(setupGet.Body.String(), "https://example.com/panel.yaml") {
+		t.Fatalf("setup config should reflect panel provider deletion: status=%d body=%s", setupGet.Code, setupGet.Body.String())
+	}
+	assertSetupManualSource(setupGet)
+}
+
+func TestMihomoConfigAndLogPanelCompatibility(t *testing.T) {
+	app := newTestApp(t)
+	token := tokenForRole(t, app, "admin")
+	logPath := filepath.Join(app.DataDir, "logs/mihomo.out.log")
+	if err := os.WriteFile(logPath, []byte("[info] started\n[warning] proxy provider failed\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	logs := requestJSON(t, app, http.MethodGet, "/api/v1/mihomo/logs?level=warn&search=provider", token, nil)
+	if logs.Code != http.StatusOK || !strings.Contains(logs.Body.String(), "proxy provider failed") || strings.Contains(logs.Body.String(), "started") {
+		t.Fatalf("mihomo logs filtering mismatch: status=%d body=%s", logs.Code, logs.Body.String())
+	}
+	config := requestJSON(t, app, http.MethodGet, "/api/v1/mihomo/config", token, nil)
+	if config.Code != http.StatusOK || !strings.Contains(config.Body.String(), "proxy-providers:") || !strings.Contains(config.Body.String(), "RULE-SET,Google,Google") {
+		t.Fatalf("mihomo raw config should expose complete config.yaml: status=%d body=%s", config.Code, config.Body.String())
+	}
+	app.setMihomoConfigMode("custom")
+	put := requestJSON(t, app, http.MethodPut, "/api/v1/mihomo/config/config.yaml", token, map[string]any{"content": "mode: rule\nmixed-port: 7892\n"})
+	if put.Code != http.StatusOK || !strings.Contains(put.Body.String(), `"restart_required":true`) {
+		t.Fatalf("mihomo config path put status=%d body=%s", put.Code, put.Body.String())
+	}
+	var count int
+	if err := app.DB.QueryRow(`select count(*) from config_histories where service='mihomo' and file_path='configs/mihomo/config.yaml'`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count == 0 {
+		t.Fatal("expected Mihomo config path save to create history")
+	}
+	files := requestJSON(t, app, http.MethodGet, "/api/v1/mihomo/config/files", token, nil)
+	if files.Code != http.StatusOK || strings.Contains(files.Body.String(), "config.yaml") {
+		t.Fatalf("mihomo config files mismatch: status=%d body=%s", files.Code, files.Body.String())
+	}
+	userConfig := requestJSON(t, app, http.MethodPut, "/api/v1/mihomo/user-configs", token, map[string]any{"name": "panel.yaml", "content": testMihomoConfigYAML("Panel"), "overwrite": true})
+	if userConfig.Code != http.StatusOK {
+		t.Fatalf("user config save status=%d body=%s", userConfig.Code, userConfig.Body.String())
+	}
+	files = requestJSON(t, app, http.MethodGet, "/api/v1/mihomo/config/files", token, nil)
+	if files.Code != http.StatusOK || !strings.Contains(files.Body.String(), "panel.yaml") || strings.Contains(files.Body.String(), "phone_config.yaml") {
+		t.Fatalf("mihomo user config files mismatch: status=%d body=%s", files.Code, files.Body.String())
+	}
+}
+
+func TestRolePermissionsMatchMSFModel(t *testing.T) {
+	app := newTestApp(t)
+	operator := tokenForRole(t, app, "operator")
+	viewer := tokenForRole(t, app, "viewer")
+	guest := tokenForRole(t, app, "guest")
+	if res := requestJSON(t, app, http.MethodPut, "/api/v1/settings", operator, map[string]string{"theme": "dark"}); res.Code != http.StatusForbidden {
+		t.Fatalf("operator should not update settings, status=%d body=%s", res.Code, res.Body.String())
+	}
+	if res := requestJSON(t, app, http.MethodGet, "/api/v1/monitor/system", viewer, nil); res.Code != http.StatusOK {
+		t.Fatalf("viewer should read monitor, status=%d body=%s", res.Code, res.Body.String())
+	}
+	if res := requestJSON(t, app, http.MethodPut, "/api/v1/config/file", viewer, map[string]string{"path": "configs/mihomo/config.yaml", "content": ""}); res.Code != http.StatusForbidden {
+		t.Fatalf("viewer should not update config, status=%d body=%s", res.Code, res.Body.String())
+	}
+	if res := requestJSON(t, app, http.MethodGet, "/api/v1/logs/mihomo", viewer, nil); res.Code != http.StatusOK {
+		t.Fatalf("viewer should read logs, status=%d body=%s", res.Code, res.Body.String())
+	}
+	if res := requestJSON(t, app, http.MethodGet, "/api/v1/mosdns/query-logs", viewer, nil); res.Code != http.StatusOK {
+		t.Fatalf("viewer should read MosDNS query logs, status=%d body=%s", res.Code, res.Body.String())
+	}
+	if res := requestJSON(t, app, http.MethodDelete, "/api/v1/logs/mihomo", viewer, nil); res.Code != http.StatusForbidden {
+		t.Fatalf("viewer should not clear logs, status=%d body=%s", res.Code, res.Body.String())
+	}
+	if res := requestJSON(t, app, http.MethodGet, "/api/v1/users", viewer, nil); res.Code != http.StatusForbidden {
+		t.Fatalf("viewer should not read users, status=%d body=%s", res.Code, res.Body.String())
+	}
+	if res := requestJSON(t, app, http.MethodGet, "/api/v1/settings", viewer, nil); res.Code != http.StatusForbidden {
+		t.Fatalf("viewer should not read settings, status=%d body=%s", res.Code, res.Body.String())
+	}
+	if res := requestJSON(t, app, http.MethodPost, "/api/v1/system/diagnostics/run", viewer, nil); res.Code != http.StatusOK {
+		t.Fatalf("viewer should be allowed to run read-only local diagnostics, status=%d body=%s", res.Code, res.Body.String())
+	}
+	if res := requestJSON(t, app, http.MethodGet, "/api/v1/audit-logs", viewer, nil); res.Code != http.StatusForbidden {
+		t.Fatalf("viewer should not read audit logs, status=%d body=%s", res.Code, res.Body.String())
+	}
+	if res := requestJSON(t, app, http.MethodGet, "/api/v1/api-tokens", operator, nil); res.Code != http.StatusForbidden {
+		t.Fatalf("operator should not manage api tokens, status=%d body=%s", res.Code, res.Body.String())
+	}
+	if res := requestJSON(t, app, http.MethodGet, "/api/v1/services", guest, nil); res.Code != http.StatusForbidden {
+		t.Fatalf("guest should not read service status, status=%d body=%s", res.Code, res.Body.String())
+	}
+}
+
+func TestConfigCompareBackupAndDiagnostics(t *testing.T) {
+	app := newTestApp(t)
+	token := tokenForRole(t, app, "admin")
+	create := requestJSON(t, app, http.MethodPost, "/api/v1/history", token, map[string]any{"path": "configs/mihomo/config.yaml", "content": "a: 1\n", "comment": "old"})
+	if create.Code != http.StatusCreated {
+		t.Fatalf("history create status=%d body=%s", create.Code, create.Body.String())
+	}
+	if err := app.writeTextFile("configs/mihomo/config.yaml", "a: 2\n"); err != nil {
+		t.Fatal(err)
+	}
+	var body map[string]any
+	_ = json.Unmarshal(create.Body.Bytes(), &body)
+	compare := requestJSON(t, app, http.MethodGet, "/api/v1/history/compare?from="+strconvID(body["id"])+"&path=configs/mihomo/config.yaml", token, nil)
+	if compare.Code != http.StatusOK || !strings.Contains(compare.Body.String(), "-a: 1") || !strings.Contains(compare.Body.String(), "+a: 2") {
+		t.Fatalf("compare did not return useful diff: status=%d body=%s", compare.Code, compare.Body.String())
+	}
+	backup := requestJSON(t, app, http.MethodPost, "/api/v1/config/backup", token, map[string]any{})
+	if backup.Code != http.StatusOK || !strings.Contains(backup.Body.String(), ".zip") {
+		t.Fatalf("backup status=%d body=%s", backup.Code, backup.Body.String())
+	}
+	diag := requestJSON(t, app, http.MethodGet, "/api/v1/system/diagnostics", token, nil)
+	if diag.Code != http.StatusMethodNotAllowed || !strings.Contains(diag.Body.String(), "one-shot") {
+		t.Fatalf("diagnostics GET must not execute or return a cached run: status=%d body=%s", diag.Code, diag.Body.String())
+	}
+	diagRun := requestJSON(t, app, http.MethodPost, "/api/v1/system/diagnostics/run", token, nil)
+	if diagRun.Code != http.StatusOK || !strings.Contains(diagRun.Body.String(), "local_host") && !strings.Contains(diagRun.Body.String(), "本机") {
+		t.Fatalf("one-shot diagnostics incomplete: status=%d body=%s", diagRun.Code, diagRun.Body.String())
+	}
+	var diagBody map[string]any
+	if err := json.Unmarshal(diagRun.Body.Bytes(), &diagBody); err != nil {
+		t.Fatal(err)
+	}
+	if diagBody["overall_status"] == "" || diagBody["topology"] == nil || diagBody["checks"] == nil {
+		t.Fatalf("local-loop diagnostics response incomplete: %#v", diagBody)
+	}
+}
+
+func TestBasicManagementServiceLogsAndConfigAPIs(t *testing.T) {
+	app := newTestApp(t)
+	token := tokenForRole(t, app, "admin")
+	services := requestJSON(t, app, http.MethodGet, "/api/v1/services", token, nil)
+	if services.Code != http.StatusOK || !strings.Contains(services.Body.String(), "desired_enabled") || !strings.Contains(services.Body.String(), "health_ports") {
+		t.Fatalf("services compatibility response incomplete: status=%d body=%s", services.Code, services.Body.String())
+	}
+	stopAll := requestJSON(t, app, http.MethodPost, "/api/v1/services/stop-all?wait=1&timeout_ms=100", token, nil)
+	if stopAll.Code != http.StatusOK || !strings.Contains(stopAll.Body.String(), "mosdns") || !strings.Contains(stopAll.Body.String(), "mihomo") {
+		t.Fatalf("stop-all response incomplete: status=%d body=%s", stopAll.Code, stopAll.Body.String())
+	}
+	if err := os.WriteFile(filepath.Join(app.DataDir, "logs/mihomo.out.log"), []byte("[info] started\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(app.DataDir, "logs/mihomo.err.log"), []byte("[warn] proxy provider failed\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	logs := requestJSON(t, app, http.MethodGet, "/api/v1/logs/mihomo?level=warn&search=provider&page=1&page_size=1", token, nil)
+	if logs.Code != http.StatusOK || !strings.Contains(logs.Body.String(), "proxy provider failed") || !strings.Contains(logs.Body.String(), "pagination") {
+		t.Fatalf("logs filtering response mismatch: status=%d body=%s", logs.Code, logs.Body.String())
+	}
+	download := requestJSON(t, app, http.MethodGet, "/api/v1/logs/mihomo/download?format=zip", token, nil)
+	if download.Code != http.StatusOK || !strings.Contains(download.Header().Get("Content-Type"), "application/zip") {
+		t.Fatalf("logs zip download mismatch: status=%d content-type=%s", download.Code, download.Header().Get("Content-Type"))
+	}
+	clear := requestJSON(t, app, http.MethodDelete, "/api/v1/logs/mihomo", token, nil)
+	if clear.Code != http.StatusOK {
+		t.Fatalf("logs clear failed: status=%d body=%s", clear.Code, clear.Body.String())
+	}
+	if b, _ := os.ReadFile(filepath.Join(app.DataDir, "logs/mihomo.err.log")); len(b) != 0 {
+		t.Fatalf("stderr log should be cleared, got %q", string(b))
+	}
+	if err := os.WriteFile(filepath.Join(app.DataDir, "logs/msf.log"), []byte("[info] msf web request\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	defaultLogs := requestJSON(t, app, http.MethodGet, "/api/v1/logs?lines=20", token, nil)
+	if defaultLogs.Code != http.StatusOK || !strings.Contains(defaultLogs.Body.String(), `"service":"msf"`) || !strings.Contains(defaultLogs.Body.String(), "msf web request") {
+		t.Fatalf("default logs route should return msf logs: status=%d body=%s", defaultLogs.Code, defaultLogs.Body.String())
+	}
+	stats := requestJSON(t, app, http.MethodGet, "/api/v1/logs/msf/stats", token, nil)
+	if stats.Code != http.StatusOK || !strings.Contains(stats.Body.String(), `"total":`) || !strings.Contains(stats.Body.String(), `"service":"msf"`) {
+		t.Fatalf("msf log stats should include default app log lines: status=%d body=%s", stats.Code, stats.Body.String())
+	}
+	protectedPut := requestJSON(t, app, http.MethodPut, "/api/v1/config/file", token, map[string]any{"path": "configs/mihomo/config.yaml", "content": "mode: rule\n", "comment": "test save"})
+	if protectedPut.Code != http.StatusBadRequest || !strings.Contains(protectedPut.Body.String(), "protected_runtime_config") {
+		t.Fatalf("runtime Mihomo config should be protected in generic config API: status=%d body=%s", protectedPut.Code, protectedPut.Body.String())
+	}
+	if err := app.writeTextFile("configs/mihomo/user_configs/history.yaml", testMihomoConfigYAML("History")); err != nil {
+		t.Fatal(err)
+	}
+	put := requestJSON(t, app, http.MethodPut, "/api/v1/config/file", token, map[string]any{"path": "configs/mihomo/user_configs/history.yaml", "content": testMihomoConfigYAML("HistorySaved"), "comment": "test save"})
+	if put.Code != http.StatusOK || !strings.Contains(put.Body.String(), "history_id") || !strings.Contains(put.Body.String(), "restart_required") {
+		t.Fatalf("config save response incomplete: status=%d body=%s", put.Code, put.Body.String())
+	}
+	history := requestJSON(t, app, http.MethodGet, "/api/v1/history?service=mihomo&page=1&page_size=1", token, nil)
+	if history.Code != http.StatusOK || !strings.Contains(history.Body.String(), "pagination") || !strings.Contains(history.Body.String(), "configs/mihomo/user_configs/history.yaml") {
+		t.Fatalf("history filter response mismatch: status=%d body=%s", history.Code, history.Body.String())
+	}
+}
+
+func TestBasicManagementUsersTokensSettingsAndDiagnostics(t *testing.T) {
+	app := newTestApp(t)
+	token := tokenForRole(t, app, "admin")
+	badRole := requestJSON(t, app, http.MethodPost, "/api/v1/users", token, map[string]any{"username": "badrole", "password": "12345678", "role": "root"})
+	if badRole.Code != http.StatusBadRequest {
+		t.Fatalf("invalid role should fail, status=%d body=%s", badRole.Code, badRole.Body.String())
+	}
+	create := requestJSON(t, app, http.MethodPost, "/api/v1/users", token, map[string]any{"username": "op1", "password": "12345678", "role": "operator", "display_name": "Operator"})
+	if create.Code != http.StatusCreated {
+		t.Fatalf("user create failed: status=%d body=%s", create.Code, create.Body.String())
+	}
+	list := requestJSON(t, app, http.MethodGet, "/api/v1/users?search=op1&role=operator&page=1&page_size=5", token, nil)
+	if list.Code != http.StatusOK || !strings.Contains(list.Body.String(), "pagination") || !strings.Contains(list.Body.String(), "op1") {
+		t.Fatalf("user list filters mismatch: status=%d body=%s", list.Code, list.Body.String())
+	}
+	selfDelete := requestJSON(t, app, http.MethodDelete, "/api/v1/users/1", token, nil)
+	if selfDelete.Code != http.StatusBadRequest || !strings.Contains(selfDelete.Body.String(), "self_delete") {
+		t.Fatalf("self delete should be blocked: status=%d body=%s", selfDelete.Code, selfDelete.Body.String())
+	}
+	selfRole := requestJSON(t, app, http.MethodPut, "/api/v1/users/1", token, map[string]any{"role": "operator", "is_active": true})
+	if selfRole.Code != http.StatusBadRequest || !strings.Contains(selfRole.Body.String(), "self_role_change") {
+		t.Fatalf("self role change should be blocked: status=%d body=%s", selfRole.Code, selfRole.Body.String())
+	}
+	selfDisable := requestJSON(t, app, http.MethodPut, "/api/v1/users/1", token, map[string]any{"role": "admin", "is_active": false})
+	if selfDisable.Code != http.StatusBadRequest || !strings.Contains(selfDisable.Body.String(), "self_disable") {
+		t.Fatalf("self disable should be blocked: status=%d body=%s", selfDisable.Code, selfDisable.Body.String())
+	}
+	tokenCreate := requestJSON(t, app, http.MethodPost, "/api/v1/api-tokens", token, map[string]any{"name": "test-token", "expires_in": 60, "scope": "admin"})
+	if tokenCreate.Code != http.StatusOK || !strings.Contains(tokenCreate.Body.String(), "msf_") {
+		t.Fatalf("api token create failed: status=%d body=%s", tokenCreate.Code, tokenCreate.Body.String())
+	}
+	tokenList := requestJSON(t, app, http.MethodGet, "/api/v1/api-tokens", token, nil)
+	if tokenList.Code != http.StatusOK || strings.Contains(tokenList.Body.String(), "msf_") || !strings.Contains(tokenList.Body.String(), `"scope":"admin"`) {
+		t.Fatalf("api token list should include metadata only: status=%d body=%s", tokenList.Code, tokenList.Body.String())
+	}
+	audit := requestJSON(t, app, http.MethodGet, "/api/v1/audit-logs?action=user.create", token, nil)
+	if audit.Code != http.StatusOK || !strings.Contains(audit.Body.String(), "user.create") || !strings.Contains(audit.Body.String(), "pagination") {
+		t.Fatalf("audit logs response mismatch: status=%d body=%s", audit.Code, audit.Body.String())
+	}
+	appearancePut := requestJSON(t, app, http.MethodPut, "/api/v1/settings/appearance", token, map[string]any{"theme": "dark", "language": "zh-CN"})
+	if appearancePut.Code != http.StatusOK {
+		t.Fatalf("appearance put failed: status=%d body=%s", appearancePut.Code, appearancePut.Body.String())
+	}
+	appearance := requestJSON(t, app, http.MethodGet, "/api/v1/settings/appearance", token, nil)
+	if appearance.Code != http.StatusOK || !strings.Contains(appearance.Body.String(), "dark") {
+		t.Fatalf("appearance get mismatch: status=%d body=%s", appearance.Code, appearance.Body.String())
+	}
+	diagRun := requestJSON(t, app, http.MethodPost, "/api/v1/system/diagnostics/run", token, nil)
+	if diagRun.Code != http.StatusOK || !strings.Contains(diagRun.Body.String(), "scope_note") || strings.Contains(diagRun.Body.String(), "recent_errors") {
+		t.Fatalf("diagnostics run incomplete: status=%d body=%s", diagRun.Code, diagRun.Body.String())
+	}
+	diagDownload := requestJSON(t, app, http.MethodGet, "/api/v1/system/diagnostics/download", token, nil)
+	if diagDownload.Code != http.StatusGone || !strings.Contains(diagDownload.Body.String(), "temporary") {
+		t.Fatalf("diagnostics download mismatch: status=%d headers=%v", diagDownload.Code, diagDownload.Header())
+	}
+	setup := requestJSON(t, app, http.MethodPut, "/api/v1/setup/config", token, map[string]any{
+		"username":                   "root",
+		"selected_interface":         "eth0",
+		"subscription_urls":          "imm|https://example.com/sub.yaml",
+		"proxy_core":                 "mihomo",
+		"mos_dns_enabled":            true,
+		"auto_set_dns":               false,
+		"enable_ipv6":                false,
+		"mihomo_proxies":             "trojan://pass@example.org:443?sni=example.org#manual-node",
+		"github_proxy_enabled":       true,
+		"github_https_proxy":         "http://127.0.0.1:7890",
+		"github_socks5_proxy":        "socks5://127.0.0.1:7891",
+		"github_accelerator_enabled": true,
+		"github_accelerator_url":     "https://gh-proxy.com",
+	})
+	if setup.Code != http.StatusOK || !strings.Contains(setup.Body.String(), "network_reapply_required") || !strings.Contains(setup.Body.String(), "download_component") {
+		t.Fatalf("setup config compatibility response mismatch: status=%d body=%s", setup.Code, setup.Body.String())
+	}
+	if !strings.Contains(setup.Body.String(), `"proxy_core":"mihomo"`) || !strings.Contains(setup.Body.String(), `"enable_ipv6":false`) {
+		t.Fatalf("setup config response should expose snake_case WebUI fields: status=%d body=%s", setup.Code, setup.Body.String())
+	}
+	setupGet := requestJSON(t, app, http.MethodGet, "/api/v1/setup/config", token, nil)
+	if setupGet.Code != http.StatusOK {
+		t.Fatalf("setup config get failed: status=%d body=%s", setupGet.Code, setupGet.Body.String())
+	}
+	var setupBody map[string]any
+	if err := json.Unmarshal(setupGet.Body.Bytes(), &setupBody); err != nil {
+		t.Fatal(err)
+	}
+	data, ok := setupBody["data"].(map[string]any)
+	if !ok {
+		t.Fatalf("setup config get should expose data object: %#v", setupBody["data"])
+	}
+	if data["selected_interface"] != "eth0" || data["proxy_core"] != "mihomo" || data["enable_ipv6"] != false {
+		t.Fatalf("setup config data mismatch: %#v", data)
+	}
+	if !strings.Contains(fmtAny(data["subscription_urls"]), "imm|https://example.com/sub.yaml") || !strings.Contains(fmtAny(data["mihomo_proxies"]), "manual-node") {
+		t.Fatalf("setup config should preserve subscription and manual node text: %#v", data)
+	}
+	if data["github_proxy_enabled"] != true || data["github_https_proxy"] != "http://127.0.0.1:7890" || data["github_socks5_proxy"] != "socks5://127.0.0.1:7891" || data["github_accelerator_enabled"] != true || data["github_accelerator_url"] != "https://gh-proxy.com" {
+		t.Fatalf("setup config should preserve github download options: %#v", data)
+	}
+	legacySetup := requestJSON(t, app, http.MethodPut, "/api/v1/setup/config", token, map[string]any{
+		"username":           "root",
+		"selected_interface": "eth1",
+		"subscription_urls":  "imm|https://example.com/sub.yaml",
+		"proxy_core":         "mihomo",
+		"mos_dns_enabled":    true,
+		"auto_set_dns":       true,
+		"enable_ipv6":        true,
+		"mihomo_proxies":     "trojan://pass@example.org:443?sni=example.org#manual-node",
+	})
+	if legacySetup.Code != http.StatusOK {
+		t.Fatalf("legacy setup config save failed: status=%d body=%s", legacySetup.Code, legacySetup.Body.String())
+	}
+	setupGet = requestJSON(t, app, http.MethodGet, "/api/v1/setup/config", token, nil)
+	if setupGet.Code != http.StatusOK {
+		t.Fatalf("setup config get after legacy save failed: status=%d body=%s", setupGet.Code, setupGet.Body.String())
+	}
+	if err := json.Unmarshal(setupGet.Body.Bytes(), &setupBody); err != nil {
+		t.Fatal(err)
+	}
+	data, ok = setupBody["data"].(map[string]any)
+	if !ok {
+		t.Fatalf("setup config get after legacy save should expose data object: %#v", setupBody["data"])
+	}
+	if data["github_proxy_enabled"] != true || data["github_https_proxy"] != "http://127.0.0.1:7890" || data["github_socks5_proxy"] != "socks5://127.0.0.1:7891" || data["github_accelerator_enabled"] != true || data["github_accelerator_url"] != "https://gh-proxy.com" {
+		t.Fatalf("legacy setup config save should retain omitted github download options: %#v", data)
+	}
+	closeSetup := requestJSON(t, app, http.MethodPut, "/api/v1/setup/config", token, map[string]any{
+		"username":                   "root",
+		"selected_interface":         "eth1",
+		"subscription_urls":          "imm|https://example.com/sub.yaml",
+		"proxy_core":                 "mihomo",
+		"mos_dns_enabled":            true,
+		"auto_set_dns":               true,
+		"enable_ipv6":                true,
+		"mihomo_proxies":             "trojan://pass@example.org:443?sni=example.org#manual-node",
+		"github_proxy_enabled":       false,
+		"github_accelerator_enabled": false,
+	})
+	if closeSetup.Code != http.StatusOK {
+		t.Fatalf("setup config close github options failed: status=%d body=%s", closeSetup.Code, closeSetup.Body.String())
+	}
+	setupGet = requestJSON(t, app, http.MethodGet, "/api/v1/setup/config", token, nil)
+	if setupGet.Code != http.StatusOK {
+		t.Fatalf("setup config get after close failed: status=%d body=%s", setupGet.Code, setupGet.Body.String())
+	}
+	if err := json.Unmarshal(setupGet.Body.Bytes(), &setupBody); err != nil {
+		t.Fatal(err)
+	}
+	data, ok = setupBody["data"].(map[string]any)
+	if !ok {
+		t.Fatalf("setup config get after close should expose data object: %#v", setupBody["data"])
+	}
+	if data["github_proxy_enabled"] != false || data["github_accelerator_enabled"] != false {
+		t.Fatalf("explicit false should disable github download options: %#v", data)
+	}
+	if data["github_https_proxy"] != "http://127.0.0.1:7890" || data["github_socks5_proxy"] != "socks5://127.0.0.1:7891" || data["github_accelerator_url"] != "https://gh-proxy.com" {
+		t.Fatalf("explicit false should keep existing github download values: %#v", data)
+	}
+	manualProvider, err := os.ReadFile(filepath.Join(app.DataDir, "configs/mihomo/proxy_providers/msf_manual.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(manualProvider), "name: manual-node") || !strings.Contains(string(manualProvider), "type: trojan") {
+		t.Fatalf("manual proxy provider was not generated from settings setup config:\n%s", string(manualProvider))
+	}
+}
+
+func TestAPITokenScopesRestrictEffectivePermissions(t *testing.T) {
+	app := newTestApp(t)
+	admin := tokenForRole(t, app, "admin")
+	operatorJWT := tokenForRole(t, app, "operator")
+	if res := requestJSON(t, app, http.MethodPost, "/api/v1/api-tokens", operatorJWT, map[string]any{"name": "bad", "scope": "read"}); res.Code != http.StatusForbidden {
+		t.Fatalf("non-admin should not create api tokens, status=%d body=%s", res.Code, res.Body.String())
+	}
+	if res := requestJSON(t, app, http.MethodGet, "/api/v1/api-tokens", operatorJWT, nil); res.Code != http.StatusForbidden {
+		t.Fatalf("non-admin should not list api tokens, status=%d body=%s", res.Code, res.Body.String())
+	}
+	if res := requestJSON(t, app, http.MethodDelete, "/api/v1/api-tokens/999", operatorJWT, nil); res.Code != http.StatusForbidden {
+		t.Fatalf("non-admin should not revoke api tokens, status=%d body=%s", res.Code, res.Body.String())
+	}
+	if res := requestJSON(t, app, http.MethodPost, "/api/v1/api-tokens", admin, map[string]any{"name": "bad-scope", "scope": "root"}); res.Code != http.StatusBadRequest {
+		t.Fatalf("invalid api token scope should fail, status=%d body=%s", res.Code, res.Body.String())
+	}
+	adminUser, _, err := app.findUserByUsername("admin_user")
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyToken := "msf_legacy_test"
+	if _, err := app.DB.Exec(`insert into api_tokens(user_id,name,token_hash,expires_at,created_at,revoked) values(?,?,?,?,?,false)`, adminUser.ID, "legacy", tokenHash(legacyToken), nil, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if res := requestJSON(t, app, http.MethodGet, "/api/v1/settings", legacyToken, nil); res.Code != http.StatusOK {
+		t.Fatalf("legacy api token without explicit scope should default to admin, status=%d body=%s", res.Code, res.Body.String())
+	}
+	readToken := createAPITokenForTest(t, app, admin, map[string]any{"name": "read-token", "scope": "read"})
+	if res := requestJSON(t, app, http.MethodGet, "/api/v1/monitor/system", readToken, nil); res.Code != http.StatusOK {
+		t.Fatalf("read token should read monitor, status=%d body=%s", res.Code, res.Body.String())
+	}
+	if res := requestJSON(t, app, http.MethodGet, "/api/v1/logs/msf", readToken, nil); res.Code != http.StatusOK {
+		t.Fatalf("read token should read logs, status=%d body=%s", res.Code, res.Body.String())
+	}
+	if res := requestJSON(t, app, http.MethodPost, "/api/v1/services/start-all", readToken, nil); res.Code != http.StatusForbidden {
+		t.Fatalf("read token should not operate services, status=%d body=%s", res.Code, res.Body.String())
+	}
+	if res := requestJSON(t, app, http.MethodPut, "/api/v1/config/file", readToken, map[string]any{"path": "configs/mihomo/config.yaml", "content": "mode: rule\n"}); res.Code != http.StatusForbidden {
+		t.Fatalf("read token should not update config, status=%d body=%s", res.Code, res.Body.String())
+	}
+	operateToken := createAPITokenForTest(t, app, admin, map[string]any{"name": "operate-token", "scope": "operate"})
+	if res := requestJSON(t, app, http.MethodPut, "/api/v1/config/file", operateToken, map[string]any{"path": "configs/mihomo/user_configs/token.yaml", "content": testMihomoConfigYAML("Token")}); res.Code != http.StatusOK {
+		t.Fatalf("operate token should update config, status=%d body=%s", res.Code, res.Body.String())
+	}
+	if res := requestJSON(t, app, http.MethodPut, "/api/v1/config/file", operateToken, map[string]any{"path": "configs/mihomo/config.yaml", "content": "mode: rule\n"}); res.Code != http.StatusBadRequest {
+		t.Fatalf("runtime Mihomo config should be protected for operate token, status=%d body=%s", res.Code, res.Body.String())
+	}
+	if res := requestJSON(t, app, http.MethodPut, "/api/v1/settings", operateToken, map[string]any{"theme": "dark"}); res.Code != http.StatusForbidden {
+		t.Fatalf("operate token should not update settings, status=%d body=%s", res.Code, res.Body.String())
+	}
+	if res := requestJSON(t, app, http.MethodGet, "/api/v1/api-tokens", operateToken, nil); res.Code != http.StatusForbidden {
+		t.Fatalf("operate token should not manage api tokens, status=%d body=%s", res.Code, res.Body.String())
+	}
+	operatorAdminScope := createAPITokenForTest(t, app, admin, map[string]any{"name": "operator-admin-scope", "username": "operator_user", "scope": "admin"})
+	if res := requestJSON(t, app, http.MethodPut, "/api/v1/settings", operatorAdminScope, map[string]any{"theme": "dark"}); res.Code != http.StatusForbidden {
+		t.Fatalf("operator-owned admin-scope token should not exceed operator role, status=%d body=%s", res.Code, res.Body.String())
+	}
+	if res := requestJSON(t, app, http.MethodPut, "/api/v1/config/file", operatorAdminScope, map[string]any{"path": "configs/mihomo/user_configs/operator.yaml", "content": testMihomoConfigYAML("Operator")}); res.Code != http.StatusOK {
+		t.Fatalf("operator-owned admin-scope token should keep operator config permission, status=%d body=%s", res.Code, res.Body.String())
+	}
+}
+
+func TestStructuredSettingsAdminOnlyValidationAndPersistence(t *testing.T) {
+	app := newTestApp(t)
+	admin := tokenForRole(t, app, "admin")
+	viewer := tokenForRole(t, app, "viewer")
+	if res := requestJSON(t, app, http.MethodGet, "/api/v1/settings/structured", viewer, nil); res.Code != http.StatusForbidden {
+		t.Fatalf("viewer should not read structured settings, status=%d body=%s", res.Code, res.Body.String())
+	}
+	initial := requestJSON(t, app, http.MethodGet, "/api/v1/settings/structured", admin, nil)
+	if initial.Code != http.StatusOK || !strings.Contains(initial.Body.String(), `"appearance"`) || !strings.Contains(initial.Body.String(), `"mosdns"`) || !strings.Contains(initial.Body.String(), `"mihomo"`) {
+		t.Fatalf("structured settings get mismatch: status=%d body=%s", initial.Code, initial.Body.String())
+	}
+	update := requestJSON(t, app, http.MethodPut, "/api/v1/settings/structured", admin, map[string]any{
+		"appearance": map[string]any{"theme": "dark", "language": "zh-CN"},
+		"system":     map[string]any{"web_port": "18888", "log_level": "debug", "log_retention_days": 14},
+		"mosdns":     map[string]any{"fake_ip_range_v4": "28.0.0.0/8", "enabled": false},
+		"mihomo":     map[string]any{"linux_proxy_mode": "nft", "nft_proxy_policy": "direct_default", "subscription_urls": "机场A|https://example.com/a.yaml"},
+	})
+	if update.Code != http.StatusOK || !strings.Contains(update.Body.String(), `"restart_required":true`) || !strings.Contains(update.Body.String(), `"regenerate_required":true`) {
+		t.Fatalf("structured settings update mismatch: status=%d body=%s", update.Code, update.Body.String())
+	}
+	got := requestJSON(t, app, http.MethodGet, "/api/v1/settings/structured", admin, nil)
+	for _, want := range []string{`"theme":"dark"`, `"web_port":"18888"`, `"log_level":"debug"`, `"fake_ip_range_v4":"28.0.0.0/8"`, `"enabled":false`, `https://example.com/a.yaml`} {
+		if !strings.Contains(got.Body.String(), want) {
+			t.Fatalf("structured settings missing %q: status=%d body=%s", want, got.Code, got.Body.String())
+		}
+	}
+	for _, tc := range []struct {
+		name string
+		body map[string]any
+	}{
+		{"bad port", map[string]any{"system": map[string]any{"web_port": "70000"}}},
+		{"bad theme", map[string]any{"appearance": map[string]any{"theme": "blue"}}},
+		{"bad cidr", map[string]any{"mosdns": map[string]any{"fake_ip_range_v4": "not-a-cidr"}}},
+		{"bad url", map[string]any{"mihomo": map[string]any{"subscription_urls": "ftp://example.com/a.yaml"}}},
+	} {
+		res := requestJSON(t, app, http.MethodPut, "/api/v1/settings/structured", admin, tc.body)
+		if res.Code != http.StatusBadRequest {
+			t.Fatalf("%s should fail validation, status=%d body=%s", tc.name, res.Code, res.Body.String())
+		}
+	}
+}
+
+func newFakeMihomoController(t *testing.T) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/version":
+			_ = json.NewEncoder(w).Encode(map[string]any{"version": "v1.19.9", "premium": "v1.19.9"})
+		case "/configs":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"mode": "rule", "log-level": "info", "allow-lan": true,
+				"mixed-port": 7892, "redir-port": 7877, "tproxy-port": 7896, "external-controller": ":9090",
+			})
+		case "/traffic":
+			_ = json.NewEncoder(w).Encode(map[string]any{"up": 1024, "down": 4096})
+		case "/connections":
+			if r.Method == http.MethodDelete {
+				_ = json.NewEncoder(w).Encode(map[string]any{"closed": true})
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"downloadTotal": 8192, "uploadTotal": 2048,
+				"connections": []map[string]any{
+					{
+						"id": "c1", "rule": "RuleSet", "rulePayload": "google", "chains": []string{"Proxy", "proxy-a"}, "download": 100, "upload": 10, "start": "2026-05-30T10:00:00Z",
+						"metadata": map[string]any{"host": "google.com", "network": "tcp", "type": "TProxy", "sourceIP": "192.168.10.2", "destinationIP": "28.0.0.8", "destinationPort": "443"},
+					},
+					{
+						"id": "c2", "rule": "DIRECT", "chains": []string{"DIRECT"}, "download": 50, "upload": 5,
+						"metadata": map[string]any{"host": "local.lan", "network": "udp", "type": "Redirect", "sourceIP": "192.168.10.3", "destinationIP": "192.168.10.1", "destinationPort": "53"},
+					},
+				},
+			})
+		case "/proxies":
+			_ = json.NewEncoder(w).Encode(map[string]any{"proxies": map[string]any{
+				"Proxy":  map[string]any{"name": "Proxy", "type": "Selector", "now": "proxy-a", "all": []string{"proxy-a", "DIRECT"}},
+				"DIRECT": map[string]any{"name": "DIRECT", "type": "Direct"},
+			}})
+		case "/proxies/Proxy":
+			_ = json.NewEncoder(w).Encode(map[string]any{"updated": true})
+		case "/rules":
+			_ = json.NewEncoder(w).Encode(map[string]any{"rules": []any{
+				map[string]any{
+					"type": "DOMAIN-SUFFIX", "payload": "google.com", "proxy": "Proxy", "provider": "geosite",
+					"extra": map[string]any{"hitCount": 12, "missCount": 3, "hitAt": "2026-05-30T10:00:00Z", "missAt": "2026-05-30T09:00:00Z"},
+				},
+				map[string]any{"type": "GEOIP", "payload": "CN", "proxy": "DIRECT"},
+			}})
+		case "/providers/proxies":
+			_ = json.NewEncoder(w).Encode(map[string]any{"providers": map[string]any{
+				"airport": map[string]any{"name": "airport", "vehicleType": "HTTP", "updatedAt": "2026-05-30T10:00:00Z", "proxies": []any{
+					map[string]any{"name": "proxy-a", "type": "Shadowsocks", "udp": true, "history": []map[string]any{{"delay": 42}}},
+				}},
+				"compatible": map[string]any{"name": "compatible", "vehicleType": "Compatible", "updatedAt": "2026-05-30T10:00:00Z", "proxies": []any{
+					map[string]any{"name": "compatible-only", "type": "Shadowsocks"},
+				}},
+			}})
+		case "/providers/proxies/airport":
+			_ = json.NewEncoder(w).Encode(map[string]any{"name": "airport", "vehicleType": "HTTP", "updatedAt": "2026-05-30T10:00:00Z", "proxies": []any{}})
+		case "/providers/proxies/airport/healthcheck":
+			_ = json.NewEncoder(w).Encode(map[string]any{"healthcheck": true, "updatedAt": "2026-05-30T10:00:00Z"})
+		case "/providers/rules":
+			_ = json.NewEncoder(w).Encode(map[string]any{"providers": map[string]any{
+				"directlist": map[string]any{"name": "directlist", "vehicleType": "HTTP", "updatedAt": "2026-05-30T10:00:00Z", "rules": []any{}},
+			}})
+		case "/providers/rules/directlist":
+			_ = json.NewEncoder(w).Encode(map[string]any{"name": "directlist", "vehicleType": "HTTP", "updatedAt": "2026-05-30T10:00:00Z", "rules": []any{}})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+}
+
+func newSlowTrafficMihomoController(t *testing.T) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/version":
+			_ = json.NewEncoder(w).Encode(map[string]any{"version": "v1.20.0"})
+		case "/configs":
+			_ = json.NewEncoder(w).Encode(map[string]any{"mode": "rule", "log-level": "info", "allow-lan": true, "external-controller": ":9090"})
+		case "/connections":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"downloadTotal": 128, "uploadTotal": 64,
+				"connections": []map[string]any{{"id": "slow-c1", "metadata": map[string]any{"host": "example.com"}}},
+			})
+		case "/traffic":
+			time.Sleep(time.Second)
+			_ = json.NewEncoder(w).Encode(map[string]any{"up": 1, "down": 2})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+}
+
+func newTestApp(t *testing.T) *App {
+	t.Helper()
+	withTestSetupSystemOps(t)
+	app, err := New(Options{DataDir: t.TempDir(), Version: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(app.Close)
+	if err := app.EnsureBaseLayout(); err != nil {
+		t.Fatal(err)
+	}
+	return app
+}
+
+func tokenForRole(t *testing.T, app *App, role string) string {
+	t.Helper()
+	now := time.Now()
+	res, err := app.DB.Exec(`insert into users(username,password,role,is_active,created_at,updated_at) values(?,?,?,?,?,?)`, role+"_user", "x", role, true, now, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, _ := res.LastInsertId()
+	u, err := app.userByID(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := app.makeToken(u, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return token
+}
+
+func createAPITokenForTest(t *testing.T, app *App, adminToken string, body map[string]any) string {
+	t.Helper()
+	res := requestJSON(t, app, http.MethodPost, "/api/v1/api-tokens", adminToken, body)
+	if res.Code != http.StatusOK {
+		t.Fatalf("api token create failed: status=%d body=%s", res.Code, res.Body.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(res.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	token, _ := payload["token"].(string)
+	if token == "" {
+		t.Fatalf("api token create response missing token: %s", res.Body.String())
+	}
+	return token
+}
+
+func containsString(items []string, want string) bool {
+	for _, item := range items {
+		if item == want {
+			return true
+		}
+	}
+	return false
+}
+
+func strconvID(v any) string {
+	switch x := v.(type) {
+	case float64:
+		return strconv.Itoa(int(x))
+	case int:
+		return strconv.Itoa(x)
+	case string:
+		return x
+	default:
+		return ""
+	}
+}
+
+func testMihomoConfigYAML(group string) string {
+	return `mode: rule
+ipv6: false
+port: 7890
+socks-port: 7891
+redir-port: 7877
+tproxy-port: 7896
+routing-mark: 1
+tun:
+  enable: false
+external-controller: :9090
+external-ui: ui
+allow-lan: true
+profile:
+  store-selected: true
+dns:
+  enable: true
+  ipv6: false
+  fake-ip-range6: f2b0::/18
+  listen: 0.0.0.0:6666
+proxy-groups:
+  - name: ` + group + `
+    type: select
+    proxies:
+      - DIRECT
+rules:
+  - MATCH,DIRECT
+`
+}
+
+func requestMultipartFile(t *testing.T, app *App, method, path, token, fieldName, filename string, content []byte, fields map[string]string) *httptest.ResponseRecorder {
+	t.Helper()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	for key, value := range fields {
+		if err := writer.WriteField(key, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	part, err := writer.CreateFormFile(fieldName, filename)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := part.Write(content); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(method, path, &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	res := httptest.NewRecorder()
+	app.Router().ServeHTTP(res, req)
+	return res
+}
+
+func requestJSON(t *testing.T, app *App, method, path, token string, body any) *httptest.ResponseRecorder {
+	t.Helper()
+	var rbody *bytes.Reader
+	if body == nil {
+		rbody = bytes.NewReader(nil)
+	} else {
+		b, err := json.Marshal(body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rbody = bytes.NewReader(b)
+	}
+	req := httptest.NewRequest(method, path, rbody)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	res := httptest.NewRecorder()
+	app.Router().ServeHTTP(res, req)
+	return res
+}

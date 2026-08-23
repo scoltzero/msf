@@ -1,0 +1,31 @@
+/*
+ * The global Liquid Glass surface establishes position: relative. Keep the
+ * expanded globe rule component-scoped and more specific so it can occupy the
+ * viewport without weakening the shared glass material.
+ */
+.gary-page-enter.earth-globe-expanded-host {
+  animation: none;
+}
+
+.earth-globe-card.earth-globe-card--expanded {
+  position: fixed;
+  inset: 0;
+  bottom: auto;
+  height: 100dvh;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  border-radius: 0;
+}
+
+@media (min-width: 769px) {
+  .gary-app-shell .earth-globe-card--expanded {
+    left: var(--gary-sidebar-content-offset);
+    width: calc(100vw - var(--gary-sidebar-content-offset));
+  }
+
+  .gary-app-shell.gary-app-shell--sidebar-hidden .earth-globe-card--expanded {
+    left: 0;
+    width: 100vw;
+  }
+}

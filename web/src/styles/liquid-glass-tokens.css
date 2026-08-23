@@ -1,0 +1,105 @@
+:root {
+  --gary-scene-base: #eef0f2;
+  --gary-scene-ink: rgba(18, 23, 28, 0.94);
+  --gary-scene-muted: rgba(44, 52, 60, 0.64);
+  --gary-scene-a: rgba(165, 190, 207, 0.48);
+  --gary-scene-b: rgba(225, 205, 184, 0.44);
+  --gary-scene-c: rgba(202, 211, 220, 0.58);
+  --gary-scene-mask: rgba(246, 248, 249, 0.08);
+
+  --gary-glass-fill-ultrathin: rgba(252, 252, 252, 0.12);
+  --gary-glass-fill-regular: rgba(252, 252, 252, 0.18);
+  --gary-glass-fill-thick: rgba(252, 252, 252, 0.24);
+  --gary-glass-fill-strong: rgba(252, 252, 252, 0.34);
+
+  /* Content plates share one neutral RGB base and expose three independent opacities. */
+  --gary-plate-rgb: 248 249 250;
+  --gary-plate-opacity-subtle: 0.56;
+  --gary-plate-opacity-regular: 0.70;
+  --gary-plate-opacity-strong: 0.84;
+  /* Precomputed values keep a usable fill in browsers without rgb() slash-alpha support. */
+  --gary-plate-fill-subtle: rgba(248, 249, 250, 0.56);
+  --gary-plate-fill-regular: rgba(248, 249, 250, 0.70);
+  --gary-plate-fill-strong: rgba(248, 249, 250, 0.84);
+  /* The display layer is overridden for accessibility/quality modes in materials.css. */
+  --gary-plate-display-fill-subtle: var(--gary-plate-fill-subtle);
+  --gary-plate-display-fill-regular: var(--gary-plate-fill-regular);
+  --gary-plate-display-fill-strong: var(--gary-plate-fill-strong);
+
+  /* Legacy aliases retained while existing pages migrate to the three tone tokens. */
+  --gary-solid-fill: var(--gary-plate-fill-regular);
+  --gary-solid-fill-strong: var(--gary-plate-fill-strong);
+  --gary-plate-opacity: var(--gary-plate-opacity-regular);
+  --gary-edge-highlight: rgba(255, 255, 255, 0.76);
+  --gary-edge-soft: rgba(255, 255, 255, 0.22);
+  --gary-edge-dim: rgba(35, 43, 50, 0.14);
+  --gary-edge-shadow: rgba(35, 43, 50, 0.20);
+  --gary-contact-shadow: 0 1px 2px rgba(35, 43, 50, 0.14);
+  --gary-environment-shadow: 0 22px 54px rgba(35, 43, 50, 0.12);
+  --gary-floating-shadow: 0 16px 36px rgba(35, 43, 50, 0.14);
+  --gary-frost-light: rgba(255, 255, 255, 0.22);
+  --gary-frost-dark: rgba(20, 24, 28, 0.10);
+
+  --gary-blur-ultrathin: 20px;
+  --gary-blur-regular: 22px;
+  --gary-blur-thick: 28px;
+  --gary-saturate: 108%;
+  --gary-contrast: 1.03;
+  --gary-radius-card: 28px;
+  --gary-radius-regular: 19.2px;
+  --gary-radius-compact: 14px;
+  --gary-radius-pill: 999px;
+  --gary-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --gary-ease-soft: cubic-bezier(0.32, 0.72, 0, 1);
+  --gary-motion-fast: 150ms;
+  --gary-motion: 250ms;
+  --gary-motion-slow: 350ms;
+  --gary-highlight-angle: 135deg;
+  --gary-z-scene: -2;
+  --gary-z-content: 1;
+  --gary-z-nav: 40;
+  --gary-z-header: 50;
+  --gary-z-overlay: 70;
+}
+
+@supports (color: rgb(0 0 0 / 0.5)) {
+  :root {
+    --gary-plate-fill-subtle: rgb(var(--gary-plate-rgb) / var(--gary-plate-opacity-subtle));
+    --gary-plate-fill-regular: rgb(var(--gary-plate-rgb) / var(--gary-plate-opacity-regular));
+    --gary-plate-fill-strong: rgb(var(--gary-plate-rgb) / var(--gary-plate-opacity-strong));
+  }
+}
+
+.dark {
+  --gary-scene-base: #0d0f11;
+  --gary-scene-ink: rgba(245, 247, 248, 0.94);
+  --gary-scene-muted: rgba(207, 213, 218, 0.66);
+  --gary-scene-a: rgba(88, 98, 108, 0.66);
+  --gary-scene-b: rgba(82, 81, 88, 0.62);
+  --gary-scene-c: rgba(51, 62, 70, 0.74);
+  --gary-scene-mask: rgba(4, 5, 6, 0.10);
+
+  --gary-glass-fill-ultrathin: rgba(18, 18, 18, 0.12);
+  --gary-glass-fill-regular: rgba(18, 18, 18, 0.16);
+  --gary-glass-fill-thick: rgba(18, 18, 18, 0.22);
+  --gary-glass-fill-strong: rgba(18, 18, 18, 0.34);
+  --gary-plate-rgb: 20 22 24;
+  --gary-edge-highlight: rgba(245, 247, 248, 0.36);
+  --gary-edge-soft: rgba(245, 247, 248, 0.10);
+  --gary-edge-dim: rgba(0, 0, 0, 0.36);
+  --gary-edge-shadow: rgba(0, 0, 0, 0.48);
+  --gary-contact-shadow: 0 1px 2px rgba(0, 0, 0, 0.44);
+  --gary-environment-shadow: 0 26px 64px rgba(0, 0, 0, 0.34);
+  --gary-floating-shadow: 0 18px 42px rgba(0, 0, 0, 0.38);
+  --gary-frost-light: rgba(255, 255, 255, 0.12);
+  --gary-frost-dark: rgba(0, 0, 0, 0.18);
+}
+
+@media (max-width: 767px) {
+  :root {
+    --gary-blur-ultrathin: 18px;
+    --gary-blur-regular: 18px;
+    --gary-blur-thick: 22px;
+    --gary-radius-card: 24px;
+  }
+}

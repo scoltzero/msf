@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<CommunityApplications>
+  <Profile>MSF Free provides an Unraid plugin and a TUN-only Docker application for managing MosDNS, Mihomo, DNS routing, proxy rules, and service state through one WebUI. Documentation is available from the project repository, and user support is provided through the official Unraid support topic.</Profile>
+  <Icon>https://raw.githubusercontent.com/scoltzero/msf/main/packaging/unraid/msf.png</Icon>
+  <WebPage>https://github.com/scoltzero/msf</WebPage>
+  <Forum>https://forums.unraid.net/topic/200222-plugin-msf-mosdns-and-mihomo-management/</Forum>
+</CommunityApplications>

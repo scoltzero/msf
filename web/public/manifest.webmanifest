@@ -1,0 +1,21 @@
+{
+  "name": "MSF",
+  "short_name": "MSF",
+  "description": "MosDNS、Sing-box 与 Mihomo 统一管理平台",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8fbff",
+  "theme_color": "#0756cf",
+  "icons": [
+    {
+      "src": "/logo/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/logo/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

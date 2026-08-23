@@ -1,0 +1,24 @@
+/*
+ * A personalized rule category can contain hundreds of rows. Keep the data
+ * surface solid so it does not continuously re-blur the animated scene across
+ * the full scroll height, and let the browser skip layout/paint for rows that
+ * are outside the viewport while preserving the complete DOM for drag/drop.
+ */
+.gary-page-enter .mosdns-rule-list {
+  background: var(--gary-solid-fill-strong) !important;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--gary-edge-soft) 48%, transparent) !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  contain: layout paint style;
+}
+
+.mosdns-rule-row {
+  height: 49px;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 48px;
+}
+
+.mosdns-rule-virtual-list--sorting {
+  cursor: grabbing;
+  user-select: none;
+}

@@ -1,0 +1,17 @@
+[Unit]
+Description=msf (fnOS)
+After=network-online.target
+Wants=network-online.target
+[Service]
+Type=simple
+User=root
+Environment=PATH=/usr/sbin:/sbin:/usr/bin:/bin
+Environment=MSF_DATA_DIR=/var/apps/msf/var
+WorkingDirectory=/var/apps/msf/var
+ExecStart=/var/apps/msf/target/msf serve --config /var/apps/msf/var --host 0.0.0.0 --port 7777
+Restart=on-failure
+RestartSec=2
+TimeoutStopSec=30
+LimitNOFILE=1048576
+[Install]
+WantedBy=multi-user.target

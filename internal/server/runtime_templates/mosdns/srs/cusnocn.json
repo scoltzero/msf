@@ -1,0 +1,24 @@
+[
+  {
+    "name": "cusnocn",
+    "type": "cusnocn",
+    "files": "srs/geolocation-!cn.txt",
+    "url": "https://raw.githubusercontent.com/Loyalsoldier/domain-list-custom/release/geolocation-!cn.txt",
+    "enabled": true,
+    "auto_update": false,
+    "update_interval_hours": 24,
+    "rule_count": 262,
+    "last_updated": "2025-12-19T16:32:48.70715685+08:00"
+  },
+  {
+    "name": "tiktok",
+    "type": "cusnocn",
+    "files": "srs/geosite-tiktok.srs",
+    "url": "https://raw.githubusercontent.com/nekolsd/sing-geosite/refs/heads/rule-set/tiktok.srs",
+    "enabled": true,
+    "auto_update": false,
+    "update_interval_hours": 24,
+    "rule_count": 30,
+    "last_updated": "2025-12-19T16:33:29.978665081+08:00"
+  }
+]

@@ -1,0 +1,47 @@
+.gary-app-shell {
+  --gary-sidebar-expanded-width: 14rem;
+  --gary-sidebar-content-offset: 15rem;
+  position: relative;
+  isolation: isolate;
+  min-height: 100dvh;
+  background: transparent;
+}
+
+.gary-scene {
+  position: fixed;
+  inset: 0;
+  z-index: var(--gary-z-scene);
+  overflow: hidden;
+  pointer-events: none;
+  background: #f3fbff;
+  contain: strict;
+}
+
+.dark .gary-scene {
+  background: #0d0f11;
+}
+
+.gary-scene::before,
+.gary-scene::after {
+  content: none;
+}
+
+.gary-scene__gradient-waves {
+  position: absolute;
+  inset: 0;
+  transform: translateZ(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gary-scene__gradient-waves {
+    transform: none;
+  }
+}
+
+html[data-gary-quality="reduced"] .gary-scene__gradient-waves {
+  display: none;
+}
+
+html[data-gary-scene="neutral"] .gary-scene__gradient-waves {
+  display: none;
+}

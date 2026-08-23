@@ -1,0 +1,34 @@
+data/
+dist/
+internal/server/web/dist/
+node_modules/
+web/node_modules/
+web/public/LICENSE.txt
+web/public/THIRD_PARTY_NOTICES.md
+.DS_Store
+.claude/
+output/
+scraped-pages/
+msf_html_export.tar.gz
+*.tsbuildinfo
+
+# macOS menu bar app generated files
+macos/MSFMenuBar/.build/
+macos/MSFMenuBar/.swiftpm/
+macos/MSFMenuBar/DerivedData/
+macos/MSFMenuBar/MSFMenuBar.xcodeproj/
+
+# Local tooling artifacts (not part of the project)
+.codex/
+.impeccable/
+.playwright-cli/
+graphify-out/
+.graphify*
+
+# Private comparison/evidence exports must never enter the public repository.
+*_html_export.tar.gz
+*_html_export/
+docs/research/*-login/
+docs/design-references/*-login/
+docs/design-references/logo-archive/
+docs/research/components/login-logo-showcase.spec.md

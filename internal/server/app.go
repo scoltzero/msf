@@ -1,0 +1,522 @@
+package server
+
+import (
+	"context"
+	"crypto/rand"
+	"database/sql"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"io"
+	"log"
+	"net"
+	"net/http"
+	"os"
+	"path/filepath"
+	"runtime"
+	"runtime/debug"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/scoltzero/msf/internal/cloudflareredirect"
+	_ "modernc.org/sqlite"
+)
+
+const apiPrefix = "/api/v1"
+
+type Options struct {
+	DataDir               string
+	Version               string
+	Build                 BuildInfo
+	RequestProcessRestart func(reason string) error
+}
+
+type BuildInfo struct {
+	Commit       string `json:"commit,omitempty"`
+	Tag          string `json:"tag,omitempty"`
+	TagCommit    string `json:"tag_commit,omitempty"`
+	SourceCommit string `json:"source_commit,omitempty"`
+	Dirty        string `json:"dirty,omitempty"`
+	BuildTime    string `json:"build_time,omitempty"`
+}
+
+type App struct {
+	DataDir string
+	Version string
+	Build   BuildInfo
+	DB      *sql.DB
+	Secret  []byte
+
+	Services *ServiceManager
+
+	monitorMu               sync.Mutex
+	monitorNetworkLast      monitorNetworkSample
+	monitorNetworkCache     map[string]any
+	appLogMu                sync.Mutex
+	mihomoTrafficMu         sync.Mutex
+	mihomoTrafficCache      map[string]any
+	mihomoTrafficAt         time.Time
+	mihomoTrafficRefreshing bool
+	mihomoTrafficTotalsMu   sync.Mutex
+	mihomoTrafficTotalsLast mihomoTrafficTotalsSample
+	secretMu                sync.RWMutex
+	resetMu                 sync.Mutex
+	operations              *operationController
+	requestProcessRestart   func(reason string) error
+	configApplyMu           sync.Mutex
+	networkRuntimeMu        sync.Mutex
+	networkStateMu          sync.RWMutex
+	networkTransition       string
+	networkLastError        string
+}
+
+type APIError struct {
+	Error   string `json:"error"`
+	Message string `json:"message,omitempty"`
+}
+
+func New(opts Options) (*App, error) {
+	if opts.DataDir == "" {
+		return nil, errors.New("data dir is required")
+	}
+	if opts.Version == "" {
+		opts.Version = "dev"
+	}
+	if err := os.MkdirAll(opts.DataDir, 0755); err != nil {
+		return nil, err
+	}
+	if err := recoverIncompleteFactoryReset(opts.DataDir); err != nil {
+		return nil, err
+	}
+	dbPath := databasePath(opts.DataDir)
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
+		return nil, err
+	}
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		return nil, err
+	}
+	db.SetMaxOpenConns(1)
+
+	app := &App{
+		DataDir:               opts.DataDir,
+		Version:               opts.Version,
+		Build:                 opts.Build,
+		DB:                    db,
+		operations:            newOperationController(),
+		requestProcessRestart: opts.RequestProcessRestart,
+	}
+	if request, ok, readErr := readFactoryResetRequest(opts.DataDir); readErr == nil && ok {
+		app.operations.resetID = request.ResetID
+		app.operations.phase = request.Phase
+	}
+	if err := app.migrate(); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := app.ensureSecret(); err != nil {
+		db.Close()
+		return nil, err
+	}
+	_, _ = app.DB.Exec(`delete from settings where key='factory_reset.completed_id'`)
+	app.Services = NewServiceManager(app)
+	return app, nil
+}
+
+func (a *App) Close() {
+	if a.DB != nil {
+		_ = a.DB.Close()
+	}
+}
+
+func (a *App) EnsureBaseLayout() error {
+	dirs := []string{
+		"configs/logs",
+		"configs/mosdns/sub_config",
+		"configs/mosdns/rules",
+		"configs/mosdns/webinfo",
+		"configs/mosdns/cache",
+		"configs/mosdns/gen",
+		"configs/mosdns/genblank",
+		"configs/mosdns/rule",
+		"configs/mosdns/srs",
+		"configs/mosdns/unpack",
+		"configs/mihomo/rules",
+		"configs/mihomo/proxy_providers",
+		"configs/mihomo/user_configs",
+		"configs/mihomo/ui",
+		"configs/network",
+		"configs/network/history",
+		"configs/singbox",
+		"configs/supervisor/services",
+		"data/binaries/mosdns",
+		"data/binaries/mihomo",
+		"data/binaries/supervisord",
+		"data/binaries/zashboard",
+		"logs/supervisor",
+		"database",
+		"backups",
+	}
+	for _, d := range dirs {
+		if err := os.MkdirAll(filepath.Join(a.DataDir, d), 0755); err != nil {
+			return err
+		}
+	}
+	if err := a.ensureDefaultConfigs(); err != nil {
+		return err
+	}
+	if err := cloudflareredirect.EnsureDefaultConfig(a.DataDir); err != nil {
+		return err
+	}
+	if err := a.ensureRuntimeLayout(); err != nil {
+		return err
+	}
+	return a.reconcileAppliedMihomoUserConfig()
+}
+
+func (a *App) Router() http.Handler {
+	mux := http.NewServeMux()
+	a.registerRoutes(mux)
+	return a.withCommonMiddleware(mux)
+}
+
+func (a *App) withCommonMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		rec := &statusRecorder{ResponseWriter: w}
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				log.Printf("panic serving %s %s: %v\n%s", r.Method, r.URL.Path, recovered, debug.Stack())
+				if strings.HasPrefix(r.URL.Path, apiPrefix) {
+					writeError(rec, http.StatusInternalServerError, "internal_error", "internal server error")
+				} else {
+					http.Error(rec, "internal server error", http.StatusInternalServerError)
+				}
+			}
+			a.logHTTPRequest(r, rec.statusCode(), time.Since(start))
+		}()
+		rec.Header().Set("Vary", "Origin")
+		rec.Header().Set("Access-Control-Allow-Origin", "*")
+		rec.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+		rec.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		if r.Method == http.MethodOptions {
+			rec.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/setup/reset" {
+			phase, _ := a.operations.status()
+			if phase != resetPhaseIdle && phase != resetPhaseFailed {
+				a.writeResetConflict(rec)
+				return
+			}
+		}
+		if requestMutatesState(r) && r.URL.Path != "/api/v1/setup/reset" {
+			var accepted bool
+			var finish func()
+			r, finish, accepted = a.operations.begin(r)
+			if !accepted {
+				phase, resetID := a.operations.status()
+				writeJSON(rec, http.StatusServiceUnavailable, map[string]any{
+					"success":  false,
+					"error":    "system_resetting",
+					"message":  "系统恢复出厂设置已接管，当前操作已拒绝",
+					"reset_id": resetID,
+					"phase":    phase,
+				})
+				return
+			}
+			defer finish()
+		}
+		if phase, _ := a.operations.status(); phase == resetPhaseFailed && !factoryResetSafeModePath(r.URL.Path) {
+			writeJSON(rec, http.StatusServiceUnavailable, map[string]any{
+				"success": false,
+				"error":   "factory_reset_failed",
+				"message": "恢复出厂设置失败，系统已进入安全模式",
+				"phase":   phase,
+			})
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, apiPrefix) && !a.publicAPI(r.URL.Path) {
+			identity, err := a.authenticateRequest(r)
+			if err != nil {
+				writeError(rec, http.StatusUnauthorized, "unauthorized", "请提供认证令牌")
+				return
+			}
+			if !a.authorizeRequest(identity, r) {
+				writeError(rec, http.StatusForbidden, "forbidden", "当前角色没有执行该操作的权限")
+				return
+			}
+			ctx := context.WithValue(r.Context(), userContextKey{}, identity.User)
+			ctx = context.WithValue(ctx, authIdentityContextKey{}, identity)
+			r = r.WithContext(ctx)
+		}
+		next.ServeHTTP(rec, r)
+	})
+}
+
+func factoryResetSafeModePath(path string) bool {
+	switch path {
+	case "/api/v1/version", "/api/v1/setup/check", "/api/v1/setup/reset", "/api/v1/setup/reset/status":
+		return true
+	default:
+		return !strings.HasPrefix(path, apiPrefix)
+	}
+}
+
+func requestMutatesState(r *http.Request) bool {
+	if strings.HasPrefix(r.URL.Path, "/api/v1/setup/download/") {
+		return true
+	}
+	switch r.Method {
+	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+		return true
+	default:
+		return false
+	}
+}
+
+func (a *App) publicAPI(path string) bool {
+	public := []string{
+		"/api/v1/version",
+		"/api/v1/setup/check",
+		"/api/v1/setup/system-info",
+		"/api/v1/setup/network-interfaces",
+		"/api/v1/setup/privilege",
+		"/api/v1/setup/preflight",
+		"/api/v1/setup/initialize",
+		"/api/v1/setup/activate",
+		"/api/v1/setup/reset/status",
+		"/api/v1/auth/login",
+		"/api/v1/auth/refresh",
+		"/api/v1/license-activation/status",
+		"/api/v1/license-activation/hardware-fingerprint",
+	}
+	for _, p := range public {
+		if path == p {
+			return true
+		}
+	}
+	return strings.HasPrefix(path, "/api/v1/setup/download/")
+}
+
+func (a *App) registerRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/v1/version", a.handleVersion)
+	mux.HandleFunc("GET /api/v1/daemon/status", a.handleDaemonStatus)
+	mux.HandleFunc("POST /api/v1/daemon/restart", a.handleDaemonRestart)
+	mux.HandleFunc("POST /api/v1/daemon/stop", a.handleDaemonStop)
+
+	mux.HandleFunc("GET /api/v1/setup/check", a.handleSetupCheck)
+	mux.HandleFunc("GET /api/v1/setup/system-info", a.handleSetupSystemInfo)
+	mux.HandleFunc("GET /api/v1/setup/network-interfaces", a.handleSetupNetworkInterfaces)
+	mux.HandleFunc("GET /api/v1/setup/privilege", a.handleSetupPrivilege)
+	mux.HandleFunc("GET /api/v1/setup/preflight", a.handleSetupPreflight)
+	mux.HandleFunc("GET /api/v1/setup/config", a.handleSetupGetConfig)
+	mux.HandleFunc("PUT /api/v1/setup/config", a.handleSetupPutConfig)
+	mux.HandleFunc("POST /api/v1/setup/initialize", a.handleSetupInitialize)
+	mux.HandleFunc("POST /api/v1/setup/activate", a.handleSetupActivate)
+	mux.HandleFunc("POST /api/v1/setup/reset", a.handleSetupReset)
+	mux.HandleFunc("GET /api/v1/setup/reset/status", a.handleSetupResetStatus)
+	mux.HandleFunc("GET /api/v1/setup/download/{component}", a.handleSetupDownload)
+
+	mux.HandleFunc("POST /api/v1/auth/login", a.handleLogin)
+	mux.HandleFunc("POST /api/v1/auth/logout", a.handleLogout)
+	mux.HandleFunc("POST /api/v1/auth/refresh", a.handleRefresh)
+	mux.HandleFunc("GET /api/v1/auth/me", a.handleMe)
+	mux.HandleFunc("GET /api/v1/profile", a.handleProfile)
+	mux.HandleFunc("PUT /api/v1/profile", a.handleProfileUpdate)
+	mux.HandleFunc("POST /api/v1/profile/password", a.handleChangePassword)
+
+	mux.HandleFunc("GET /api/v1/users", a.handleUsers)
+	mux.HandleFunc("POST /api/v1/users", a.handleCreateUser)
+	mux.HandleFunc("GET /api/v1/users/{id}", a.handleGetUser)
+	mux.HandleFunc("PUT /api/v1/users/{id}", a.handleUpdateUser)
+	mux.HandleFunc("DELETE /api/v1/users/{id}", a.handleDeleteUser)
+	mux.HandleFunc("POST /api/v1/users/{id}/reset-password", a.handleResetUserPassword)
+	mux.HandleFunc("POST /api/v1/users/{id}/toggle-active", a.handleToggleUser)
+	mux.HandleFunc("GET /api/v1/users/stats", a.handleUserStats)
+	mux.HandleFunc("GET /api/v1/audit-logs", a.handleAuditLogs)
+	mux.HandleFunc("GET /api/v1/api-tokens", a.handleAPITokens)
+	mux.HandleFunc("POST /api/v1/api-tokens", a.handleCreateAPIToken)
+	mux.HandleFunc("DELETE /api/v1/api-tokens/{id}", a.handleRevokeAPIToken)
+
+	mux.HandleFunc("GET /api/v1/services", a.handleServices)
+	mux.HandleFunc("POST /api/v1/services/start-all", a.handleServicesStartAll)
+	mux.HandleFunc("POST /api/v1/services/stop-all", a.handleServicesStopAll)
+	mux.HandleFunc("POST /api/v1/services/restart-all", a.handleServicesRestartAll)
+	mux.HandleFunc("GET /api/v1/services/{name}", a.handleService)
+	mux.HandleFunc("GET /api/v1/services/{name}/exists", a.handleServiceExists)
+	mux.HandleFunc("POST /api/v1/services/{name}/start", a.handleServiceStart)
+	mux.HandleFunc("POST /api/v1/services/{name}/stop", a.handleServiceStop)
+	mux.HandleFunc("POST /api/v1/services/{name}/restart", a.handleServiceRestart)
+	mux.HandleFunc("GET /api/v1/services/{name}/logs", a.handleServiceLogs)
+	mux.HandleFunc("PUT /api/v1/services/{name}/config", a.handleServiceConfig)
+	mux.HandleFunc("GET /api/v1/services/proxy", a.handleProxySummary)
+
+	mux.HandleFunc("GET /api/v1/monitor/system", a.handleMonitorSystem)
+	mux.HandleFunc("GET /api/v1/monitor/hardware", a.handleMonitorHardware)
+	mux.HandleFunc("GET /api/v1/monitor/resources", a.handleMonitorResources)
+	mux.HandleFunc("GET /api/v1/monitor/network", a.handleMonitorNetwork)
+	mux.HandleFunc("GET /api/v1/monitor/history", a.handleMonitorHistory)
+	mux.HandleFunc("GET /api/v1/monitor/stats", a.handleMonitorStats)
+	mux.HandleFunc("GET /api/v1/system/diagnostics", a.handleDiagnostics)
+	mux.HandleFunc("POST /api/v1/system/diagnostics/run", a.handleDiagnosticsRun)
+	mux.HandleFunc("GET /api/v1/system/diagnostics/download", a.handleDiagnosticsDownload)
+	mux.HandleFunc("GET /api/v1/network/info", a.handleNetworkInfo)
+	a.registerNetworkRuntimeRoutes(mux)
+	mux.HandleFunc("POST /api/v1/network/apply", a.handleNFTApply)
+	mux.HandleFunc("POST /api/v1/network/stop", a.handleNFTClear)
+	mux.HandleFunc("GET /api/v1/netlink/nftables", a.handleNFTInfo)
+	mux.HandleFunc("POST /api/v1/netlink/nftables/apply", a.handleNFTApply)
+	mux.HandleFunc("POST /api/v1/netlink/nftables/clear", a.handleNFTClear)
+	mux.HandleFunc("GET /api/v1/netlink/nftables/status", a.handleNFTStatus)
+
+	mux.HandleFunc("GET /api/v1/config/tree", a.handleConfigTree)
+	mux.HandleFunc("GET /api/v1/config/file", a.handleConfigFile)
+	mux.HandleFunc("PUT /api/v1/config/file", a.handleConfigFilePut)
+	mux.HandleFunc("POST /api/v1/config/file", a.handleConfigFileCreate)
+	mux.HandleFunc("DELETE /api/v1/config/file", a.handleConfigFileDelete)
+	mux.HandleFunc("POST /api/v1/config/directory", a.handleConfigDirectory)
+	mux.HandleFunc("POST /api/v1/config/copy", a.handleConfigCopy)
+	mux.HandleFunc("POST /api/v1/config/rename", a.handleConfigRename)
+	mux.HandleFunc("POST /api/v1/config/validate", a.handleConfigValidate)
+	mux.HandleFunc("GET /api/v1/config/download", a.handleConfigDownload)
+	mux.HandleFunc("POST /api/v1/config/upload", a.handleConfigUpload)
+	mux.HandleFunc("GET /api/v1/config/backups", a.handleConfigBackups)
+	mux.HandleFunc("POST /api/v1/config/backup", a.handleConfigBackup)
+	mux.HandleFunc("GET /api/v1/config/backup/download", a.handleConfigBackupDownload)
+	mux.HandleFunc("POST /api/v1/config/restore", a.handleConfigRestore)
+
+	mux.HandleFunc("GET /api/v1/history", a.handleHistory)
+	mux.HandleFunc("POST /api/v1/history", a.handleHistoryCreate)
+	mux.HandleFunc("GET /api/v1/history/{id}", a.handleHistoryGet)
+	mux.HandleFunc("POST /api/v1/history/{id}/rollback", a.handleHistoryRollback)
+	mux.HandleFunc("POST /api/v1/history/{id}/star", a.handleHistoryStar)
+	mux.HandleFunc("DELETE /api/v1/history/{id}", a.handleHistoryDelete)
+	mux.HandleFunc("GET /api/v1/history/compare", a.handleHistoryCompare)
+
+	mux.HandleFunc("GET /api/v1/logs/{service}", a.handleLogs)
+	mux.HandleFunc("GET /api/v1/logs", a.handleLogs)
+	mux.HandleFunc("DELETE /api/v1/logs/{service}", a.handleLogsClear)
+	mux.HandleFunc("GET /api/v1/logs/{service}/download", a.handleLogsDownload)
+	mux.HandleFunc("GET /api/v1/logs/{service}/stats", a.handleLogsStats)
+
+	mux.HandleFunc("GET /api/v1/settings", a.handleSettingsGet)
+	mux.HandleFunc("PUT /api/v1/settings", a.handleSettingsPut)
+	mux.HandleFunc("GET /api/v1/settings/structured", a.handleSettingsStructuredGet)
+	mux.HandleFunc("PUT /api/v1/settings/structured", a.handleSettingsStructuredPut)
+	mux.HandleFunc("GET /api/v1/settings/profile", a.handleSettingsProfileGet)
+	mux.HandleFunc("PUT /api/v1/settings/profile", a.handleSettingsProfilePut)
+	mux.HandleFunc("GET /api/v1/settings/appearance", a.handleSettingsAppearanceGet)
+	mux.HandleFunc("PUT /api/v1/settings/appearance", a.handleSettingsAppearancePut)
+
+	mux.HandleFunc("GET /api/v1/license-activation/status", a.handleLicenseStatus)
+	mux.HandleFunc("GET /api/v1/license-activation/hardware-fingerprint", a.handleHardwareFingerprint)
+	mux.HandleFunc("POST /api/v1/license-activation/activate", a.handleLicenseNoop)
+	mux.HandleFunc("POST /api/v1/license-activation/deactivate", a.handleLicenseNoop)
+	mux.HandleFunc("POST /api/v1/license-activation/refresh", a.handleLicenseNoop)
+
+	a.registerUpdateRoutes(mux)
+	a.registerMosDNSRoutes(mux)
+	a.registerMihomoRoutes(mux)
+	a.registerSingBoxRoutes(mux)
+	a.registerEvents(mux)
+	a.registerStatic(mux)
+}
+
+func (a *App) handleVersion(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"success": true,
+		"data": map[string]any{
+			"version":       a.Version,
+			"go_version":    runtime.Version(),
+			"platform":      runtime.GOOS + "/" + runtime.GOARCH,
+			"build_time":    a.Build.BuildTime,
+			"commit":        a.Build.Commit,
+			"tag":           a.Build.Tag,
+			"tag_commit":    a.Build.TagCommit,
+			"source_commit": a.Build.SourceCommit,
+			"dirty":         a.Build.Dirty,
+		},
+	})
+}
+
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		log.Printf("write json: %v", err)
+	}
+}
+
+func writeError(w http.ResponseWriter, status int, code, message string) {
+	writeJSON(w, status, APIError{Error: code, Message: message})
+}
+
+func decodeJSON(r *http.Request, dst any) error {
+	defer r.Body.Close()
+	return json.NewDecoder(io.LimitReader(r.Body, 16<<20)).Decode(dst)
+}
+
+func randomHex(n int) string {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	return hex.EncodeToString(b)
+}
+
+func (a *App) ensureSecret() error {
+	var value string
+	err := a.DB.QueryRow(`select value from settings where key='jwt_secret'`).Scan(&value)
+	if err == nil && value != "" {
+		a.setSecret([]byte(value))
+		return nil
+	}
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	value = randomHex(48)
+	_, err = a.DB.Exec(`insert or replace into settings(key,value,updated_at) values('jwt_secret',?,?)`, value, time.Now())
+	if err != nil {
+		return err
+	}
+	a.setSecret([]byte(value))
+	return nil
+}
+
+func (a *App) currentSecret() []byte {
+	a.secretMu.RLock()
+	defer a.secretMu.RUnlock()
+	return append([]byte(nil), a.Secret...)
+}
+
+func (a *App) setSecret(secret []byte) {
+	a.secretMu.Lock()
+	a.Secret = append(a.Secret[:0], secret...)
+	a.secretMu.Unlock()
+}
+
+func localIPs() []string {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, _ := iface.Addrs()
+		for _, addr := range addrs {
+			if ipNet, ok := addr.(*net.IPNet); ok && ipNet.IP.To4() != nil {
+				out = append(out, ipNet.IP.String())
+			}
+		}
+	}
+	return out
+}
+
+func nowString() string {
+	return time.Now().Format(time.RFC3339)
+}

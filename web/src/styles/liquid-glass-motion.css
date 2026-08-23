@@ -1,0 +1,28 @@
+.gary-page-enter {
+  animation: gary-page-enter var(--gary-motion-slow) var(--gary-ease) both;
+}
+
+.gary-page-enter--static {
+  animation: none;
+}
+
+@keyframes gary-page-enter {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gary-page-enter {
+    animation: none !important;
+  }
+
+  .gary-icon-button,
+  .gary-glass-button,
+  .gary-nav-row,
+  .gary-sidebar,
+  .gary-nav-group__children,
+  .gary-nav-group__toggle svg,
+  .gary-segmented__item {
+    transition-duration: 0.01ms !important;
+  }
+}

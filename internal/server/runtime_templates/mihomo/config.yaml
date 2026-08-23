@@ -1,0 +1,303 @@
+# 锚点 - 筛选组
+FilterHK: &FilterHK "^(?=.*(?<!深)(港|HK|(?i)Hong))(?!(.*(台|本|坡|美))).*$"
+FilterSG: &FilterSG '^(?=.*(?i)(坡|🇸🇬|SG|Sing|SIN|XSP)).*$'
+FilterJP: &FilterJP '^(?=.*(?i)(日|🇯🇵|JP|Japan|NRT|HND|KIX|CTS|FUK)).*$'
+FilterKR: &FilterKR '^(?=.*(?i)(韩|🇰🇷|韓|首尔|南朝鲜|KR|KOR|Korea|South)).*$'
+FilterUS: &FilterUS '^(?=.*(?i)(美|UWest|UEast|🇺🇸|US|USA|JFK|LAX|ORD|ATL|DFW|SFO|MIA|SEA|IAD)).*$'
+FilterTW: &FilterTW '^(?=.*(?i)(台|🇼🇸|🇹🇼|TW|tai|TPE|TSA|KHH)).*$'
+FilterEU: &FilterEU '^(?=.*(?i)(奥|比|保|克罗地亚|塞|捷|丹|爱沙|芬|法|德|希|匈|爱尔|意|拉|立|卢|马其它|荷|波|葡|罗|斯洛伐|斯洛文|西|瑞|英|🇧🇪|🇨🇿|🇩🇰|🇫🇮|🇫🇷|🇩🇪|🇮🇪|🇮🇹|🇱🇹|🇱🇺|🇳🇱|🇵🇱|🇸🇪|🇬🇧|CDG|FRA|AMS|MAD|BCN|FCO|MUC|BRU)).*$'
+FilterOther: &FilterOther '^(?!.*(DIRECT|美|港|坡|台|新|日|韩|奥|比|保|克罗地亚|塞|捷|丹|爱沙|芬|法|德|希|匈|爱尔|意|拉|立|卢|马其它|荷|波|葡|罗|斯洛伐|斯洛文|西|瑞|英|🇭🇰|🇼🇸|🇹🇼|🇸🇬|🇯🇵|🇰🇷|🇺🇸|🇬🇧|🇦🇹|🇧🇪|🇨🇿|🇩🇰|🇫🇮|🇫🇷|🇩🇪|🇮🇪|🇮🇹|🇱🇹|🇱🇺|🇳🇱|🇵🇱|🇸🇪|HK|TW|SG|JP|KR|US|GB|CDG|FRA|AMS|MAD|BCN|FCO|MUC|BRU|HKG|TPE|TSA|KHH|SIN|XSP|NRT|HND|KIX|CTS|FUK|JFK|LAX|ORD|ATL|DFW|SFO|MIA|SEA|IAD|LHR|LGW))'
+FilterVIP: &FilterVIP '(专线|专用|高级|直连|急速|高倍率|IEPL|IPLC|AIA|CTM|CC|iepl|iplc|aia|ctm|cc|AC|x3|X3|x5|X5)'
+FilterBIG: &FilterBIG '(0.[1-5]|低倍率|省流|大流量)'
+FilterGame: &FilterGame "^(?=.*((?i)游戏|\U0001F3AE|(\b(GAME)\b)))(?!.*((?i)回国|校园)).*$"
+FilterAll: &FilterAll '^(?!.*(DIRECT|群|邀请|返利|循环|官网|客服|网站|网址|获取|订阅|流量|到期|机场|下次|版本|官址|备用|过期|已用|联系|邮箱|工单|贩卖|通知|倒卖|防止|国内|地址|频道|无法|说明|使用|提示|特别|访问|支持|教程|关注|更新|作者|加入|过滤|USE|USED|TOTAL|EXPIRE|EMAIL|Panel|Channel|Author))'
+# 锚点 - 规则集
+DomainMrs: &DomainMrs {type: http, interval: 86400, behavior: domain, format: mrs}
+DomainText: &DomainText {type: http, interval: 86400, behavior: domain, format: text}
+domainYaml: &domainYaml {type: http, interval: 86400, behavior: domain, format: yaml}
+IPcidrMrs: &IPcidrMrs {type: http, interval: 86400, behavior: ipcidr, format: mrs}
+IPcidrText: &IPcidrText {type: http, interval: 86400, behavior: ipcidr, format: text}
+ClassicalText: &ClassicalText {type: http, interval: 86400, behavior: classical, format: text}
+ClassicalYaml: &ClassicalYaml {type: http, interval: 86400, behavior: classical, format: yaml}
+# 锚点 - 时延优选参数 [每 30 秒一次惰性健康检查，容差 20ms，时延超过 2 秒判定为失败，失败 3 次则自动触发健康检查]
+UrlTest: &UrlTest {type: url-test, interval: 30, tolerance: 20, lazy: true, url: 'https://www.gstatic.com/generate_204', disable-udp: false, timeout: 2000, max-failed-times: 3, hidden: true, include-all: true, include-all-proxies: true, include-all-providers: true}
+
+## ----全局配置------
+
+# 运行模式
+mode: rule
+# 日志级别
+log-level: info
+# 统一延迟
+unified-delay: true
+# TCP 并发
+tcp-concurrent: true
+# 网口指定，不要删除，脚本会自动修改
+interface-name: eth0
+# v6设置
+ipv6: true
+# udp设置
+udp: true
+# 端口相关设置
+# HTTP 代理端口 用于传统的 HTTP 代理
+port: 7890
+# SOCKS5 代理端口
+socks-port: 7891
+# 混合端口 HTTP + SOCKS5
+# 启用后，这个端口同时支持 HTTP 和 SOCKS5 协议
+mixed-port: 7892
+# Redirect 模式端口 用于 Linux 下 iptables 的 TUN/透明代理 不要修改脚本需要通过这个端口进行转发
+redir-port: 7877
+# TPROXY 模式端口 Transparent Proxy 不要修改脚本需要通过这个端口进行转发
+# 也用于透明代理，但相比 redir-port，TPROXY 可以保留原始源地址
+tproxy-port: 7896
+# 是否启用 新一代 GEO 数据 geoip、geosite 模式
+geodata-mode: true
+# GEO 数据加载方式：
+#
+# standard 使用官方推荐的稳定数据格式 配合 geosite.dat, geoip.dat
+#
+# lite 更轻量，数据更小 裁剪版
+#
+# mmdb 兼容传统 Clash 的 Country.mmdb
+geodata-loader: standard
+# 是否自动更新 geo 数据
+geo-auto-update: false
+# 每 24 小时更新一次
+geo-update-interval: 24
+# 匹配进程 always/strict/off 流量进程识别
+find-process-mode: strict
+# "*" 表示监听所有网卡 包括外网 IP、局域网 IP
+bind-address: "*"
+# 是否允许 LAN 内其他设备连接代理
+allow-lan: true
+# 高级路由标记
+routing-mark: 1
+# 控制面板
+external-controller: :9090
+external-ui: ui
+external-ui-url: 'https://github.com/Zephyruso/zashboard/releases/latest/download/dist.zip'
+geox-url:
+  geoip: "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geoip.dat"
+  geosite: "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geosite.dat"
+  mmdb: "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geoip.metadb"
+  asn: "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/GeoLite2-ASN.mmdb"
+profile:
+  store-selected: true
+  store-fake-ip: true
+tun:
+  # Linux 默认使用 nftables 转发（TProxy + Redirect），也可切换为 TUN；macOS 默认启用 TUN
+  enable: false
+# 嗅探
+sniffer:
+  enable: true
+  # 强制 DNS 映射 把 sniff 出来的域名 强行映射回 DNS 记录 解决「域名和 IP 不一致」导致规则不命中的问题
+  force-dns-mapping: true
+  # 纯 IP 解析 即使客户端 直接访问 IP 也尝试从流量中解析域名
+  parse-pure-ip: true
+  # 是否用 sniff 到的域名 替换原始连接目标
+  override-destination: true
+  sniff:
+    # 从 HTTP Host 头解析域名 并 直接覆盖目标地址 对网页 / API 流量非常有效
+    HTTP:
+      ports: [80, 8080-8880]
+      override-destination: true
+    TLS:
+      ports: [443, 8443]
+    QUIC:
+      ports: [443, 8443]
+  # 强制 sniff 的域名
+  force-domain:
+    - "+.*"
+  # 不对这些域名 sniff 常用于： IoT/米家 / 华为 / 智能家居 防止设备异常
+  skip-domain:
+    - Mijia Cloud
+    - "+.push.apple.com"
+dns:
+  enable: true
+  # 默认端口也不能修改
+  listen: 0.0.0.0:6666
+  ipv6: true
+  enhanced-mode: fake-ip
+  # 这个也不能修改和mosdns联动的
+  fake-ip-range: 28.0.0.1/8
+  fake-ip-range6: f2b0::/18
+  fake-ip-filter:
+    - "*"
+    - +.lan
+  default-nameserver:
+    - 127.0.0.1:8888
+  nameserver:
+    - 127.0.0.1:8888
+
+proxy-groups:
+  - {name: Proxies, type: select, proxies: [香港节点, 新加坡节点, 韩国节点, 台湾节点, 日本节点, 美国节点, 省流节点, 高级节点, Manual, Direct, Airport]}
+  - {name: Manual, type: select, proxies: [台湾节点, 香港节点, Direct, 日本节点, 新加坡节点, 美国节点, 韩国节点, 省流节点, 高级节点, 游戏节点, Airport]}
+  - {name: Final, type: select, proxies: [Proxies, Direct, 香港节点, 新加坡节点, 韩国节点, 台湾节点, 日本节点, 美国节点, 省流节点, 高级节点, Manual, Airport]}
+  - {name: Speedtest, type: select, proxies: [Direct, Proxies, 香港节点, 新加坡节点, 韩国节点, 台湾节点, 日本节点, 美国节点, 省流节点, 高级节点, Manual, Airport]}
+  - {name: Google, type: select, proxies: [Proxies, 香港节点, 新加坡节点, 韩国节点, 台湾节点, 日本节点, 美国节点, Manual]}
+  - {name: AI, type: select, proxies: [美国节点, 新加坡节点, 韩国节点, 台湾节点, 日本节点, 香港节点, 省流节点, 高级节点, Manual, Direct, Airport]}
+  - {name: Game, type: select, proxies: [Proxies, Direct, 高级节点, 游戏节点]}
+  - {name: Netflix, type: select, proxies: [Proxies, 香港节点, 新加坡节点, 韩国节点, 台湾节点, 日本节点, 美国节点, 省流节点, 高级节点, Manual, Airport]}
+  - {name: YouTube, type: select, proxies: [Google, Proxies, 香港节点, 新加坡节点, 台湾节点, 日本节点, 美国节点, Manual, Airport]}
+  - {name: Disney+, type: select, proxies: [Proxies, 香港节点, 新加坡节点, 台湾节点, 日本节点, 美国节点, Manual, Airport]}
+  - {name: GlobalMedia, type: select, proxies: [Proxies, 香港节点, 台湾节点, 新加坡节点, 日本节点, 美国节点, Manual, Airport]}
+  - {name: BiliBili, type: select, proxies: [Direct, 香港节点, 台湾节点, Proxies, Manual]}
+  - {name: Scholar, type: select, proxies: [Proxies, Direct, 香港节点, 美国节点, Manual]}
+  - {name: Apple, type: select, proxies: [Direct, 香港节点, 新加坡节点, 韩国节点, 台湾节点, 日本节点, 美国节点, Manual]}
+  - {name: Microsoft, type: select, proxies: [Direct, Proxies]}
+  - {name: TikTok, type: select, proxies: [Proxies, 香港节点, 新加坡节点, 韩国节点, 台湾节点, 日本节点, 美国节点, 省流节点, 高级节点, Manual, Airport]}
+  - {name: Spotify, type: select, proxies: [Proxies, 香港节点, 新加坡节点, 韩国节点, 台湾节点, 日本节点, 美国节点, 省流节点, 高级节点, Manual, Airport]}
+  - {name: PT, type: select, proxies: [Direct, Proxies, 香港节点]}
+  - {name: Telegram, type: select, proxies: [Proxies, 香港节点, 新加坡节点, 韩国节点, 台湾节点, 日本节点, 美国节点]}
+  - {name: 高级节点, !!merge <<: *UrlTest, filter: *FilterVIP}
+  - {name: 游戏节点, !!merge <<: *UrlTest, filter: *FilterGame}
+  - {name: 香港节点, !!merge <<: *UrlTest, filter: *FilterHK}
+  - {name: 新加坡节点, !!merge <<: *UrlTest, filter: *FilterSG}
+  - {name: 韩国节点, !!merge <<: *UrlTest, filter: *FilterKR}
+  - {name: 台湾节点, !!merge <<: *UrlTest, filter: *FilterTW}
+  - {name: 日本节点, !!merge <<: *UrlTest, filter: *FilterJP}
+  - {name: 美国节点, !!merge <<: *UrlTest, filter: *FilterUS}
+  - {name: 省流节点, !!merge <<: *UrlTest, filter: *FilterBIG }
+  - {name: Airport, type: select, include-all: true, include-all-proxies: true, include-all-providers: true, filter: *FilterAll }
+  - {name: Direct, type: select, proxies: [DIRECT]}
+
+rule-providers:
+  # 域名规则
+  Private-Domain: { <<: *DomainMrs, url: 'https://gh-proxy.com/raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/private.mrs' }
+  China-Domain: {<<: *DomainMrs, path: ./rules/cn.mrs, url: https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/cn.mrs}
+  Spotify: {<<: *DomainMrs, path: ./rules/spotify.mrs, url: https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/spotify.mrs}
+  Docker: {<<: *DomainMrs, path: ./rules/docker.mrs, url: https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/docker.mrs}
+  Telegram: {<<: *DomainMrs, path: ./rules/telegram.mrs, url: https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/telegram.mrs}
+  AI-Global: {<<: *DomainMrs, path: ./rules/category-ai-!cn.mrs, url: https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/category-ai-!cn.mrs}
+  AIChatCN: { <<: *DomainMrs, path: ./rules/category-ai-cn.mrs, url: https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/category-ai-cn.mrs}
+  YouTube: {<<: *DomainMrs, path: ./rules/youtube.mrs, url: https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/youtube.mrs}
+  GlobalScholar: {<<: *ClassicalText, path: ./rules/global-scholar.list, url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/GlobalScholar/GlobalScholar.list}
+  BiliBili: {<<: *ClassicalYaml, path: ./rules/bilibili.yaml, url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/BiliBili/BiliBili_No_Resolve.yaml}
+  Disney: {<<: *ClassicalYaml, path: ./rules/disney.yaml, url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Disney/Disney_No_Resolve.yaml}
+  HBOUSA: {<<: *ClassicalYaml, path: ./rules/hbo-usa.yaml, url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/HBOUSA/HBOUSA_No_Resolve.yaml}
+  HBOHK: {<<: *ClassicalYaml, path: ./rules/hbo-hk.yaml, url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/HBOHK/HBOHK_No_Resolve.yaml}
+  Bahamut: {<<: *ClassicalYaml, path: ./rules/bahamut.yaml, url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Bahamut/Bahamut_No_Resolve.yaml}
+  MyTVSUPER: {<<: *ClassicalYaml, path: ./rules/mytvsuper.yaml, url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/myTVSUPER/myTVSUPER_No_Resolve.yaml}
+  PayPal: {<<: *ClassicalYaml, path: ./rules/paypal.yaml, url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/PayPal/PayPal_No_Resolve.yaml}
+  Google: {<<: *DomainMrs, path: ./rules/google.mrs, url: https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/google.mrs}
+  GitHub: {<<: *DomainMrs, path: ./rules/github.mrs, url: https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/github.mrs}
+  Apple: {<<: *DomainMrs, path: ./rules/apple.mrs, url: https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/apple.mrs}
+  AppleCN: {<<: *DomainMrs, path: ./rules/apple-cn.mrs, url: https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/apple-cn.mrs}
+  Microsoft: {<<: *DomainMrs, path: ./rules/microsoft.mrs, url: https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/microsoft.mrs}
+  TikTok: {<<: *DomainMrs, path: ./rules/tiktok.mrs, url: https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/tiktok.mrs}
+  PT: {<<: *DomainMrs, path: ./rules/category-pt.mrs, url: https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/category-pt.mrs}
+  PT-!CN: { <<: *DomainMrs, url: 'https://gh-proxy.com/raw.githubusercontent.com/metacubex/meta-rules-dat/meta/geo/geosite/category-pt@!cn.mrs' }
+  ChinaSpeedtest: {<<: *DomainMrs, path: ./rules/category-speedtest@cn.mrs, url: https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/category-speedtest@cn.mrs}
+#  ForeignSpeedtest: {<<: *DomainMrs, path: ./rules/category-speedtest.mrs, url: https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/category-speedtest.mrs}
+#替换新的speedtest规则.
+  ForeignSpeedtest: {<<: *DomainMrs, path: ./rules/category-speedtest.mrs, url: https://cdn.jsdelivr.net/gh/666OS/rules@refs/heads/release/mihomo/domain/Speedtest.mrs}
+  SteamCN: {<<: *DomainMrs, path: ./rules/steam@cn.mrs, url: https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/steam@cn.mrs}
+  Steam: {<<: *DomainMrs, path: ./rules/steam.mrs, url: https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/steam.mrs}
+  Nintendo: {<<: *DomainMrs, path: ./rules/nintendo.mrs, url: https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/nintendo.mrs}
+  Epic: {<<: *ClassicalYaml, path: ./rules/epic.yaml, url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Epic/Epic_No_Resolve.yaml}
+  Xbox: {<<: *ClassicalYaml, path: ./rules/xbox.yaml, url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Xbox/Xbox_No_Resolve.yaml}
+  PlayStation: {<<: *ClassicalYaml, path: ./rules/playstation.yaml, url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/PlayStation/PlayStation_No_Resolve.yaml}
+  Netflix: {<<: *DomainMrs, path: ./rules/Netflix.mrs, url: https://cdn.jsdelivr.net/gh/666OS/rules@refs/heads/release/mihomo/domain/Netflix.mrs}
+  Microsoft-CN: { <<: *DomainMrs, url: 'https://gh-proxy.com/raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/microsoft@cn.mrs' }
+  GameDownload-CN: { <<: *DomainMrs, url: 'https://gh-proxy.com/raw.githubusercontent.com/metacubex/meta-rules-dat/meta/geo/geosite/category-game-platforms-download@cn.mrs' }
+  # IP规则
+  Private-IP: { <<: *IPcidrMrs, url: 'https://gh-proxy.com/raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geoip/private.mrs' }
+  NetflixIP: {<<: *IPcidrMrs, path: ./rules/netflixip.mrs, url: https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geoip/netflix.mrs}
+  TelegramIP: {<<: *IPcidrMrs, path: ./rules/telegramip.mrs, url: https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geoip/telegram.mrs}
+  ChinaIP: {<<: *IPcidrMrs, path: ./rules/cnip.mrs, url: https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geoip/cn.mrs}
+
+rules:
+  # 回家直连
+  - IP-CIDR,192.168.7.0/24,DIRECT,no-resolve
+  - IP-CIDR,192.168.31.0/24,DIRECT,no-resolve
+  - IP-CIDR,192.168.1.0/24,DIRECT,no-resolve
+  # 常用必备
+  - DST-PORT,123,DIRECT
+  - RULE-SET,Private-IP,Direct,no-resolve
+  - RULE-SET,Private-Domain,Direct
+  - DOMAIN-SUFFIX,push.apple.com,Direct
+ 
+  # 自定义代理
+  - DOMAIN-SUFFIX,test-ipv6.com,Direct
+  - DOMAIN-SUFFIX,ipv6ready.me,Direct
+  - DOMAIN-SUFFIX,ipv6-test.com,Direct
+  - DOMAIN-SUFFIX,ifconfig.me,Direct
+  - DOMAIN-SUFFIX,myexternalip.com,Direct
+  - DOMAIN-SUFFIX,api64.ipify.org,Direct
+  - DOMAIN-SUFFIX,u2.dmhy.org,香港节点
+  - DOMAIN-SUFFIX,gh-proxy.com,Direct
+  
+  # IPTV
+  - DOMAIN-SUFFIX,dnsany.com,Direct
+  - DOMAIN-SUFFIX,cmvideo.cn,Direct
+  - DOMAIN-SUFFIX,chinamobile.com,Direct
+  - DOMAIN-SUFFIX,mobaibox.com,Direct
+  - DOMAIN-SUFFIX,gitv.tv,Direct
+  - DOMAIN-SUFFIX,cctv.cn,Direct
+  - DOMAIN-SUFFIX,yangshipin.cn,Direct
+  # 8.8.8.8
+  - IP-CIDR,8.8.8.8/32,Proxies
+  - IP-CIDR,8.8.4.4/32,Proxies
+  - IP-CIDR,1.1.1.1/32,Proxies
+  - IP-CIDR,1.0.0.1/32,Proxies
+
+  # 国内应用例外，必须位于全局厂商规则之前
+  - RULE-SET,AIChatCN,Direct
+  - RULE-SET,AppleCN,Direct
+  - RULE-SET,Microsoft-CN,Direct
+  - RULE-SET,GameDownload-CN,Direct
+  - RULE-SET,SteamCN,Direct
+
+  # 应用和内容服务
+  - RULE-SET,AI-Global,AI
+  - RULE-SET,YouTube,YouTube
+  - RULE-SET,GlobalScholar,Scholar
+  - RULE-SET,BiliBili,BiliBili
+  - RULE-SET,Netflix,Netflix
+  - RULE-SET,NetflixIP,Netflix,no-resolve
+  - RULE-SET,Disney,Disney+
+  - RULE-SET,HBOUSA,GlobalMedia
+  - RULE-SET,HBOHK,GlobalMedia
+  - RULE-SET,Bahamut,GlobalMedia
+  - RULE-SET,MyTVSUPER,GlobalMedia
+  - RULE-SET,Spotify,Spotify
+  - RULE-SET,Docker,Proxies
+  - RULE-SET,GitHub,Proxies
+  - RULE-SET,Telegram,Telegram
+  - RULE-SET,TikTok,TikTok
+  - RULE-SET,PayPal,Proxies
+
+  # 游戏平台：不同服务规则差异较大，统一指向 Game
+  - RULE-SET,Steam,Game
+  - RULE-SET,Nintendo,Game
+  - RULE-SET,Epic,Game
+  - RULE-SET,Xbox,Game
+  - RULE-SET,PlayStation,Game
+
+  # 广域厂商规则置于专用应用之后
+  - RULE-SET,Google,Google
+  - RULE-SET,Apple,Apple
+  - RULE-SET,Microsoft,Microsoft
+
+  - RULE-SET,ChinaSpeedtest,Direct
+  - RULE-SET,ForeignSpeedtest,Speedtest
+  
+  #PT站点规则补全
+  - RULE-SET,PT,PT
+  - DOMAIN-SUFFIX,hhanclub.net,PT
+  - DOMAIN-SUFFIX,azusa.wiki,PT
+  - DOMAIN-SUFFIX,discfan.net,PT
+  - DOMAIN-SUFFIX,playletpt.xyz,PT
+  - DOMAIN-SUFFIX,hdsky.my,PT
+  - RULE-SET,PT-!CN,Proxies
+
+  # IP 路由和国内兜底
+  - RULE-SET,TelegramIP,Telegram,no-resolve
+  - RULE-SET,China-Domain,Direct
+  - RULE-SET,ChinaIP,Direct,no-resolve
+  # tracker都走直连
+  - DOMAIN-KEYWORD,tracker,Direct
+  - MATCH,Final
+# 节点订阅
+proxy-providers: {}

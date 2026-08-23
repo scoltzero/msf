@@ -1,0 +1,16 @@
+{
+  "name": "msf",
+  "private": true,
+  "scripts": {
+    "test:dns-fixture": "python3 tests/fixtures/dns/test_fixture.py",
+    "test:e2e:dashboard": "node tests/e2e/dashboard-layout.mjs",
+    "test:e2e:ipv6": "node tests/e2e/ipv6-settings.mjs",
+    "test:e2e:auth-routing": "node tests/e2e/auth-routing.mjs"
+  },
+  "dependencies": {
+    "playwright": "^1.60.0"
+  },
+  "devDependencies": {
+    "sharp": "^0.35.3"
+  }
+}

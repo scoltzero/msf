@@ -1,0 +1,141 @@
+.gary-page-enter {
+  color: var(--foreground);
+}
+
+.gary-page-enter :where(h1, h2, h3) {
+  text-wrap: balance;
+  letter-spacing: -0.018em;
+}
+
+.gary-page-enter :where(.font-mono, code, pre) {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Legacy page shells become Thick glass; nested data remains a stable SolidPlate. */
+.gary-page-enter :where(section.bg-card, aside.bg-card),
+.gary-page-enter > div > :where(section, aside)[class*="border"],
+.gary-page-enter > div > .grid > :where(section, aside)[class*="border"] {
+  border-color: var(--gary-edge-dim) !important;
+  border-radius: var(--gary-radius-card) !important;
+  background: var(--gary-glass-fill-thick) !important;
+  box-shadow: var(--gary-contact-shadow), var(--gary-environment-shadow) !important;
+  -webkit-backdrop-filter: blur(var(--gary-blur-thick)) saturate(var(--gary-saturate)) contrast(var(--gary-contrast));
+  backdrop-filter: blur(var(--gary-blur-thick)) saturate(var(--gary-saturate)) contrast(var(--gary-contrast));
+}
+
+.gary-page-enter :where(section, aside) :where(section.bg-card, aside.bg-card),
+.gary-page-enter :where(section, aside) :where(.bg-card, .bg-background, .bg-muted, .bg-muted\/50, .bg-card\/50, .bg-card\/60) {
+  border-color: color-mix(in srgb, var(--gary-edge-dim) 72%, transparent) !important;
+  background: var(--gary-solid-fill) !important;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--gary-edge-soft) 48%, transparent) !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+.gary-page-enter > div > :where(.grid, .flex) > .bg-card,
+.gary-page-enter > div > .bg-card,
+.gary-page-enter > div > div > .bg-card:not(input):not(select):not(textarea) {
+  border-color: var(--gary-edge-dim) !important;
+  background: var(--gary-glass-fill-thick) !important;
+  box-shadow: var(--gary-contact-shadow), var(--gary-environment-shadow) !important;
+  -webkit-backdrop-filter: blur(var(--gary-blur-thick)) saturate(var(--gary-saturate));
+  backdrop-filter: blur(var(--gary-blur-thick)) saturate(var(--gary-saturate));
+}
+
+.gary-page-enter :where(input, select, textarea):not([type="checkbox"]):not([type="radio"]),
+.gary-public-page :where(input, select, textarea):not([type="checkbox"]):not([type="radio"]) {
+  border-color: color-mix(in srgb, var(--gary-edge-dim) 82%, transparent) !important;
+  border-radius: var(--gary-radius-compact) !important;
+  background: color-mix(in srgb, var(--gary-solid-fill) 90%, transparent) !important;
+  box-shadow: inset 0 1px 2px color-mix(in srgb, var(--gary-edge-shadow) 18%, transparent);
+}
+
+.gary-page-enter :where(input, select, textarea):focus,
+.gary-public-page :where(input, select, textarea):focus {
+  border-color: color-mix(in srgb, var(--ring) 52%, var(--gary-edge-dim)) !important;
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 16%, transparent) !important;
+}
+
+.gary-page-enter :where(button[class*="border"]):not([class*="destructive"]),
+.gary-public-page :where(button[class*="border"]):not([class*="destructive"]) {
+  border-color: color-mix(in srgb, var(--gary-edge-dim) 78%, transparent) !important;
+  background-color: color-mix(in srgb, var(--gary-glass-fill-regular) 84%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--gary-edge-soft) 58%, transparent);
+}
+
+.gary-page-enter :where(.transition-all) {
+  transition-property: transform, opacity, color, background-color, border-color, box-shadow !important;
+}
+
+.gary-page-enter :where(table, pre, [class*="font-mono"][class*="overflow"]),
+.gary-page-enter :where(.cm-editor, .cm-scroller) {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+.gary-page-enter :where([class*="fixed"][class*="inset-0"]) > :where(.bg-card, [class*="bg-card"]) {
+  border-color: var(--gary-edge-dim) !important;
+  border-radius: var(--gary-radius-card) !important;
+  background: var(--gary-glass-fill-strong) !important;
+  box-shadow: var(--gary-contact-shadow), var(--gary-floating-shadow) !important;
+  -webkit-backdrop-filter: blur(var(--gary-blur-regular)) saturate(var(--gary-saturate));
+  backdrop-filter: blur(var(--gary-blur-regular)) saturate(var(--gary-saturate));
+}
+
+.gary-page-enter :where([class*="fixed"][class*="inset-0"]) > :where([class*="bg-gradient-to"], [role="dialog"]),
+.gary-page-enter :where([role="dialog"]) {
+  border-color: var(--gary-edge-dim) !important;
+  background: var(--gary-glass-fill-strong) !important;
+  box-shadow: var(--gary-contact-shadow), var(--gary-floating-shadow) !important;
+  -webkit-backdrop-filter: blur(var(--gary-blur-regular)) saturate(var(--gary-saturate));
+  backdrop-filter: blur(var(--gary-blur-regular)) saturate(var(--gary-saturate));
+}
+
+.gary-public-page {
+  position: relative;
+  z-index: 1;
+  min-height: 100dvh;
+  color: var(--foreground);
+}
+
+.gary-public-card {
+  border: 1px solid var(--gary-edge-dim);
+  border-radius: var(--gary-radius-card);
+  background: var(--gary-glass-fill-thick);
+  box-shadow: var(--gary-contact-shadow), var(--gary-environment-shadow);
+  -webkit-backdrop-filter: blur(var(--gary-blur-thick)) saturate(var(--gary-saturate));
+  backdrop-filter: blur(var(--gary-blur-thick)) saturate(var(--gary-saturate));
+}
+
+html[data-gary-quality="reduced"] .gary-page-enter :where(section.bg-card, aside.bg-card),
+html[data-gary-quality="reduced"] .gary-page-enter > div > :where(section, aside)[class*="border"],
+html[data-gary-quality="reduced"] .gary-page-enter > div > :where(.grid, .flex) > .bg-card,
+html[data-gary-quality="reduced"] .gary-page-enter > div > .bg-card,
+html[data-gary-quality="reduced"] .gary-public-card {
+  background: var(--gary-solid-fill-strong) !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .gary-page-enter :where(section.bg-card, aside.bg-card),
+  .gary-page-enter > div > :where(section, aside)[class*="border"],
+  .gary-page-enter > div > :where(.grid, .flex) > .bg-card,
+  .gary-page-enter > div > .bg-card,
+  .gary-public-card {
+    background: var(--gary-solid-fill-strong) !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+}
+
+@media (max-width: 767px) {
+  .gary-page-enter :where(section.bg-card, aside.bg-card),
+  .gary-page-enter > div > :where(section, aside)[class*="border"] {
+    border-radius: var(--gary-radius-card) !important;
+    background: color-mix(in srgb, var(--gary-glass-fill-strong) 86%, transparent) !important;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}

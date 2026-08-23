@@ -1,0 +1,843 @@
+.msf-login-shell {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(31rem, 1fr);
+  min-height: 100dvh;
+  overflow: hidden;
+  isolation: isolate;
+  background: #f7fdff;
+}
+
+.msf-login-gradient-waves {
+  position: fixed;
+  z-index: 0;
+  opacity: 1;
+  filter: saturate(1.062) contrast(1.32);
+}
+
+.dark .msf-login-shell {
+  --foreground: oklch(84% 0.006 240);
+  --card-foreground: oklch(84% 0.006 240);
+  --primary-foreground: oklch(92% 0.004 240);
+  background: #0d0f11;
+}
+
+.dark .msf-login-gradient-waves {
+  filter: saturate(0.9) contrast(1.24) brightness(0.9);
+}
+
+.msf-login-skip {
+  position: fixed;
+  top: 0.75rem;
+  left: 0.75rem;
+  z-index: 20;
+  padding: 0.65rem 0.85rem;
+  border-radius: 0.75rem;
+  color: var(--primary-foreground);
+  background: var(--primary);
+  transform: translateY(-150%);
+  transition: transform 180ms ease;
+}
+
+.msf-login-skip:focus {
+  transform: translateY(0);
+}
+
+.msf-login-version {
+  position: absolute;
+  right: max(1.5rem, env(safe-area-inset-right));
+  bottom: max(1.4rem, env(safe-area-inset-bottom));
+  z-index: 4;
+  padding: 0.38rem 0.7rem;
+  border: 1px solid color-mix(in srgb, var(--gary-edge-dim) 64%, transparent);
+  border-radius: var(--gary-radius-pill);
+  color: var(--muted-foreground);
+  background: color-mix(in srgb, var(--gary-glass-fill-regular) 68%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--gary-edge-soft) 60%, transparent);
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  -webkit-backdrop-filter: blur(14px) saturate(var(--gary-saturate));
+  backdrop-filter: blur(14px) saturate(var(--gary-saturate));
+}
+
+.msf-login-stage {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  padding: clamp(2rem, 4vw, 4.5rem) clamp(2rem, 2.8vw, 3rem) clamp(2rem, 4vw, 4.5rem) clamp(2rem, 4vw, 4.5rem);
+}
+
+.msf-login-brand-lockup,
+.msf-login-mobile-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.msf-login-brand-lockup img,
+.msf-login-mobile-brand img {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.82rem;
+  filter: drop-shadow(0 0.5rem 0.8rem color-mix(in srgb, var(--primary) 22%, transparent));
+}
+
+.msf-login-brand-lockup div,
+.msf-login-mobile-brand div {
+  display: grid;
+  gap: 0.08rem;
+}
+
+.msf-login-brand-lockup strong,
+.msf-login-mobile-brand strong {
+  color: var(--foreground);
+  font-size: 0.94rem;
+  font-weight: 720;
+  letter-spacing: 0.12em;
+  line-height: 1.1;
+}
+
+.msf-login-brand-lockup span,
+.msf-login-mobile-brand span {
+  color: var(--muted-foreground);
+  font-size: 0.68rem;
+  font-weight: 520;
+  letter-spacing: 0.06em;
+}
+
+.msf-login-stage-content {
+  display: grid;
+  grid-template-columns: minmax(12rem, 0.72fr) minmax(20.5rem, 1.28fr);
+  width: min(100%, 46rem);
+  flex: 1;
+  align-items: center;
+  gap: clamp(3.5rem, 4.6vw, 4.5rem);
+  margin-inline: auto;
+  padding-block: 3rem 1rem;
+}
+
+.msf-login-brand-visual {
+  display: grid;
+  min-height: 22rem;
+  place-items: center;
+}
+
+.msf-orbit-mark {
+  --orbit-size: clamp(17rem, 25vw, 23rem);
+  position: relative;
+  display: grid;
+  width: var(--orbit-size);
+  height: var(--orbit-size);
+  place-items: center;
+  isolation: isolate;
+}
+
+.msf-orbit-mark__aura {
+  position: absolute;
+  inset: 18%;
+  z-index: -2;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--primary) 20%, transparent);
+  filter: blur(2.8rem);
+  opacity: 0.72;
+  animation: msf-orbit-breathe 5.8s ease-in-out infinite alternate;
+}
+
+.msf-orbit-mark__ring {
+  position: absolute;
+  z-index: 0;
+  border: 1px solid color-mix(in srgb, var(--primary) 20%, transparent);
+  border-top-color: color-mix(in srgb, var(--primary) 70%, transparent);
+  border-right-color: color-mix(in srgb, var(--primary) 7%, transparent);
+  border-radius: 50%;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.msf-orbit-mark__ring--far {
+  z-index: 2;
+  width: 94%;
+  height: 42%;
+  animation: msf-orbit-far 22s linear infinite;
+}
+
+.msf-orbit-mark__ring--near {
+  z-index: 3;
+  width: 78%;
+  height: 58%;
+  border-bottom-color: color-mix(in srgb, var(--primary) 48%, transparent);
+  animation: msf-orbit-near 17s linear infinite reverse;
+}
+
+.msf-orbit-mark__ring--polar {
+  z-index: 4;
+  width: 44%;
+  height: 90%;
+  border-top-color: color-mix(in srgb, var(--primary) 48%, transparent);
+  opacity: 0.6;
+  animation: msf-orbit-polar 26s linear infinite;
+}
+
+.msf-orbit-mark__logo {
+  width: 66%;
+  height: 66%;
+  object-fit: contain;
+  user-select: none;
+  filter: drop-shadow(0 0.7rem 1.2rem color-mix(in srgb, var(--primary) 22%, transparent));
+}
+
+.msf-orbit-mark__tile {
+  display: grid;
+  position: relative;
+  z-index: 1;
+  width: 43%;
+  aspect-ratio: 1;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, white 82%, var(--primary));
+  border-radius: 27%;
+  background:
+    radial-gradient(circle at 26% 18%, white 0 22%, transparent 58%),
+    linear-gradient(145deg, white, color-mix(in srgb, #e8f6ff 84%, var(--primary)));
+  box-shadow:
+    inset 0 1px 0 white,
+    0 1.4rem 3rem color-mix(in srgb, var(--primary) 24%, transparent);
+  animation: msf-logo-float 5.2s ease-in-out infinite alternate;
+}
+
+.msf-orbit-mark--compact {
+  --orbit-size: 9rem;
+}
+
+.msf-orbit-mark--compact .msf-orbit-mark__ring--polar {
+  display: none;
+}
+
+.msf-orbit-mark--compact .msf-orbit-mark__tile {
+  width: 46%;
+}
+
+.msf-login-stage-copy {
+  position: relative;
+  z-index: 2;
+  max-width: 36rem;
+  margin-top: clamp(0.75rem, 2vh, 1.5rem);
+  transform: translateX(clamp(5.125rem, 6.3vw, 5.625rem));
+}
+
+.msf-login-stage-kicker {
+  margin: 0 0 1rem;
+  color: var(--primary);
+  font-size: 0.7rem;
+  font-weight: 720;
+  letter-spacing: 0.16em;
+  line-height: 1.4;
+}
+
+.msf-login-stage-copy h1 {
+  max-width: 5.5em;
+  margin: 0;
+  color: var(--foreground);
+  font-size: clamp(2.75rem, 4.5vw, 4.9rem);
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.045em;
+  line-height: 1.04;
+  text-wrap: wrap;
+}
+
+.msf-login-stage-description {
+  max-width: 32rem;
+  margin: 1.4rem 0 0;
+  color: var(--muted-foreground);
+  font-size: clamp(0.9rem, 1.15vw, 1.03rem);
+  line-height: 1.8;
+  text-wrap: pretty;
+}
+
+.msf-login-capabilities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem 1.15rem;
+  margin: 1.8rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.msf-login-capabilities li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--foreground);
+  font-size: 0.76rem;
+  font-weight: 580;
+}
+
+.msf-login-capability-icon {
+  display: grid;
+  width: 1.8rem;
+  height: 1.8rem;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--primary) 30%, var(--gary-edge-dim));
+  border-radius: 0.6rem;
+  color: var(--primary);
+  background: color-mix(in srgb, var(--gary-glass-fill-regular) 62%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 28%, transparent);
+}
+
+.msf-login-capability-icon svg {
+  width: 0.9rem;
+  height: 0.9rem;
+  stroke-width: 1.8;
+}
+
+.msf-login-stage-footnote {
+  margin: 0;
+  color: color-mix(in srgb, var(--muted-foreground) 76%, transparent);
+  font-size: 0.65rem;
+  letter-spacing: 0.12em;
+}
+
+.msf-login-entry {
+  position: relative;
+  z-index: 1;
+  display: block;
+  min-width: 0;
+  padding: 0;
+}
+
+.msf-login-mobile-brand,
+.msf-login-mobile-logo {
+  display: none;
+}
+
+.msf-login-glass-dock {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  width: min(calc(50vw - 2rem), 32.25rem);
+  height: calc(100dvh - 2rem);
+  place-items: center;
+  padding: 1.5rem;
+  transform: translate(-50%, -50%);
+}
+
+.msf-login-card {
+  display: block;
+  width: min(100%, 29rem);
+  border-radius: clamp(1.8rem, 2.6vw, 2.4rem);
+  color: var(--card-foreground);
+}
+
+.msf-login-card > .glass-surface__content {
+  display: block;
+  height: auto;
+  align-items: initial;
+  justify-content: initial;
+  padding: clamp(2.4rem, 3.4vw, 3rem);
+}
+
+.msf-login-kicker {
+  margin: 0;
+  color: var(--primary);
+  font-size: 0.7rem;
+  font-weight: 720;
+  letter-spacing: 0.12em;
+  line-height: 1.4;
+}
+
+.msf-login-card-heading h2 {
+  margin: 0.6rem 0 0;
+  color: var(--foreground);
+  font-size: clamp(2.35rem, 3.4vw, 3rem);
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  font-weight: 720;
+  letter-spacing: -0.05em;
+  line-height: 1.05;
+}
+
+.msf-login-card-heading > p:last-child {
+  margin: 0.8rem 0 0;
+  color: var(--muted-foreground);
+  font-size: 0.88rem;
+  line-height: 1.65;
+}
+
+.msf-login-form {
+  display: grid;
+  gap: 1.15rem;
+  margin-top: 2.25rem;
+}
+
+.msf-login-control {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.msf-login-control label {
+  color: var(--foreground);
+  font-size: 0.78rem;
+  font-weight: 620;
+}
+
+.msf-login-field {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: 3.45rem;
+  border: 1px solid color-mix(in srgb, var(--gary-edge-dim) 82%, transparent);
+  border-radius: 0.95rem;
+  background: transparent;
+  box-shadow: inset 0 1px 2px color-mix(in srgb, var(--gary-edge-shadow) 16%, transparent);
+  transition:
+    border-color var(--gary-motion-fast) var(--gary-ease),
+    box-shadow var(--gary-motion-fast) var(--gary-ease),
+    background-color var(--gary-motion-fast) var(--gary-ease);
+}
+
+.msf-login-field:focus-within {
+  border-color: color-mix(in srgb, var(--ring) 58%, var(--gary-edge-dim));
+  background: transparent;
+  box-shadow:
+    inset 0 1px 2px color-mix(in srgb, var(--gary-edge-shadow) 12%, transparent),
+    0 0 0 3px color-mix(in srgb, var(--ring) 15%, transparent);
+}
+
+.msf-login-field > svg {
+  width: 1.05rem;
+  height: 1.05rem;
+  margin-left: 1rem;
+  color: var(--muted-foreground);
+  stroke-width: 1.8;
+  transition: color var(--gary-motion-fast) var(--gary-ease);
+}
+
+.msf-login-field:focus-within > svg {
+  color: var(--primary);
+}
+
+.gary-public-page.msf-login-shell .msf-login-field > input {
+  width: 100%;
+  min-width: 0;
+  height: 3.35rem;
+  padding: 0 0.85rem;
+  border: 0 !important;
+  border-radius: 0 !important;
+  outline: 0 !important;
+  color: var(--foreground);
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  -webkit-background-clip: text;
+  background-clip: text;
+  caret-color: var(--foreground);
+  font-size: 0.92rem;
+}
+
+.gary-public-page.msf-login-shell .msf-login-field > input:-webkit-autofill,
+.gary-public-page.msf-login-shell .msf-login-field > input:-webkit-autofill:hover,
+.gary-public-page.msf-login-shell .msf-login-field > input:-webkit-autofill:focus,
+.gary-public-page.msf-login-shell .msf-login-field > input:-webkit-autofill:active {
+  border: 0 !important;
+  -webkit-text-fill-color: var(--foreground) !important;
+  -webkit-box-shadow: 0 0 0 1000px transparent inset !important;
+  box-shadow: 0 0 0 1000px transparent inset !important;
+  transition: background-color 9999s ease-out 0s;
+}
+
+.msf-login-field input::placeholder {
+  color: color-mix(in srgb, var(--muted-foreground) 76%, transparent);
+}
+
+.msf-login-password-toggle {
+  display: grid;
+  width: 2.75rem;
+  height: 2.75rem;
+  margin-right: 0.3rem;
+  place-items: center;
+  border-radius: 0.78rem;
+  color: var(--muted-foreground);
+  transition:
+    color var(--gary-motion-fast) var(--gary-ease),
+    background-color var(--gary-motion-fast) var(--gary-ease),
+    transform var(--gary-motion-fast) var(--gary-ease);
+}
+
+.msf-login-password-toggle:hover {
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+}
+
+.msf-login-password-toggle:focus-visible,
+.msf-login-submit:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--ring) 30%, transparent);
+  outline-offset: 2px;
+}
+
+.msf-login-password-toggle:active {
+  transform: scale(0.96);
+}
+
+.msf-login-password-toggle svg {
+  width: 1.05rem;
+  height: 1.05rem;
+  stroke-width: 1.8;
+}
+
+.msf-login-error {
+  padding: 0.75rem 0.85rem;
+  border: 1px solid color-mix(in srgb, var(--destructive) 32%, transparent);
+  border-radius: 0.82rem;
+  color: color-mix(in srgb, var(--destructive) 88%, var(--foreground));
+  background: color-mix(in srgb, var(--destructive) 8%, transparent);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.msf-login-submit {
+  display: inline-flex;
+  min-height: 3.45rem;
+  align-items: center;
+  justify-content: center;
+  margin-top: 0.6rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0.95rem;
+  color: var(--primary-foreground);
+  background: transparent;
+  box-shadow: none;
+  font-size: 0.92rem;
+  font-weight: 650;
+  transition:
+    transform var(--gary-motion-fast) var(--gary-ease),
+    filter var(--gary-motion-fast) var(--gary-ease),
+    box-shadow var(--gary-motion-fast) var(--gary-ease);
+}
+
+.msf-login-submit-glass {
+  width: 100%;
+  min-height: 3.45rem;
+  color: var(--primary-foreground);
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--primary) 64%, transparent),
+    color-mix(in srgb, var(--primary) 42%, transparent)
+  );
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 52%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--primary) 44%, transparent),
+    0 0.9rem 2rem color-mix(in srgb, var(--primary) 20%, transparent);
+}
+
+.msf-login-submit-glass > .glass-surface__content {
+  gap: 0.55rem;
+}
+
+.msf-login-submit:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.msf-login-submit:hover:not(:disabled) .msf-login-submit-glass {
+  filter: brightness(1.08);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 62%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--primary) 50%, transparent),
+    0 1.1rem 2.3rem color-mix(in srgb, var(--primary) 26%, transparent);
+}
+
+.msf-login-submit:active:not(:disabled) {
+  transform: translateY(1px) scale(0.995);
+}
+
+.msf-login-submit:disabled {
+  cursor: wait;
+  opacity: 0.66;
+}
+
+.msf-login-submit svg {
+  width: 1.05rem;
+  height: 1.05rem;
+  stroke-width: 1.9;
+}
+
+.msf-login-spinner {
+  animation: msf-login-spin 850ms linear infinite;
+}
+
+.msf-login-card-footer {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin-top: 1.6rem;
+  color: var(--muted-foreground);
+}
+
+.msf-login-card-footer svg {
+  width: 0.9rem;
+  height: 0.9rem;
+  flex: none;
+  color: var(--primary);
+  stroke-width: 1.8;
+}
+
+.msf-login-card-footer p {
+  margin: 0;
+  font-size: 0.7rem;
+  line-height: 1.45;
+}
+
+@keyframes msf-orbit-far {
+  from { transform: rotate(12deg); }
+  to { transform: rotate(372deg); }
+}
+
+@keyframes msf-orbit-near {
+  from { transform: rotate(-32deg); }
+  to { transform: rotate(328deg); }
+}
+
+@keyframes msf-orbit-polar {
+  from { transform: rotate(24deg); }
+  to { transform: rotate(384deg); }
+}
+
+@keyframes msf-orbit-breathe {
+  from { opacity: 0.48; transform: scale(0.92); }
+  to { opacity: 0.76; transform: scale(1.08); }
+}
+
+@keyframes msf-logo-float {
+  from { transform: translateY(0); }
+  to { transform: translateY(-0.55rem); }
+}
+
+@keyframes msf-login-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (min-width: 900px) {
+  .msf-login-brand-lockup,
+  .msf-login-stage-content {
+    transform: translateY(-20px);
+  }
+
+  .msf-login-glass-dock {
+    transform: translate(-50%, calc(-50% - 20px));
+  }
+}
+
+@media (max-width: 1180px) {
+  .msf-login-shell {
+    grid-template-columns: minmax(0, 0.9fr) minmax(29rem, 1.1fr);
+  }
+
+  .msf-login-stage-content {
+    grid-template-columns: 1fr;
+    gap: 0.25rem;
+    padding-top: 2rem;
+    text-align: center;
+  }
+
+  .msf-login-stage-copy {
+    transform: none;
+  }
+
+  .msf-login-brand-visual {
+    min-height: 18rem;
+  }
+
+  .msf-login-stage .msf-orbit-mark {
+    --orbit-size: 18rem;
+  }
+
+  .msf-login-stage-copy h1 {
+    max-width: 8em;
+    margin-inline: auto;
+    font-size: clamp(2.5rem, 4.2vw, 3.7rem);
+  }
+
+  .msf-login-stage-description {
+    margin-inline: auto;
+  }
+
+  .msf-login-capabilities {
+    justify-content: center;
+  }
+}
+
+@media (max-width: 899px) {
+  .msf-login-shell {
+    display: block;
+    min-height: 100dvh;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .msf-login-stage {
+    display: none;
+  }
+
+  .msf-login-version {
+    top: max(1.15rem, env(safe-area-inset-top));
+    right: max(1rem, env(safe-area-inset-right));
+    bottom: auto;
+  }
+
+  .msf-login-entry {
+    display: block;
+    min-height: 100dvh;
+    padding: 0;
+  }
+
+  .msf-login-glass-dock {
+    width: calc(100vw - 1.4rem);
+    height: calc(100dvh - 1.4rem);
+    padding:
+      max(4.8rem, calc(env(safe-area-inset-top) + 4.25rem))
+      max(0.55rem, env(safe-area-inset-right))
+      max(0.7rem, env(safe-area-inset-bottom))
+      max(0.55rem, env(safe-area-inset-left));
+  }
+
+  .msf-login-mobile-brand {
+    position: absolute;
+    top: max(1rem, env(safe-area-inset-top));
+    left: max(1rem, env(safe-area-inset-left));
+    z-index: 4;
+    display: flex;
+  }
+
+  .msf-login-mobile-brand img {
+    width: 2.15rem;
+    height: 2.15rem;
+    border-radius: 0.7rem;
+  }
+
+  .msf-login-mobile-brand span {
+    display: none;
+  }
+
+  .msf-login-card {
+    width: 100%;
+    margin-inline: auto;
+    border-radius: 1.8rem;
+  }
+
+  .msf-login-card > .glass-surface__content {
+    padding: 2.15rem;
+  }
+
+  .msf-login-mobile-logo {
+    display: grid;
+    height: 8rem;
+    place-items: center;
+    margin: -0.75rem 0 0.9rem;
+  }
+
+  .msf-login-card-heading {
+    text-align: center;
+  }
+}
+
+@media (max-width: 480px) {
+  .msf-login-entry {
+    padding-right: max(0.85rem, env(safe-area-inset-right));
+    padding-left: max(0.85rem, env(safe-area-inset-left));
+  }
+
+  .msf-login-card {
+    border-radius: 1.5rem;
+  }
+
+  .msf-login-card > .glass-surface__content {
+    padding: 1.65rem 1.3rem 1.4rem;
+  }
+
+  .msf-login-mobile-logo {
+    height: 7.3rem;
+    margin-top: -0.65rem;
+    margin-bottom: 0.6rem;
+  }
+
+  .msf-orbit-mark--compact {
+    --orbit-size: 8.25rem;
+  }
+
+  .msf-login-card-heading h2 {
+    font-size: 2.05rem;
+  }
+
+  .msf-login-form {
+    margin-top: 1.7rem;
+  }
+
+  .msf-login-field,
+  .msf-login-submit {
+    min-height: 3.4rem;
+  }
+
+  .gary-public-page.msf-login-shell .msf-login-field > input {
+    height: 3.3rem;
+    font-size: 1rem;
+  }
+}
+
+@media (max-width: 899px) and (max-height: 680px) {
+  .msf-login-entry {
+    justify-content: flex-start;
+  }
+
+  .msf-login-mobile-logo {
+    display: none;
+  }
+
+  .msf-login-card {
+    border-radius: 1.5rem;
+  }
+
+  .msf-login-card > .glass-surface__content {
+    padding-top: 1.65rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .msf-orbit-mark__aura,
+  .msf-orbit-mark__ring,
+  .msf-orbit-mark__tile,
+  .msf-login-spinner {
+    animation: none;
+  }
+
+  .msf-login-skip,
+  .msf-login-field,
+  .msf-login-password-toggle,
+  .msf-login-submit {
+    transition: none;
+  }
+}
+
+html[data-gary-quality="reduced"] .msf-login-card,
+html[data-gary-quality="reduced"] .msf-login-version {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+html[data-gary-quality="reduced"] .msf-login-card {
+  background: color-mix(in srgb, var(--gary-solid-fill-strong) 86%, transparent);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .msf-login-card,
+  .msf-login-version {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .msf-login-card {
+    background: var(--gary-solid-fill-strong);
+  }
+}

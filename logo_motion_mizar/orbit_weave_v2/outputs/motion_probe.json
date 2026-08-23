@@ -1,0 +1,61 @@
+{
+  "html": "logo_motion_mizar/orbit_weave_v2/logo_motion.html",
+  "probe": [
+    {
+      "t_ms": 420.0,
+      "#orbit-blue-ribbon .orbit-body:stroke-dashoffset": "0.432498px",
+      "#orbit-cyan-ribbon .orbit-body:stroke-dashoffset": "0.696198px",
+      "#weave-blue-ribbon .weave-body:stroke-dashoffset": "1.12px",
+      "#weave-cyan-ribbon .weave-body:stroke-dashoffset": "1.12px",
+      "#logo-geometry:opacity": "0"
+    },
+    {
+      "t_ms": 650.0,
+      "#orbit-blue-ribbon .orbit-body:stroke-dashoffset": "0.135689px",
+      "#orbit-cyan-ribbon .orbit-body:stroke-dashoffset": "0.169665px",
+      "#weave-blue-ribbon .weave-body:stroke-dashoffset": "1.12px",
+      "#weave-cyan-ribbon .weave-body:stroke-dashoffset": "1.12px",
+      "#logo-geometry:opacity": "0"
+    },
+    {
+      "t_ms": 850.0,
+      "#orbit-blue-ribbon .orbit-body:stroke-dashoffset": "-0.224299px",
+      "#orbit-cyan-ribbon .orbit-body:stroke-dashoffset": "-0.0571069px",
+      "#weave-blue-ribbon .weave-body:stroke-dashoffset": "1.12px",
+      "#weave-cyan-ribbon .weave-body:stroke-dashoffset": "1.12px",
+      "#logo-geometry:opacity": "0"
+    },
+    {
+      "t_ms": 1050.0,
+      "#orbit-blue-ribbon .orbit-body:stroke-dashoffset": "-0.28352px",
+      "#orbit-cyan-ribbon .orbit-body:stroke-dashoffset": "-0.278105px",
+      "#weave-blue-ribbon .weave-body:stroke-dashoffset": "0.483892px",
+      "#weave-cyan-ribbon .weave-body:stroke-dashoffset": "0.89995px",
+      "#logo-geometry:opacity": "0"
+    },
+    {
+      "t_ms": 1250.0,
+      "#orbit-blue-ribbon .orbit-body:stroke-dashoffset": "-0.48px",
+      "#orbit-cyan-ribbon .orbit-body:stroke-dashoffset": "-0.470612px",
+      "#weave-blue-ribbon .weave-body:stroke-dashoffset": "0.0574011px",
+      "#weave-cyan-ribbon .weave-body:stroke-dashoffset": "0.113738px",
+      "#logo-geometry:opacity": "0"
+    },
+    {
+      "t_ms": 1450.0,
+      "#orbit-blue-ribbon .orbit-body:stroke-dashoffset": "-0.48px",
+      "#orbit-cyan-ribbon .orbit-body:stroke-dashoffset": "-0.48px",
+      "#weave-blue-ribbon .weave-body:stroke-dashoffset": "0.00223676px",
+      "#weave-cyan-ribbon .weave-body:stroke-dashoffset": "0.00998974px",
+      "#logo-geometry:opacity": "0.281119"
+    },
+    {
+      "t_ms": 1700.0,
+      "#orbit-blue-ribbon .orbit-body:stroke-dashoffset": "-0.48px",
+      "#orbit-cyan-ribbon .orbit-body:stroke-dashoffset": "-0.48px",
+      "#weave-blue-ribbon .weave-body:stroke-dashoffset": "0px",
+      "#weave-cyan-ribbon .weave-body:stroke-dashoffset": "0px",
+      "#logo-geometry:opacity": "0.985529"
+    }
+  ]
+}

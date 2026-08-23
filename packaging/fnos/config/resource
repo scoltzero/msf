@@ -1,0 +1,5 @@
+{
+    "port-config": { "protocol-file": "msf.sc" },
+    "systemd-unit": {},
+    "data-share": { "shares": [ { "name": "msf", "permission": { "rw": ["msf"] } } ] }
+}
