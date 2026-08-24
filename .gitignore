@@ -20,6 +20,7 @@ macos/MSFMenuBar/MSFMenuBar.xcodeproj/
 
 # Local tooling artifacts (not part of the project)
 .codex/
+.superpowers/
 .impeccable/
 .playwright-cli/
 graphify-out/
