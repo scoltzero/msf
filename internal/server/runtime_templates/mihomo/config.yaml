@@ -131,36 +131,36 @@ dns:
     - 127.0.0.1:8888
 
 proxy-groups:
-  - {name: Proxies, type: select, proxies: [香港节点, 新加坡节点, 韩国节点, 台湾节点, 日本节点, 美国节点, 省流节点, 高级节点, Manual, Direct, Airport]}
-  - {name: Manual, type: select, proxies: [台湾节点, 香港节点, Direct, 日本节点, 新加坡节点, 美国节点, 韩国节点, 省流节点, 高级节点, 游戏节点, Airport]}
-  - {name: Final, type: select, proxies: [Proxies, Direct, 香港节点, 新加坡节点, 韩国节点, 台湾节点, 日本节点, 美国节点, 省流节点, 高级节点, Manual, Airport]}
-  - {name: Speedtest, type: select, proxies: [Direct, Proxies, 香港节点, 新加坡节点, 韩国节点, 台湾节点, 日本节点, 美国节点, 省流节点, 高级节点, Manual, Airport]}
-  - {name: Google, type: select, proxies: [Proxies, 香港节点, 新加坡节点, 韩国节点, 台湾节点, 日本节点, 美国节点, Manual]}
-  - {name: AI, type: select, proxies: [美国节点, 新加坡节点, 韩国节点, 台湾节点, 日本节点, 香港节点, 省流节点, 高级节点, Manual, Direct, Airport]}
-  - {name: Game, type: select, proxies: [Proxies, Direct, 高级节点, 游戏节点]}
-  - {name: Netflix, type: select, proxies: [Proxies, 香港节点, 新加坡节点, 韩国节点, 台湾节点, 日本节点, 美国节点, 省流节点, 高级节点, Manual, Airport]}
-  - {name: YouTube, type: select, proxies: [Google, Proxies, 香港节点, 新加坡节点, 台湾节点, 日本节点, 美国节点, Manual, Airport]}
-  - {name: Disney+, type: select, proxies: [Proxies, 香港节点, 新加坡节点, 台湾节点, 日本节点, 美国节点, Manual, Airport]}
-  - {name: GlobalMedia, type: select, proxies: [Proxies, 香港节点, 台湾节点, 新加坡节点, 日本节点, 美国节点, Manual, Airport]}
-  - {name: BiliBili, type: select, proxies: [Direct, 香港节点, 台湾节点, Proxies, Manual]}
-  - {name: Scholar, type: select, proxies: [Proxies, Direct, 香港节点, 美国节点, Manual]}
-  - {name: Apple, type: select, proxies: [Direct, 香港节点, 新加坡节点, 韩国节点, 台湾节点, 日本节点, 美国节点, Manual]}
-  - {name: Microsoft, type: select, proxies: [Direct, Proxies]}
-  - {name: TikTok, type: select, proxies: [Proxies, 香港节点, 新加坡节点, 韩国节点, 台湾节点, 日本节点, 美国节点, 省流节点, 高级节点, Manual, Airport]}
-  - {name: Spotify, type: select, proxies: [Proxies, 香港节点, 新加坡节点, 韩国节点, 台湾节点, 日本节点, 美国节点, 省流节点, 高级节点, Manual, Airport]}
-  - {name: PT, type: select, proxies: [Direct, Proxies, 香港节点]}
-  - {name: Telegram, type: select, proxies: [Proxies, 香港节点, 新加坡节点, 韩国节点, 台湾节点, 日本节点, 美国节点]}
-  - {name: 高级节点, !!merge <<: *UrlTest, filter: *FilterVIP}
-  - {name: 游戏节点, !!merge <<: *UrlTest, filter: *FilterGame}
-  - {name: 香港节点, !!merge <<: *UrlTest, filter: *FilterHK}
-  - {name: 新加坡节点, !!merge <<: *UrlTest, filter: *FilterSG}
-  - {name: 韩国节点, !!merge <<: *UrlTest, filter: *FilterKR}
-  - {name: 台湾节点, !!merge <<: *UrlTest, filter: *FilterTW}
-  - {name: 日本节点, !!merge <<: *UrlTest, filter: *FilterJP}
-  - {name: 美国节点, !!merge <<: *UrlTest, filter: *FilterUS}
-  - {name: 省流节点, !!merge <<: *UrlTest, filter: *FilterBIG }
-  - {name: Airport, type: select, include-all: true, include-all-proxies: true, include-all-providers: true, filter: *FilterAll }
-  - {name: Direct, type: select, proxies: [DIRECT]}
+  - {name: Proxies, type: select, icon: 'https://raw.githubusercontent.com/Koolson/Qure/refs/heads/master/IconSet/Color/Filter.png', proxies: [香港节点, 新加坡节点, 韩国节点, 台湾节点, 日本节点, 美国节点, 省流节点, 高级节点, Manual, Direct, Airport]}
+  - {name: Manual, type: select, icon: 'https://raw.githubusercontent.com/Koolson/Qure/refs/heads/master/IconSet/Color/Clubhouse.png', proxies: [台湾节点, 香港节点, Direct, 日本节点, 新加坡节点, 美国节点, 韩国节点, 省流节点, 高级节点, 游戏节点, Airport]}
+  - {name: Final, type: select, icon: 'https://raw.githubusercontent.com/Koolson/Qure/refs/heads/master/IconSet/Color/Unlock.png', proxies: [Proxies, Direct, 香港节点, 新加坡节点, 韩国节点, 台湾节点, 日本节点, 美国节点, 省流节点, 高级节点, Manual, Airport]}
+  - {name: Speedtest, type: select, icon: 'https://raw.githubusercontent.com/Koolson/Qure/refs/heads/master/IconSet/Color/Speedtest.png', proxies: [Direct, Proxies, 香港节点, 新加坡节点, 韩国节点, 台湾节点, 日本节点, 美国节点, 省流节点, 高级节点, Manual, Airport]}
+  - {name: Google, type: select, icon: 'https://raw.githubusercontent.com/Koolson/Qure/refs/heads/master/IconSet/Color/Google_Search.png', proxies: [Proxies, 香港节点, 新加坡节点, 韩国节点, 台湾节点, 日本节点, 美国节点, Manual]}
+  - {name: AI, type: select, icon: 'https://raw.githubusercontent.com/Koolson/Qure/refs/heads/master/IconSet/Color/AI.png', proxies: [美国节点, 新加坡节点, 韩国节点, 台湾节点, 日本节点, 香港节点, 省流节点, 高级节点, Manual, Direct, Airport]}
+  - {name: Game, type: select, icon: 'https://raw.githubusercontent.com/Koolson/Qure/refs/heads/master/IconSet/Color/Game.png', proxies: [Proxies, Direct, 高级节点, 游戏节点]}
+  - {name: Netflix, type: select, icon: 'https://raw.githubusercontent.com/Koolson/Qure/refs/heads/master/IconSet/Color/Netflix.png', proxies: [Proxies, 香港节点, 新加坡节点, 韩国节点, 台湾节点, 日本节点, 美国节点, 省流节点, 高级节点, Manual, Airport]}
+  - {name: YouTube, type: select, icon: 'https://raw.githubusercontent.com/Koolson/Qure/refs/heads/master/IconSet/Color/YouTube.png', proxies: [Google, Proxies, 香港节点, 新加坡节点, 台湾节点, 日本节点, 美国节点, Manual, Airport]}
+  - {name: Disney+, type: select, icon: 'https://raw.githubusercontent.com/Koolson/Qure/refs/heads/master/IconSet/Color/Disney.png', proxies: [Proxies, 香港节点, 新加坡节点, 台湾节点, 日本节点, 美国节点, Manual, Airport]}
+  - {name: GlobalMedia, type: select, icon: 'https://raw.githubusercontent.com/Koolson/Qure/refs/heads/master/IconSet/Color/Media.png', proxies: [Proxies, 香港节点, 台湾节点, 新加坡节点, 日本节点, 美国节点, Manual, Airport]}
+  - {name: BiliBili, type: select, icon: 'https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/icon/qure/color/bilibili.png', proxies: [Direct, 香港节点, 台湾节点, Proxies, Manual]}
+  - {name: Scholar, type: select, icon: 'https://raw.githubusercontent.com/Koolson/Qure/refs/heads/master/IconSet/Color/Scholar.png', proxies: [Proxies, Direct, 香港节点, 美国节点, Manual]}
+  - {name: Apple, type: select, icon: 'https://raw.githubusercontent.com/Koolson/Qure/refs/heads/master/IconSet/Color/Apple.png', proxies: [Direct, 香港节点, 新加坡节点, 韩国节点, 台湾节点, 日本节点, 美国节点, Manual]}
+  - {name: Microsoft, type: select, icon: 'https://raw.githubusercontent.com/Koolson/Qure/refs/heads/master/IconSet/Color/Microsoft.png', proxies: [Direct, Proxies]}
+  - {name: TikTok, type: select, icon: 'https://raw.githubusercontent.com/Koolson/Qure/refs/heads/master/IconSet/Color/TikTok.png', proxies: [Proxies, 香港节点, 新加坡节点, 韩国节点, 台湾节点, 日本节点, 美国节点, 省流节点, 高级节点, Manual, Airport]}
+  - {name: Spotify, type: select, icon: 'https://raw.githubusercontent.com/Koolson/Qure/refs/heads/master/IconSet/Color/Spotify.png', proxies: [Proxies, 香港节点, 新加坡节点, 韩国节点, 台湾节点, 日本节点, 美国节点, 省流节点, 高级节点, Manual, Airport]}
+  - {name: PT, type: select, icon: 'https://raw.githubusercontent.com/Koolson/Qure/refs/heads/master/IconSet/Color/Media.png', proxies: [Direct, Proxies, 香港节点]}
+  - {name: Telegram, type: select, icon: 'https://raw.githubusercontent.com/Koolson/Qure/refs/heads/master/IconSet/Color/Telegram_X.png', proxies: [Proxies, 香港节点, 新加坡节点, 韩国节点, 台湾节点, 日本节点, 美国节点]}
+  - {name: 高级节点, !!merge <<: *UrlTest, filter: *FilterVIP, icon: 'https://raw.githubusercontent.com/Koolson/Qure/refs/heads/master/IconSet/Color/VIP.png'}
+  - {name: 游戏节点, !!merge <<: *UrlTest, filter: *FilterGame, icon: 'https://raw.githubusercontent.com/Koolson/Qure/refs/heads/master/IconSet/Color/Game.png'}
+  - {name: 香港节点, !!merge <<: *UrlTest, filter: *FilterHK, icon: 'https://raw.githubusercontent.com/Koolson/Qure/refs/heads/master/IconSet/Color/Hong_Kong.png'}
+  - {name: 新加坡节点, !!merge <<: *UrlTest, filter: *FilterSG, icon: 'https://raw.githubusercontent.com/Koolson/Qure/refs/heads/master/IconSet/Color/Singapore.png'}
+  - {name: 韩国节点, !!merge <<: *UrlTest, filter: *FilterKR, icon: 'https://raw.githubusercontent.com/Koolson/Qure/refs/heads/master/IconSet/Color/Korea.png'}
+  - {name: 台湾节点, !!merge <<: *UrlTest, filter: *FilterTW, icon: 'https://raw.githubusercontent.com/Koolson/Qure/refs/heads/master/IconSet/Color/China.png'}
+  - {name: 日本节点, !!merge <<: *UrlTest, filter: *FilterJP, icon: 'https://raw.githubusercontent.com/Koolson/Qure/refs/heads/master/IconSet/Color/JP.png'}
+  - {name: 美国节点, !!merge <<: *UrlTest, filter: *FilterUS, icon: 'https://raw.githubusercontent.com/Koolson/Qure/refs/heads/master/IconSet/Color/United_States.png'}
+  - {name: 省流节点, !!merge <<: *UrlTest, filter: *FilterBIG, icon: 'https://raw.githubusercontent.com/Koolson/Qure/refs/heads/master/IconSet/Color/Proxy.png' }
+  - {name: Airport, type: select, include-all: true, include-all-proxies: true, include-all-providers: true, filter: *FilterAll, icon: 'https://raw.githubusercontent.com/Koolson/Qure/refs/heads/master/IconSet/Color/Airport.png' }
+  - {name: Direct, type: select, proxies: [DIRECT], icon: 'https://raw.githubusercontent.com/Koolson/Qure/refs/heads/master/IconSet/Color/Direct.png'}
 
 rule-providers:
   # 域名规则

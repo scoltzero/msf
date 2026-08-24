@@ -86,6 +86,10 @@ func TestMihomoDefaultRoutingIsCompleteAndDeduplicated(t *testing.T) {
 		}
 	}
 	for groupName, group := range groups {
+		icon, _ := group["icon"].(string)
+		if !strings.HasPrefix(icon, "https://") {
+			t.Errorf("proxy group %q icon=%q, want an HTTPS icon URL", groupName, icon)
+		}
 		proxies, _ := group["proxies"].([]any)
 		for _, value := range proxies {
 			proxyName, _ := value.(string)

@@ -13,7 +13,7 @@ MSF 自有代码按照 GNU GPL v3.0 发布。下列已经标明的第三方代�
 | MSF file scope | Source | Use | License or status |
 |---|---|---|---|
 | `internal/server/runtime_templates/mosdns/**` | yyysuo/mosdns, yyysuo/firetv, MetaCubeX/meta-rules-dat | MosDNS plugin configuration, runtime templates, and rule data | GPL-3.0 |
-| `internal/server/runtime_templates/mihomo/config.yaml` | MetaCubeX/mihomo configuration schema and remote MetaCubeX rule providers | Generated default Mihomo configuration | Mihomo MIT; referenced rule sources retain their own terms |
+| `internal/server/runtime_templates/mihomo/config.yaml` | MetaCubeX/mihomo configuration schema and remote MetaCubeX rule providers; Koolson/Qure and blackmatrix7/ios_rule_script remote policy-group icons | Generated default Mihomo configuration and remote policy-group artwork | Mihomo MIT; referenced rule and icon sources retain their own terms |
 | `web/src/components/mihomo/overview/earth/**` | Zephyruso/zashboard v3.18.0 | Earth renderer, route model, and GeoIP worker | MIT |
 | `web/src/assets/images/earth/**` | Solar System Scope | Earth textures | CC BY 4.0 |
 | `web/src/components/react-bits/GradientWaves.*` | React Bits | Animated WebGL background | MIT + Commons Clause |
