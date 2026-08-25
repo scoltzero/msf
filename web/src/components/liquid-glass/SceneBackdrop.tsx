@@ -26,14 +26,14 @@ function readBackdropState() {
 
   return {
     dark: root.classList.contains("dark"),
-    scene: (rawScene === "static" || rawScene === "neutral" ? rawScene : "dynamic") as SceneMode,
+    scene: (rawScene === "static" || rawScene === "neutral" ? rawScene : "neutral") as SceneMode,
     quality: (rawQuality === "balanced" || rawQuality === "reduced" ? rawQuality : "full") as QualityMode,
     performanceProfile: (rawPerformanceProfile === "proxy-dense" ? rawPerformanceProfile : "default") as ScenePerformanceProfile,
     reducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches,
   };
 }
 
-export function SceneBackdrop() {
+export function SceneBackdrop({ scene: forcedScene }: { scene?: SceneMode }) {
   const [state, setState] = useState(readBackdropState);
 
   useEffect(() => {
@@ -55,10 +55,11 @@ export function SceneBackdrop() {
     };
   }, []);
 
+  const scene = forcedScene || state.scene;
   const palette = state.dark ? WAVE_PALETTES.dark : WAVE_PALETTES.light;
-  const animated = state.scene === "dynamic" && state.quality === "full" && !state.reducedMotion;
+  const animated = scene === "dynamic" && state.quality === "full" && !state.reducedMotion;
   const balanced = state.quality === "balanced";
-  const visible = state.scene !== "neutral" && state.quality !== "reduced";
+  const visible = scene !== "neutral" && state.quality !== "reduced";
   const proxyDense = state.performanceProfile === "proxy-dense";
 
   return (

@@ -6,7 +6,7 @@ PREFIX="/usr/local"
 DEFAULT_DATA_DIR="/opt/msf"
 DATA_DIR="$DEFAULT_DATA_DIR"
 HOST="0.0.0.0"
-PORT="7777"
+PORT="7788"
 SERVICE_NAME="msf"
 START_SERVICE="1"
 
@@ -18,7 +18,7 @@ Options:
   --prefix PATH        Install binary under PATH/bin (default: /usr/local)
   --data-dir PATH      msf data directory (default: /opt/msf)
   --host HOST          HTTP listen host (default: 0.0.0.0)
-  --port PORT          HTTP listen port (default: 7777)
+  --port PORT          HTTP listen port (default: 7788)
   --service-name NAME  systemd service name (default: msf)
   --no-start           Install and enable the service, but do not start it
   -h, --help           Show this help

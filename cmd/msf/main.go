@@ -70,8 +70,8 @@ func run(args []string) error {
 	configDir := fs.String("c", defaultDataDir(), "data/config directory")
 	fs.StringVar(configDir, "config", defaultDataDir(), "data/config directory")
 	host := fs.String("host", "0.0.0.0", "listen host")
-	port := fs.Int("p", 7777, "HTTP listen port")
-	fs.IntVar(port, "port", 7777, "HTTP listen port")
+	port := fs.Int("p", 7788, "HTTP listen port")
+	fs.IntVar(port, "port", 7788, "HTTP listen port")
 	prefix := fs.String("prefix", "/usr/local", "install prefix for uninstall")
 	serviceName := fs.String("service-name", "msf", "systemd service name")
 	purge := fs.Bool("purge", false, "remove data directory during uninstall")
@@ -201,7 +201,7 @@ func run(args []string) error {
 
 func printUsage() {
 	fmt.Print(`Usage:
-  msf serve [--config /opt/msf] [--host 0.0.0.0] [--port 7777]
+  msf serve [--config /opt/msf] [--host 0.0.0.0] [--port 7788]
   msf init [--config /opt/msf]
   msf status [--config /opt/msf]
   msf restart [--config /opt/msf]
@@ -709,7 +709,7 @@ func runDoctor(dataDir, serviceName string) error {
 		Name string
 		Port string
 	}{
-		{"web", "7777"}, {"mihomo-controller", "9090"}, {"mosdns-api", "9099"}, {"dns", "53"},
+		{"web", "7788"}, {"mihomo-controller", "9090"}, {"mosdns-api", "9099"}, {"dns", "53"},
 		{"http", "7890"}, {"socks", "7891"}, {"mixed", "7892"}, {"tproxy", "7896"}, {"redirect", "7877"},
 	} {
 		fmt.Printf("port %-18s :%-5s %s\n", item.Name, item.Port, portStatus(item.Port))
@@ -1133,7 +1133,7 @@ func resolveUpdatePort(opts updateOptions) int {
 	if opts.Port > 0 {
 		return opts.Port
 	}
-	return 7777
+	return 7788
 }
 
 type serviceOptions struct {

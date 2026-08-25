@@ -166,7 +166,6 @@ interface UpdateConfigState {
   check_interval: number;
   auto_update: boolean;
   notify: boolean;
-  mosdns_upgrade_mode: "full" | "incremental" | "reset";
   mihomo_upgrade_mode: "skip" | "full";
 }
 
@@ -214,10 +213,6 @@ const RELEASE_REPO_NAME = "msf";
 const RELEASE_REPO = `${RELEASE_REPO_OWNER}/${RELEASE_REPO_NAME}`;
 const RELEASE_REPO_URL = `https://github.com/${RELEASE_REPO}`;
 const COMPONENT_RELEASE_LINKS: Record<string, { label: string; url: string }> = {
-  mosdns: {
-    label: "yyysuo/mosdns/releases",
-    url: "https://github.com/yyysuo/mosdns/releases",
-  },
   mihomo: {
     label: "MetaCubeX/mihomo/releases",
     url: "https://github.com/MetaCubeX/mihomo/releases",
@@ -392,6 +387,8 @@ function updateStepIndex(item?: UpdateStatus) {
 
 const updateFlowSteps = ["检查版本", "连接下载", "下载更新", "已下载", "安装重启", "完成"];
 
+const componentUpdateComponents = ["mihomo", "zashboard"] as const;
+
 function shortDigest(value?: string) {
   const digest = String(value || "").trim();
   if (!digest) return "-";
@@ -454,7 +451,6 @@ const defaultUpdateConfig: UpdateConfigState = {
   check_interval: 43200,
   auto_update: false,
   notify: true,
-  mosdns_upgrade_mode: "full",
   mihomo_upgrade_mode: "skip",
 };
 
@@ -1505,7 +1501,7 @@ function effectiveContentPlateOpacity(
 function AppearanceTab({ showToast }: { showToast: (message: string) => void }) {
   const [theme, setTheme] = useState<ThemeMode>("system");
   const { language, setLanguage } = useLanguage();
-  const [scene, setScene] = useState<GlassSceneMode>("dynamic");
+  const [scene, setScene] = useState<GlassSceneMode>("neutral");
   const [quality, setQuality] = useState<GlassQuality>("full");
   const [saved, setSaved] = useState<ContentPlateOpacity>(() => readLocalContentPlateOpacity());
   const [draft, setDraft] = useState<ContentPlateOpacity>(() => readLocalContentPlateOpacity());
@@ -1689,7 +1685,7 @@ function AppearanceTab({ showToast }: { showToast: (message: string) => void }) 
         applyThemeMode(nextTheme);
         setLanguage(data.language === "en-US" || data.language === "en" ? "en-US" : "zh-CN");
         const storedScene = data.scene || localStorage.getItem("msf-glass-scene");
-        const nextScene: GlassSceneMode = storedScene === "static" || storedScene === "neutral" ? storedScene : "dynamic";
+        const nextScene: GlassSceneMode = storedScene === "static" || storedScene === "neutral" ? storedScene : "neutral";
         const storedQuality = data.quality || localStorage.getItem("msf-glass-quality");
         const nextQuality: GlassQuality = storedQuality === "balanced" || storedQuality === "reduced" ? storedQuality : "full";
         setScene(nextScene);
@@ -2107,6 +2103,7 @@ const updateIntervals = [
 function ComponentUpdateCard({
   name,
   component,
+  localOnly = false,
   item,
   config,
   busy,
@@ -2117,13 +2114,14 @@ function ComponentUpdateCard({
 }: {
   name: string;
   component: string;
+  localOnly?: boolean;
   item?: ComponentUpdateState;
   config?: ComponentUpdateConfigState;
   busy?: string;
   onUpload: (component: string, file: File) => void;
-  onCheck: (component: string) => void;
-  onUpdate: (component: string) => void;
-  onConfigChange: (component: string, patch: Partial<ComponentUpdateConfigState>) => void;
+  onCheck?: (component: string) => void;
+  onUpdate?: (component: string) => void;
+  onConfigChange?: (component: string, patch: Partial<ComponentUpdateConfigState>) => void;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const current = item?.current_version || "-";
@@ -2138,7 +2136,7 @@ function ComponentUpdateCard({
   const localUploaded = item?.installed_verification_source === "local-upload" || item?.verification_source === "local-upload";
   const VerificationIcon = installedVerified ? Check : ShieldAlert;
   const verificationTone = installedVerified ? "text-green-600" : localUploaded ? "text-amber-600" : "text-muted-foreground";
-  const releaseLink = COMPONENT_RELEASE_LINKS[component];
+  const releaseLink = localOnly ? undefined : COMPONENT_RELEASE_LINKS[component];
 
   return (
     <div className="rounded-xl border border-border/50 p-4">
@@ -2146,16 +2144,23 @@ function ComponentUpdateCard({
         <div className="min-w-0">
           <div className="flex items-center gap-2 font-semibold text-foreground">
             {name}
-            {hasUpdate ? <span className="rounded-full bg-green-500/10 px-2 py-0.5 text-xs text-green-600">可更新</span> : null}
-            {!hasUpdate && canUpdate ? <span className="rounded-full bg-blue-500/10 px-2 py-0.5 text-xs text-blue-600">可覆盖</span> : null}
+            {localOnly ? <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">仅本地上传</span> : null}
+            {!localOnly && hasUpdate ? <span className="rounded-full bg-green-500/10 px-2 py-0.5 text-xs text-green-600">可更新</span> : null}
+            {!localOnly && !hasUpdate && canUpdate ? <span className="rounded-full bg-blue-500/10 px-2 py-0.5 text-xs text-blue-600">可覆盖</span> : null}
           </div>
-          <div className="mt-1 text-xs text-muted-foreground">
-            状态: {statusLabel(item?.status)} · 最后检查: {formatDateTime(item?.last_check_time)}
-          </div>
-          <div className={cn("mt-1 flex items-center gap-1 text-xs", verificationTone)}>
-            <VerificationIcon className="h-3.5 w-3.5" />
-            <span>{componentVerificationLabel(item)}</span>
-          </div>
+          {localOnly ? (
+            <div className="mt-1 text-xs text-muted-foreground">通过本地文件安装或覆盖，不进行在线检查和在线更新。</div>
+          ) : (
+            <>
+              <div className="mt-1 text-xs text-muted-foreground">
+                状态: {statusLabel(item?.status)} · 最后检查: {formatDateTime(item?.last_check_time)}
+              </div>
+              <div className={cn("mt-1 flex items-center gap-1 text-xs", verificationTone)}>
+                <VerificationIcon className="h-3.5 w-3.5" />
+                <span>{componentVerificationLabel(item)}</span>
+              </div>
+            </>
+          )}
           {releaseLink ? (
             <a
               href={releaseLink.url}
@@ -2185,16 +2190,20 @@ function ComponentUpdateCard({
             <Upload className="h-3.5 w-3.5" />
             本地上传
           </OutlineButton>
-          <OutlineButton disabled={isBusy} onClick={() => onCheck(component)} className="h-8 min-w-[76px] px-3 text-xs">
-            <RefreshCw className={cn("h-3.5 w-3.5", isBusy && "animate-spin")} />
-            检查更新
-          </OutlineButton>
-          <PrimaryButton disabled={isBusy || !canUpdate} onClick={() => onUpdate(component)} className="h-8 min-w-[52px] px-3 text-xs">
-            {hasUpdate ? "更新" : "覆盖更新"}
-          </PrimaryButton>
+          {!localOnly && onCheck && onUpdate ? (
+            <>
+              <OutlineButton disabled={isBusy} onClick={() => onCheck(component)} className="h-8 min-w-[76px] px-3 text-xs">
+                <RefreshCw className={cn("h-3.5 w-3.5", isBusy && "animate-spin")} />
+                检查更新
+              </OutlineButton>
+              <PrimaryButton disabled={isBusy || !canUpdate} onClick={() => onUpdate(component)} className="h-8 min-w-[52px] px-3 text-xs">
+                {hasUpdate ? "更新" : "覆盖更新"}
+              </PrimaryButton>
+            </>
+          ) : null}
         </div>
       </div>
-      {progress > 0 ? (
+      {!localOnly && progress > 0 ? (
         <div className="mb-3">
           <div className="mb-1 flex justify-between text-xs text-muted-foreground">
             <span>进度</span>
@@ -2205,36 +2214,40 @@ function ComponentUpdateCard({
           </div>
         </div>
       ) : null}
-      <div className="grid gap-2 text-sm md:grid-cols-2">
-        <div className="rounded-lg bg-muted/20 p-3">
-          <div className="text-xs text-muted-foreground">当前版本</div>
-          <div className="mt-1 font-mono text-foreground">{current}</div>
-          <div className="mt-1 break-all text-xs text-muted-foreground">{currentDetail ? `详情: ${currentDetail}` : "时间: -"}</div>
-        </div>
-        <div className="rounded-lg bg-muted/20 p-3">
-          <div className="text-xs text-muted-foreground">最新版本</div>
-          <div className="mt-1 font-mono text-foreground">{latest}</div>
-          <div className="mt-1 text-xs text-muted-foreground">时间: {formatDateTime(item?.last_check_time)}</div>
-        </div>
-      </div>
-      <div className="mt-4 space-y-3">
-        <UpdateConfigRow title="自动检查" description="定期检查是否有新版本可用">
-          <Toggle checked={effectiveConfig.auto_check} onChange={(checked) => onConfigChange(component, { auto_check: checked })} />
-        </UpdateConfigRow>
-        <UpdateConfigRow title="检查间隔" description="设置检查更新的时间间隔">
-          <SmallSelect
-            value={String(effectiveConfig.check_interval)}
-            onChange={(event) => onConfigChange(component, { check_interval: Number(event.target.value) })}
-          >
-            {updateIntervals.map((option) => (
-              <option key={option.value} value={option.value}>{option.label}</option>
-            ))}
-          </SmallSelect>
-        </UpdateConfigRow>
-        <UpdateConfigRow title="自动更新" description="检测到新版本后自动下载">
-          <Toggle checked={effectiveConfig.auto_update} onChange={(checked) => onConfigChange(component, { auto_update: checked })} />
-        </UpdateConfigRow>
-      </div>
+      {!localOnly ? (
+        <>
+          <div className="grid gap-2 text-sm md:grid-cols-2">
+            <div className="rounded-lg bg-muted/20 p-3">
+              <div className="text-xs text-muted-foreground">当前版本</div>
+              <div className="mt-1 font-mono text-foreground">{current}</div>
+              <div className="mt-1 break-all text-xs text-muted-foreground">{currentDetail ? `详情: ${currentDetail}` : "时间: -"}</div>
+            </div>
+            <div className="rounded-lg bg-muted/20 p-3">
+              <div className="text-xs text-muted-foreground">最新版本</div>
+              <div className="mt-1 font-mono text-foreground">{latest}</div>
+              <div className="mt-1 text-xs text-muted-foreground">时间: {formatDateTime(item?.last_check_time)}</div>
+            </div>
+          </div>
+          <div className="mt-4 space-y-3">
+            <UpdateConfigRow title="自动检查" description="定期检查是否有新版本可用">
+              <Toggle checked={effectiveConfig.auto_check} onChange={(checked) => onConfigChange?.(component, { auto_check: checked })} />
+            </UpdateConfigRow>
+            <UpdateConfigRow title="检查间隔" description="设置检查更新的时间间隔">
+              <SmallSelect
+                value={String(effectiveConfig.check_interval)}
+                onChange={(event) => onConfigChange?.(component, { check_interval: Number(event.target.value) })}
+              >
+                {updateIntervals.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </SmallSelect>
+            </UpdateConfigRow>
+            <UpdateConfigRow title="自动更新" description="检测到新版本后自动下载">
+              <Toggle checked={effectiveConfig.auto_update} onChange={(checked) => onConfigChange?.(component, { auto_update: checked })} />
+            </UpdateConfigRow>
+          </div>
+        </>
+      ) : null}
     </div>
   );
 }
@@ -2372,7 +2385,7 @@ function UpdateTab({ showToast }: { showToast: (message: string) => void }) {
       checkRemote ? api<any>("/api/v1/update/releases") : Promise.resolve(null),
       api<any>("/api/v1/component-updates"),
       api<any>("/api/v1/update/config"),
-      Promise.all(["mosdns", "mihomo", "zashboard"].map((component) => api<any>(`/api/v1/component-updates/${component}/config`))),
+      Promise.all(componentUpdateComponents.map((component) => api<any>(`/api/v1/component-updates/${component}/config`))),
     ]);
 
     if (versionResult.status === "fulfilled") {
@@ -2851,20 +2864,6 @@ function UpdateTab({ showToast }: { showToast: (message: string) => void }) {
           <UpdateConfigRow title="更新通知" description="有新版本时通知用户">
             <Toggle checked={updateConfig.notify} onChange={(checked) => void saveUpdateConfig({ notify: checked })} />
           </UpdateConfigRow>
-          <UpdateConfigRow title="MosDNS 升级方式" description="默认推荐全量升级。">
-            <SmallSelect
-              className="w-36"
-              value={updateConfig.mosdns_upgrade_mode}
-              onChange={(event) => void saveUpdateConfig({ mosdns_upgrade_mode: event.target.value as UpdateConfigState["mosdns_upgrade_mode"] })}
-            >
-              <option value="full">全量升级（推荐）</option>
-              <option value="incremental">增量升级</option>
-              <option value="reset">重置升级（谨慎）</option>
-            </SmallSelect>
-          </UpdateConfigRow>
-          <div className="rounded-lg border border-border/50 bg-muted/20 p-3 text-xs leading-relaxed text-muted-foreground">
-            全量升级：保留系统里已保存的关键设置，其余按新模板覆盖；升级完成后会在 MosDNS 启动时自动回写这些设置。增量升级：尽量保留当前配置与规则，按升级规则补齐新文件。重置升级：完全放弃现有改动，全部使用新模板；仅在需要彻底重置时使用。
-          </div>
           <UpdateConfigRow title="Mihomo 升级方式" description="不升级将完全保留当前配置；全量升级仅保留机场与 VPS 节点相关改动。">
             <SmallSelect
               className="w-36"
@@ -2884,7 +2883,7 @@ function UpdateTab({ showToast }: { showToast: (message: string) => void }) {
       <Card title="组件更新" Icon={Download}>
         <p className="mb-4 text-sm text-muted-foreground">组件更新管理</p>
         <div className="grid gap-4 lg:grid-cols-2">
-          <ComponentUpdateCard name="MosDNS" component="mosdns" item={componentItem("mosdns")} config={componentConfigs.mosdns} busy={componentBusy} onUpload={uploadComponent} onCheck={checkComponent} onUpdate={updateComponent} onConfigChange={(item, patch) => void saveComponentConfig(item, patch)} />
+          <ComponentUpdateCard name="MosDNS" component="mosdns" localOnly item={componentItem("mosdns")} busy={componentBusy} onUpload={uploadComponent} />
           <ComponentUpdateCard name="Mihomo" component="mihomo" item={componentItem("mihomo")} config={componentConfigs.mihomo} busy={componentBusy} onUpload={uploadComponent} onCheck={checkComponent} onUpdate={updateComponent} onConfigChange={(item, patch) => void saveComponentConfig(item, patch)} />
           <ComponentUpdateCard name="Zashboard" component="zashboard" item={componentItem("zashboard")} config={componentConfigs.zashboard} busy={componentBusy} onUpload={uploadComponent} onCheck={checkComponent} onUpdate={updateComponent} onConfigChange={(item, patch) => void saveComponentConfig(item, patch)} />
         </div>

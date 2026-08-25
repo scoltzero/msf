@@ -14,13 +14,13 @@ sudo ./install.sh
 
 - 二进制：`/usr/local/bin/msf`
 - 数据目录：`/opt/msf`
-- WebUI：`http://<server-ip>:7777`
+- WebUI：`http://<server-ip>:7788`
 - systemd 服务：`msf`
 
 自定义安装：
 
 ```sh
-sudo ./install.sh --data-dir /opt/msf --host 0.0.0.0 --port 7777
+sudo ./install.sh --data-dir /opt/msf --host 0.0.0.0 --port 7788
 ```
 
 ## 停止

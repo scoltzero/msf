@@ -519,7 +519,7 @@ func (a *App) createFactoryResetBaseLayout(secret string, state factoryResetStat
 	}
 	cfg := SetupConfig{
 		Timezone:          "Asia/Shanghai",
-		WebPort:           "7777",
+		WebPort:           "7788",
 		SelectedInterface: "eth0",
 		MihomoCoreType:    "meta",
 		AutoSetDNS:        true,

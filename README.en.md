@@ -60,7 +60,7 @@
 
 1. Download the package for your platform from [Latest Release](https://github.com/scoltzero/msf/releases/latest).
 2. Follow the matching [platform install guide](#platform-support).
-3. Open `http://<server-ip>:7777` and complete the six-step setup flow.
+3. Open `http://<server-ip>:7788` and complete the six-step setup flow.
 4. Configure DHCP DNS and the Fake-IP static route only on a router you own or are authorized to manage.
 
 <details>
@@ -163,7 +163,7 @@ If MSF is useful to you, support the project with a Star, issue reports, documen
 ## Development
 
 ```bash
-go run ./cmd/msf serve -c ./data -p 7777
+go run ./cmd/msf serve -c ./data -p 7788
 ```
 
 See [RELEASING.md](RELEASING.md) for release engineering and [packaging/unraid/README.md](packaging/unraid/README.md) for Unraid packaging.

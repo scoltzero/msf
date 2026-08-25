@@ -3,7 +3,7 @@ export PATH="/usr/sbin:/sbin:/usr/bin:/bin:$PATH"
 
 BIN="${TRIM_APPDEST}/msf"
 DATA="${TRIM_PKGVAR:-${TRIM_APPDEST}/var}"
-PORT="${TRIM_SERVICE_PORT:-7777}"
+PORT="${TRIM_SERVICE_PORT:-7788}"
 export MSF_DATA_DIR="${DATA}"
 
 LOG_FILE="${DATA}/msf.log"

@@ -251,7 +251,7 @@ func applySetupStringDefaults(cfg *SetupConfig) {
 		cfg.Timezone = "Asia/Shanghai"
 	}
 	if cfg.WebPort == "" {
-		cfg.WebPort = "7777"
+		cfg.WebPort = "7788"
 	}
 	cfg.MihomoCoreType = "meta"
 	if cfg.DNSOn == "" {
@@ -554,7 +554,7 @@ func (a *App) mihomoConfigPortSummary() map[string]any {
 
 func (a *App) structuredUpdateSummary() map[string]any {
 	components := []map[string]any{}
-	for _, component := range []string{"mosdns", "mihomo", "zashboard"} {
+	for _, component := range defaultComponentUpdateComponents() {
 		components = append(components, a.componentUpdateState(component))
 	}
 	return map[string]any{

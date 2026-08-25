@@ -10,7 +10,7 @@ import { api, apiList } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useVirtualLogRows } from "@/features/logs/useVirtualLogRows";
 
-type Service = "msf" | "mosdns" | "singbox" | "mihomo";
+type Service = "msf" | "mosdns" | "mihomo";
 type Level = "ERROR" | "WARN" | "INFO" | "DEBUG";
 
 interface LogEntry {
@@ -31,7 +31,7 @@ interface NormalizedLogEntry {
   searchText: string;
 }
 
-const services: Service[] = ["msf", "mosdns", "singbox", "mihomo"];
+const services: Service[] = ["msf", "mosdns", "mihomo"];
 const levels: Array<"all" | Level> = ["all", "ERROR", "WARN", "INFO", "DEBUG"];
 const badgeClass: Record<Level, string> = {
   ERROR: "bg-red-600 dark:bg-red-500 text-white",
@@ -46,7 +46,7 @@ const LOG_ROW_HEIGHT = 24;
 const LOG_OVERSCAN = 10;
 
 function normalizeService(value?: string): Service {
-  if (value === "mosdns" || value === "singbox" || value === "mihomo") return value;
+  if (value === "mosdns" || value === "mihomo") return value;
   return "msf";
 }
 

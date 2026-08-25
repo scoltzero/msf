@@ -1,12 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { Network, Play, RefreshCw, Square, TriangleAlert, Zap } from "lucide-react";
+import { Network, Play, RefreshCw, Square, Zap } from "lucide-react";
 import { api, apiData, formatBytes, formatPercent } from "@/lib/api";
 import { useApiPath } from "@/lib/use-api";
 import { ToastStack, type ToastItem } from "@/components/rules/RuleDialogs";
-
-type Engine = "mihomo" | "singbox";
 
 function InfoBit({ label, value }: { label: string; value: string }) {
   return (
@@ -33,12 +31,10 @@ function displayUptime(value: unknown) {
 }
 
 export function ProxyServiceManager() {
-  const [engine, setEngine] = useState<Engine>("mihomo");
   const [busy, setBusy] = useState("");
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const mihomo = useApiPath<any>("/api/v1/mihomo/status", [], 3000);
-  const singbox = useApiPath<any>("/api/v1/singbox/status", [], 5000);
-  const current = engine === "mihomo" ? normalizeStatus(mihomo.data) : normalizeStatus(singbox.data);
+  const current = normalizeStatus(mihomo.data);
   const running = Boolean(current.running || current.status === "running");
   const installed = current.installed !== false;
 
@@ -50,15 +46,13 @@ export function ProxyServiceManager() {
 
   const reload = () => {
     void mihomo.reload();
-    void singbox.reload();
   };
 
   const runAction = async (action: "start" | "stop" | "restart") => {
-    const service = engine === "mihomo" ? "mihomo" : "singbox";
     setBusy(action);
-    showToast(`${engine === "mihomo" ? "Mihomo" : "Sing-Box"} 正在${action === "start" ? "启动" : action === "stop" ? "停止" : "重启"}...`);
+    showToast(`Mihomo 正在${action === "start" ? "启动" : action === "stop" ? "停止" : "重启"}...`);
     try {
-      const payload = await api<any>(`/api/v1/services/${service}/${action}?wait=1&timeout=5`, { method: "POST" });
+      const payload = await api<any>(`/api/v1/services/mihomo/${action}?wait=1&timeout=5`, { method: "POST" });
       if (payload.success === false) throw new Error(payload.error || "服务操作失败");
       showToast("操作完成");
       reload();
@@ -78,42 +72,9 @@ export function ProxyServiceManager() {
         </div>
         <div>
           <h1 className="text-xl md:text-2xl font-bold leading-none text-foreground">代理服务管理</h1>
-          <p className="text-xs md:text-sm text-muted-foreground mt-0.5">Sing-Box / Mihomo 二选一管理</p>
+          <p className="text-xs md:text-sm text-muted-foreground mt-0.5">Mihomo 代理核心管理</p>
         </div>
       </div>
-
-      <div className="grid gap-3 md:grid-cols-2">
-        {[
-          { key: "mihomo" as Engine, label: "Mihomo", data: normalizeStatus(mihomo.data), icon: Zap },
-          { key: "singbox" as Engine, label: "Sing-Box", data: normalizeStatus(singbox.data), icon: TriangleAlert },
-        ].map(({ key, label, data, icon: Icon }) => {
-          const isRunning = Boolean(data.running || data.status === "running");
-          const isInstalled = data.installed !== false;
-          return (
-            <button
-              key={key}
-              onClick={() => setEngine(key)}
-              className={
-                "p-4 rounded-lg border-2 transition-all text-left relative overflow-hidden " +
-                (engine === key ? "border-primary bg-primary/5 shadow-md" : "border-border/50 hover:border-primary/50 hover:bg-accent/30")
-              }
-            >
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <Icon className="h-4 w-4 text-primary" />
-                  <h3 className="text-base font-bold">{label}</h3>
-                  <div className={(isRunning ? "bg-primary animate-pulse" : "bg-gray-400") + " h-2 w-2 rounded-full"} />
-                </div>
-                <div className={(isRunning ? "bg-green-600 dark:bg-green-500" : isInstalled ? "bg-gray-500" : "bg-secondary text-secondary-foreground") + " inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold border-transparent text-white"}>
-                  {isRunning ? "运行中" : isInstalled ? "已停止" : "未安装"}
-                </div>
-              </div>
-              <div className="text-xs text-muted-foreground">{data.version || data.message || "等待状态刷新"}</div>
-            </button>
-          );
-        })}
-      </div>
-
       <div className="rounded-[12px] border bg-card text-card-foreground !border-border/20 !shadow-none transition-shadow duration-300 hover:!shadow-sm overflow-hidden">
         <div className="bg-gradient-to-r from-muted/20 to-transparent border-b px-5 py-4">
           <div className="flex items-start justify-between gap-4 flex-wrap">
@@ -130,7 +91,7 @@ export function ProxyServiceManager() {
                 <InfoBit label="运行时间：" value={displayUptime(current.uptime ?? current.uptime_seconds)} />
                 <InfoBit label="PID：" value={String(current.pid || "-")} />
               </div>
-              <div className="text-xs text-muted-foreground font-mono truncate">{current.config_path || current.path || (engine === "mihomo" ? "configs/mihomo/config.yaml" : "configs/singbox/config.json")}</div>
+              <div className="text-xs text-muted-foreground font-mono truncate">{current.config_path || current.path || "configs/mihomo/config.yaml"}</div>
             </div>
             <div className="flex flex-wrap gap-2">
               <button
@@ -154,11 +115,6 @@ export function ProxyServiceManager() {
         </div>
       </div>
 
-      {engine === "singbox" && (
-        <div className="rounded-xl border border-yellow-500/30 bg-yellow-500/10 p-4 text-sm text-yellow-800 dark:text-yellow-200">
-          {current.message || "Sing-Box 当前为兼容占位状态，后端暂未实现完整管理能力。"}
-        </div>
-      )}
     </div>
   );
 }

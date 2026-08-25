@@ -24,7 +24,7 @@ root.classList.toggle("dark", useDarkTheme);
 root.classList.toggle("light", !useDarkTheme);
 const savedScene = localStorage.getItem("msf-glass-scene");
 const savedQuality = localStorage.getItem("msf-glass-quality");
-root.dataset.garyScene = savedScene === "static" || savedScene === "neutral" ? savedScene : "dynamic";
+root.dataset.garyScene = savedScene === "static" || savedScene === "neutral" ? savedScene : "neutral";
 root.dataset.garyQuality = savedQuality === "balanced" || savedQuality === "reduced" ? savedQuality : "full";
 
 function readInitialContentPlateOpacity(): ContentPlateOpacity {

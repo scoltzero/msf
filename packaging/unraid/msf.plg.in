@@ -32,7 +32,7 @@ if [ ! -f "$cfg" ]; then
   cat > "$cfg" <<'CFGEOF'
 ENABLED="yes"
 HOST="0.0.0.0"
-PORT="7777"
+PORT="7788"
 DATA_DIR="/mnt/user/appdata/msf"
 CFGEOF
 fi

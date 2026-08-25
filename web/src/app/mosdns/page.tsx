@@ -1,5 +1,6 @@
 import { useState } from "react";
 import {
+  Activity,
   ChartColumn,
   Cpu,
   FileText,
@@ -25,6 +26,7 @@ const modules: ManagementModule[] = [
   { icon: List, tone: "orange", title: "规则管理", description: "管理 DNS 分流规则和黑白名单", href: "/mosdns/rules" },
   { icon: Server, tone: "teal", title: "客户端设置", description: "管理客户端代理权限，支持白名单和黑名单", href: "/mosdns/clients" },
   { icon: Search, tone: "pink", title: "DNS 日志", description: "查询和分析 DNS 请求日志", href: "/mosdns/query-log" },
+  { icon: Activity, tone: "blue", title: "流量监控", description: "查看局域网设备实时流量和连接状态", href: "/mosdns/traffic" },
   { icon: Wrench, tone: "cyan", title: "系统功能", description: "管理缓存、路由任务和高级 DNS 设置", href: "/mosdns/system" },
   { icon: Settings, tone: "green", title: "配置管理", description: "管理配置文件、版本和运行参数", href: "/mosdns/service-config" },
   { icon: FileText, tone: "purple", title: "实时日志", description: "查看实时运行日志和历史记录", href: "/mosdns/logs" },

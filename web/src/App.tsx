@@ -10,6 +10,7 @@ import MosdnsOverviewPage from "@/app/mosdns/overview/page";
 import MosdnsRulesPage from "@/app/mosdns/rules/page";
 import MosdnsClientsPage from "@/app/mosdns/clients/page";
 import MosdnsQueryLogPage from "@/app/mosdns/query-log/page";
+import MosdnsTrafficPage from "@/app/mosdns/traffic/page";
 import MosdnsSystemPage from "@/app/mosdns/system/page";
 import MosdnsConfigPage from "@/app/mosdns/service-config/page";
 import MosdnsLogsPage from "@/app/mosdns/logs/page";
@@ -24,7 +25,6 @@ import ConfigPage from "@/app/config/page";
 import LogsPage from "@/app/logs/page";
 import { SettingsClient } from "@/app/settings/SettingsClient";
 import { SetupPage } from "@/pages/SetupPage";
-import { SingBoxPage } from "@/pages/SingBoxPage";
 import { LiquidGlassLab } from "@/pages/LiquidGlassLab";
 import { SceneBackdrop } from "@/components/liquid-glass/SceneBackdrop";
 import { GlassSurface } from "@/components/liquid-glass/GlassSurface";
@@ -161,6 +161,7 @@ export function App() {
       <Route path="/mosdns/rules" element={protectedRoute(<MosdnsRulesPage />)} />
       <Route path="/mosdns/clients" element={protectedRoute(<MosdnsClientsPage />)} />
       <Route path="/mosdns/query-log" element={protectedRoute(<MosdnsQueryLogPage />)} />
+      <Route path="/mosdns/traffic" element={protectedRoute(<MosdnsTrafficPage />)} />
       <Route path="/mosdns/system" element={protectedRoute(<MosdnsSystemPage />)} />
       <Route path="/mosdns/service-config" element={protectedRoute(<MosdnsConfigPage />)} />
       <Route path="/mosdns/logs" element={protectedRoute(<MosdnsLogsPage />)} />
@@ -183,10 +184,6 @@ export function App() {
       <Route path="/mihomo/connections" element={protectedRoute(<MihomoConnectionsPage />)} />
       <Route path="/mihomo/config" element={protectedRoute(<MihomoConfigPage />)} />
       <Route path="/mihomo/logs" element={protectedRoute(<MihomoLogsPage />)} />
-
-      <Route path="/singbox/overview" element={protectedRoute(<SingBoxPage tab="overview" />)} />
-      <Route path="/singbox/config" element={protectedRoute(<SingBoxPage tab="config" />)} />
-      <Route path="/singbox/logs" element={protectedRoute(<LogsPage initialService="singbox" />)} />
 
       <Route path="/process" element={protectedRoute(<ProcessPage />)} />
       <Route path="/config" element={protectedRoute(<ConfigPage />)} />

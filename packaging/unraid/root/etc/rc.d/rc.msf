@@ -5,7 +5,7 @@ APP="/usr/local/emhttp/plugins/msf/bin/msf"
 
 ENABLED="yes"
 HOST="0.0.0.0"
-PORT="7777"
+PORT="7788"
 DATA_DIR="/mnt/user/appdata/msf"
 
 if [ -f "$CFG" ]; then
@@ -14,7 +14,7 @@ fi
 
 : "${ENABLED:=yes}"
 : "${HOST:=0.0.0.0}"
-: "${PORT:=7777}"
+: "${PORT:=7788}"
 : "${DATA_DIR:=/mnt/user/appdata/msf}"
 
 PID_FILE="${DATA_DIR}/msf.pid"

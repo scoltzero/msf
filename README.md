@@ -60,7 +60,7 @@
 
 1. 从 [Latest Release](https://github.com/scoltzero/msf/releases/latest) 下载与你的平台匹配的安装包。
 2. 按对应的[平台安装文档](#平台支持)完成安装。
-3. 打开 `http://<服务器IP>:7777`，完成六步初始化向导。
+3. 打开 `http://<服务器IP>:7788`，完成六步初始化向导。
 4. 在你拥有或已获授权的路由器上配置 DHCP DNS 与 Fake-IP 静态路由。
 
 <details>
@@ -163,7 +163,7 @@ MSF 感谢以下项目和维护者公开其实现、接口、数据或素材。�
 ## 开发
 
 ```bash
-go run ./cmd/msf serve -c ./data -p 7777
+go run ./cmd/msf serve -c ./data -p 7788
 ```
 
 发布流程见 [RELEASING.md](RELEASING.md)，Unraid 打包说明见 [packaging/unraid/README.md](packaging/unraid/README.md)。

@@ -844,7 +844,7 @@ func (a *App) appearanceSettingsPayload() map[string]string {
 	return map[string]string{
 		"theme":                       a.setting("appearance.theme", a.setting("theme", "system")),
 		"language":                    a.setting("appearance.language", a.setting("language", "zh-CN")),
-		"scene":                       a.setting("appearance.scene", a.setting("scene", "dynamic")),
+		"scene":                       a.setting("appearance.scene", a.setting("scene", "neutral")),
 		"quality":                     a.setting("appearance.quality", a.setting("quality", "full")),
 		"compact":                     a.setting("appearance.compact", "false"),
 		"menu_order":                  a.setting("appearance.menu_order", ""),

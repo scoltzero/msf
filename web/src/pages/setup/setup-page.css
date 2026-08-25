@@ -7,7 +7,6 @@
   --msf-setup-control-fill-hover: color-mix(in srgb, var(--background) 22%, transparent);
   --msf-setup-status-fill: color-mix(in srgb, rgb(234 179 8) 10%, var(--background) 24%);
   isolation: isolate;
-  background: #f3fbff;
 }
 
 .dark .msf-setup-page {
@@ -18,18 +17,6 @@
   --msf-setup-control-fill: color-mix(in srgb, var(--background) 18%, transparent);
   --msf-setup-control-fill-hover: color-mix(in srgb, var(--background) 24%, transparent);
   --msf-setup-status-fill: color-mix(in srgb, rgb(234 179 8) 9%, var(--background) 22%);
-  background: #0d0f11;
-}
-
-.msf-setup-gradient-waves {
-  position: fixed;
-  z-index: 0;
-  opacity: 1;
-  filter: none;
-}
-
-.dark .msf-setup-gradient-waves {
-  filter: none;
 }
 
 .msf-setup-main {

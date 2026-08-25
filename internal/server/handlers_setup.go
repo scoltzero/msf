@@ -792,7 +792,7 @@ func (a *App) handleSetupActivate(w http.ResponseWriter, r *http.Request) {
 			"error":              "activation_failed",
 			"message":            strings.Join(report.Errors, "; "),
 			"port_changed":       false,
-			"port":               7777,
+			"port":               7788,
 			"activation_pending": false,
 			"runtime":            report,
 			"errors":             report.Errors,
@@ -802,7 +802,7 @@ func (a *App) handleSetupActivate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"success":            true,
 		"port_changed":       false,
-		"port":               7777,
+		"port":               7788,
 		"activation_pending": false,
 		"runtime":            report,
 		"errors":             report.Errors,

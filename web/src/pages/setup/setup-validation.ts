@@ -13,6 +13,9 @@ export type SetupValidationValues = {
   selected_interface: string;
   mosdnsEnabled: boolean;
   proxyCore: string;
+  mosdnsInstallMode?: "upload" | "url";
+  mosdnsBundleURL?: string;
+  mosdnsBundleFile?: File | null;
 };
 
 function validEmail(value: string) {
@@ -45,6 +48,13 @@ export function validateSetupStep(step: number, form: SetupValidationValues): Se
 
   if (step === 2) {
     if (!form.mosdnsEnabled) issues.push({ step, field: "mosdnsEnabled", message: "MosDNS 是必装组件" });
+    if (form.mosdnsInstallMode === "url") {
+      if (!form.mosdnsBundleURL?.trim()) {
+        issues.push({ step, field: "mosdnsBundle", message: "请输入 MosDNS ZIP 链接" });
+      }
+    } else if (!form.mosdnsBundleFile) {
+      issues.push({ step, field: "mosdnsBundle", message: "请选择 MosDNS 本地 ZIP 文件" });
+    }
     if (form.proxyCore === "none") issues.push({ step, field: "proxyCore", message: "请选择一个代理核心" });
   }
 

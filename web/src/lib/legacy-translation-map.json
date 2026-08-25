@@ -257,7 +257,7 @@
   "配置基础系统参数": "Configure basic system parameters",
   "时区": "Timezone",
   "Web 管理端口": "Web Management Port",
-  "默认端口：7777，可使用 1-65535 之间的任意端口（1-1023 为特权端口，需要管理员权限）": "Default port: 7777, any port between 1-65535 is allowed (ports 1-1023 require administrator privileges)",
+  "默认端口：7788，可使用 1-65535 之间的任意端口（1-1023 为特权端口，需要管理员权限）": "Default port: 7788, any port between 1-65535 is allowed (ports 1-1023 require administrator privileges)",
   "启用 HTTPS": "Enable HTTPS",
   "需要配置 SSL 证书": "SSL certificate required",
   "UTC (协调世界时)": "UTC (Coordinated Universal Time)",

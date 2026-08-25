@@ -113,7 +113,7 @@ func (a *App) handleMihomoConfigRestoreDefault(w http.ResponseWriter, r *http.Re
 	if !ok {
 		cfg = SetupConfig{
 			Timezone:          "Asia/Shanghai",
-			WebPort:           "7777",
+			WebPort:           "7788",
 			SelectedInterface: "eth0",
 			MihomoCoreType:    "meta",
 			AutoSetDNS:        true,

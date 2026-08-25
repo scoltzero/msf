@@ -676,27 +676,30 @@ func TestCompatibilityLayoutMatchesMSFTreeShape(t *testing.T) {
 func TestUpdateConfigPersistsGlobalAndComponentSettings(t *testing.T) {
 	app := newTestApp(t)
 	token := tokenForRole(t, app, "admin")
+	app.setSetting("update.mosdns_upgrade_mode", "incremental")
 
 	put := requestJSON(t, app, http.MethodPut, "/api/v1/update/config", token, map[string]any{
 		"auto_check":          false,
 		"auto_update":         true,
 		"check_interval":      604800,
 		"notify":              false,
-		"mosdns_upgrade_mode": "incremental",
+		"mosdns_upgrade_mode": "removed",
 		"mihomo_upgrade_mode": "full",
 	})
 	if put.Code != http.StatusOK {
 		t.Fatalf("update config put failed: status=%d body=%s", put.Code, put.Body.String())
 	}
 	get := requestJSON(t, app, http.MethodGet, "/api/v1/update/config", token, nil)
-	for _, want := range []string{`"auto_check":false`, `"auto_update":true`, `"check_interval":604800`, `"notify":false`, `"mosdns_upgrade_mode":"incremental"`, `"mihomo_upgrade_mode":"full"`} {
+	for _, want := range []string{`"auto_check":false`, `"auto_update":true`, `"check_interval":604800`, `"notify":false`, `"mihomo_upgrade_mode":"full"`} {
 		if !strings.Contains(get.Body.String(), want) {
 			t.Fatalf("update config get missing %q: status=%d body=%s", want, get.Code, get.Body.String())
 		}
 	}
-	bad := requestJSON(t, app, http.MethodPut, "/api/v1/update/config", token, map[string]any{"mosdns_upgrade_mode": "custom"})
-	if bad.Code != http.StatusBadRequest {
-		t.Fatalf("invalid upgrade mode should fail, status=%d body=%s", bad.Code, bad.Body.String())
+	if strings.Contains(get.Body.String(), "mosdns_upgrade_mode") {
+		t.Fatalf("update config should not expose the removed MosDNS upgrade mode: %s", get.Body.String())
+	}
+	if got := app.setting("update.mosdns_upgrade_mode", ""); got != "incremental" {
+		t.Fatalf("legacy MosDNS upgrade mode setting should remain untouched, got %q", got)
 	}
 
 	component := requestJSON(t, app, http.MethodPut, "/api/v1/component-updates/mihomo/config", token, map[string]any{
@@ -711,6 +714,68 @@ func TestUpdateConfigPersistsGlobalAndComponentSettings(t *testing.T) {
 	for _, want := range []string{`"component":"mihomo"`, `"auto_check":false`, `"auto_update":true`, `"check_interval":43200`} {
 		if !strings.Contains(componentGet.Body.String(), want) {
 			t.Fatalf("component update config get missing %q: status=%d body=%s", want, componentGet.Code, componentGet.Body.String())
+		}
+	}
+}
+
+func TestComponentUpdateDefaultsExcludeMosDNSButKeepLegacyStatus(t *testing.T) {
+	app := newTestApp(t)
+	token := tokenForRole(t, app, "admin")
+	now := time.Now()
+	if _, err := app.DB.Exec(`insert into component_update_info(component,current_version,latest_version,has_update,download_url,status,progress,last_check_time,created_at,updated_at)
+		values(?,?,?,?,?,?,?,?,?,?)`, "mosdns", "v5-ph-srs-old", "v5-ph-srs-new", true, "https://example.com/mosdns.zip", "checked", 0, now, now, now); err != nil {
+		t.Fatal(err)
+	}
+
+	list := requestJSON(t, app, http.MethodGet, "/api/v1/component-updates", token, nil)
+	if list.Code != http.StatusOK {
+		t.Fatalf("component update list failed: status=%d body=%s", list.Code, list.Body.String())
+	}
+	var payload struct {
+		Data []map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal(list.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode component update list: %v; body=%s", err, list.Body.String())
+	}
+	if len(payload.Data) != 2 {
+		t.Fatalf("default component update list length=%d, want 2: %s", len(payload.Data), list.Body.String())
+	}
+	for _, item := range payload.Data {
+		if item["component"] == "mosdns" {
+			t.Fatalf("default component update list should exclude MosDNS: %s", list.Body.String())
+		}
+	}
+
+	legacy := requestJSON(t, app, http.MethodGet, "/api/v1/component-updates/mosdns", token, nil)
+	if legacy.Code != http.StatusOK || !strings.Contains(legacy.Body.String(), `"component":"mosdns"`) {
+		t.Fatalf("legacy MosDNS component status should remain available: status=%d body=%s", legacy.Code, legacy.Body.String())
+	}
+}
+
+func TestStructuredUpdateSummaryUsesDefaultComponentList(t *testing.T) {
+	app := newTestApp(t)
+	token := tokenForRole(t, app, "admin")
+
+	res := requestJSON(t, app, http.MethodGet, "/api/v1/settings/structured", token, nil)
+	if res.Code != http.StatusOK {
+		t.Fatalf("structured settings get failed: status=%d body=%s", res.Code, res.Body.String())
+	}
+	var payload struct {
+		Data struct {
+			Updates struct {
+				Components []map[string]any `json:"components"`
+			} `json:"updates"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(res.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode structured settings: %v; body=%s", err, res.Body.String())
+	}
+	if len(payload.Data.Updates.Components) != 2 {
+		t.Fatalf("structured update component count=%d, want 2: %s", len(payload.Data.Updates.Components), res.Body.String())
+	}
+	for _, item := range payload.Data.Updates.Components {
+		if item["component"] == "mosdns" {
+			t.Fatalf("structured update summary should exclude MosDNS: %s", res.Body.String())
 		}
 	}
 }

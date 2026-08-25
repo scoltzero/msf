@@ -8,7 +8,7 @@ $rcPath = "/etc/rc.d/rc.msf";
 $defaults = [
   "ENABLED" => "yes",
   "HOST" => "0.0.0.0",
-  "PORT" => "7777",
+  "PORT" => "7788",
   "DATA_DIR" => "/mnt/user/appdata/msf",
 ];
 

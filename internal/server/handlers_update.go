@@ -23,11 +23,14 @@ const (
 	updateConfigAutoUpdateKey        = "update.auto_update"
 	updateConfigCheckIntervalKey     = "update.check_interval"
 	updateConfigNotifyKey            = "update.notify"
-	updateConfigMosDNSUpgradeModeKey = "update.mosdns_upgrade_mode"
 	updateConfigMihomoUpgradeModeKey = "update.mihomo_upgrade_mode"
 	defaultUpdateCheckInterval       = 12 * 60 * 60
 	maxSelfUpdateEvents              = 20
 )
+
+func defaultComponentUpdateComponents() []string {
+	return []string{"mihomo", "zashboard"}
+}
 
 type selfUpdateEvent struct {
 	Time    string `json:"time"`
@@ -364,14 +367,6 @@ func (a *App) handleUpdateConfigPut(w http.ResponseWriter, r *http.Request) {
 		}
 		cfg["check_interval"] = parsed
 	}
-	if value, ok := raw["mosdns_upgrade_mode"]; ok {
-		mode := strings.ToLower(strings.TrimSpace(fmtAny(value)))
-		if !oneOf(mode, "full", "incremental", "reset") {
-			writeError(w, http.StatusBadRequest, "bad_request", "invalid mosdns_upgrade_mode")
-			return
-		}
-		cfg["mosdns_upgrade_mode"] = mode
-	}
 	if value, ok := raw["mihomo_upgrade_mode"]; ok {
 		mode := strings.ToLower(strings.TrimSpace(fmtAny(value)))
 		if !oneOf(mode, "skip", "full") {
@@ -594,7 +589,7 @@ func selfUpdateInstallPrefix() string {
 func (a *App) selfUpdateWebPort() int {
 	var port int
 	if err := a.DB.QueryRow(`select web_port from system_setups order by id desc limit 1`).Scan(&port); err != nil || port <= 0 {
-		return 7777
+		return 7788
 	}
 	return port
 }
@@ -622,7 +617,7 @@ func (a *App) handleUpdateCancel(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleComponentUpdates(w http.ResponseWriter, r *http.Request) {
-	components := []string{"mosdns", "mihomo", "zashboard"}
+	components := defaultComponentUpdateComponents()
 	items := make([]map[string]any, 0, len(components))
 	for _, c := range components {
 		items = append(items, a.componentUpdateState(c))
@@ -1240,7 +1235,6 @@ func (a *App) updateConfig() map[string]any {
 		"auto_update":          a.boolSetting(updateConfigAutoUpdateKey, false),
 		"check_interval":       a.intSetting(updateConfigCheckIntervalKey, defaultUpdateCheckInterval),
 		"notify":               a.boolSetting(updateConfigNotifyKey, true),
-		"mosdns_upgrade_mode":  a.modeSetting(updateConfigMosDNSUpgradeModeKey, "full", "full", "incremental", "reset"),
 		"mihomo_upgrade_mode":  a.modeSetting(updateConfigMihomoUpgradeModeKey, "skip", "skip", "full"),
 		"check_interval_label": updateIntervalLabel(a.intSetting(updateConfigCheckIntervalKey, defaultUpdateCheckInterval)),
 	}
@@ -1251,7 +1245,6 @@ func (a *App) saveUpdateConfig(cfg map[string]any) {
 	a.setSetting(updateConfigAutoUpdateKey, strconv.FormatBool(updateBoolMapValue(cfg, "auto_update", false)))
 	a.setSetting(updateConfigNotifyKey, strconv.FormatBool(updateBoolMapValue(cfg, "notify", true)))
 	a.setSetting(updateConfigCheckIntervalKey, strconv.Itoa(updateIntMapValue(cfg, "check_interval", defaultUpdateCheckInterval)))
-	a.setSetting(updateConfigMosDNSUpgradeModeKey, updateStringMapValue(cfg, "mosdns_upgrade_mode", "full"))
 	a.setSetting(updateConfigMihomoUpgradeModeKey, updateStringMapValue(cfg, "mihomo_upgrade_mode", "skip"))
 }
 

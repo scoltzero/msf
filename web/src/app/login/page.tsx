@@ -176,7 +176,7 @@ export default function LoginPage() {
           </div>
         </div>
 
-        <p className="msf-login-stage-footnote">MosDNS · Sing-box · Mihomo</p>
+        <p className="msf-login-stage-footnote">MosDNS · Mihomo</p>
       </section>
 
       <section className="msf-login-entry" aria-labelledby="msf-login-title">

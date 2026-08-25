@@ -143,7 +143,7 @@ cat > "${STAGE}/app/ui/config" <<'UICONF'
             "desc": "MSF Free Web UI",
             "icon": "images/{0}.png",
             "type": "url",
-            "port": "7777",
+            "port": "7788",
             "protocol": "http",
             "url": "/",
             "allUsers": true

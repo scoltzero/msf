@@ -6,7 +6,7 @@ const validForm: SetupValidationValues = {
   password: "p",
   confirmPassword: "p",
   email: "",
-  webPort: "7777",
+  webPort: "7788",
   selected_interface: "eth0",
   mosdnsEnabled: true,
   proxyCore: "mihomo",

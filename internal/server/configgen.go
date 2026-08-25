@@ -52,7 +52,7 @@ func (c *SetupConfig) defaults() {
 		c.Timezone = "Asia/Shanghai"
 	}
 	if c.WebPort == "" {
-		c.WebPort = "7777"
+		c.WebPort = "7788"
 	}
 	c.MihomoCoreType = "meta"
 	if c.DNSOn == "" {
@@ -108,7 +108,7 @@ func (a *App) ensureDefaultConfigs() error {
 	}
 	cfg := SetupConfig{
 		Timezone:          "Asia/Shanghai",
-		WebPort:           "7777",
+		WebPort:           "7788",
 		SelectedInterface: selectedInterface,
 		MihomoCoreType:    "meta",
 		AutoSetDNS:        true,
@@ -953,6 +953,10 @@ func (a *App) migrateLegacyMosDNSConfig() error {
 	const rel = "configs/mosdns/config.yaml"
 	content, err := a.readTextFile(rel)
 	if err != nil {
+		// Bundle installations use config_custom.yaml and do not retain the legacy file.
+		if os.IsNotExist(err) {
+			return nil
+		}
 		return err
 	}
 	next := content

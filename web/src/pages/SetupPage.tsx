@@ -27,6 +27,7 @@ import {
   SlidersHorizontal,
   Sun,
   Trash2,
+  Upload,
   UserRound,
   Wifi,
   type LucideIcon,
@@ -35,7 +36,7 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import GlassSurface from "@/components/react-bits/GlassSurface";
-import GradientWaves from "@/components/react-bits/GradientWaves";
+import { SceneBackdrop } from "@/components/liquid-glass/SceneBackdrop";
 import { applyTheme, getInitialTheme, prefersDarkMode, themeOptions, type ThemeMode } from "@/lib/appearance";
 import { useLanguage, type AppLanguage } from "@/lib/localization";
 import { validateAllSetupSteps, validateSetupStep, type SetupValidationIssue } from "@/pages/setup/setup-validation";
@@ -141,7 +142,7 @@ const defaultForm = {
   confirmPassword: "",
   email: "",
   timezone: "Asia/Shanghai",
-  webPort: "7777",
+  webPort: "7788",
   enableHttps: false,
   selected_interface: "",
   amd64v3_enabled: false,
@@ -192,19 +193,6 @@ const steps = [
   { title: "组件与代理", description: "运行方式", icon: SlidersHorizontal },
   { title: "检查并安装", description: "启动系统", icon: CheckCircle2 },
 ];
-
-const setupWavePalettes = {
-  light: {
-    horizon: "#f3fbff",
-    wave: "#00366f",
-    crest: "#24d7ee",
-  },
-  dark: {
-    horizon: "#0d0f11",
-    wave: "#243241",
-    crest: "#126b9e",
-  },
-} as const;
 
 const inputClass =
   "msf-setup-control h-10 w-full rounded-md border border-input bg-transparent px-3 text-sm text-foreground outline-none transition-[border-color,box-shadow,background-color] focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/15 disabled:cursor-not-allowed disabled:opacity-60";
@@ -270,6 +258,24 @@ function streamSetupDownload(component: string, onEvent: (event: SetupDownloadEv
     };
     source.onerror = () => finish(new Error(`${downloadComponentMeta[component]?.title || component} 下载连接中断`));
   });
+}
+
+async function uploadMosDNSBundle(file: File, onEvent: (event: SetupDownloadEvent) => void) {
+  onEvent({ status: "running", progress: 5, message: "正在上传 MosDNS ZIP" });
+  const body = new FormData();
+  body.append("file", file, file.name);
+  await api("/api/v1/setup/mosdns/install", { method: "POST", body, skipAuth: true });
+  onEvent({ status: "completed", progress: 100, message: "MosDNS 与流量代理已安装" });
+}
+
+async function installMosDNSBundleFromURL(url: string, onEvent: (event: SetupDownloadEvent) => void) {
+  onEvent({ status: "running", progress: 5, message: "正在下载 MosDNS ZIP" });
+  await api("/api/v1/setup/mosdns/install", {
+    method: "POST",
+    body: JSON.stringify({ url }),
+    skipAuth: true,
+  });
+  onEvent({ status: "completed", progress: 100, message: "MosDNS 与流量代理已安装" });
 }
 
 function wait(ms: number) {
@@ -716,8 +722,6 @@ function SetupDownloadView({
   error,
   failedComponent,
   busy,
-  wavePalette,
-  reduceMotion,
   onRetry,
   onManual,
 }: {
@@ -727,8 +731,6 @@ function SetupDownloadView({
   error: string;
   failedComponent: string;
   busy: boolean;
-  wavePalette: (typeof setupWavePalettes)[keyof typeof setupWavePalettes];
-  reduceMotion: boolean;
   onRetry: () => void;
   onManual: () => void;
 }) {
@@ -795,38 +797,9 @@ function SetupDownloadView({
   const completed = visualSteps.filter((item) => item.status === "completed" || item.status === "skipped").length;
   const overall = Math.round((completed / Math.max(visualSteps.length, 1)) * 100);
   const failedTitle = downloadComponentMeta[failedComponent]?.title || failedComponent || "-";
-  const darkWaves = wavePalette === setupWavePalettes.dark;
-
   return (
     <div className="gary-public-page msf-setup-page fixed inset-0 z-50 flex min-h-[100dvh] overflow-y-auto px-4 py-[max(2rem,env(safe-area-inset-top))] text-foreground sm:items-center sm:justify-center sm:py-10">
-      <GradientWaves
-        className="msf-setup-gradient-waves"
-        horizonColor={wavePalette.horizon}
-        waveColor={wavePalette.wave}
-        crestColor={wavePalette.crest}
-        speed={reduceMotion ? 0 : 0.2}
-        amplitude={3.4}
-        waveScale={0.72}
-        waveRatio={0.9}
-        swell={38}
-        turbulence={22}
-        tilt={1.11}
-        zoom={1}
-        height={5.5}
-        fogDepth={48}
-        detail="medium"
-        brightness={1}
-        opacity={1}
-        mouseInteraction={false}
-        parallaxStrength={0}
-        grain={false}
-        saturation={darkWaves ? 0.9 : 1.062}
-        contrast={darkWaves ? 1.24 : 1.32}
-        postBrightness={darkWaves ? 0.9 : 1}
-        maxRenderPixels={2_300_000}
-        maxDpr={1.5}
-        powerPreference="high-performance"
-      />
+      <SceneBackdrop scene="neutral" />
       <div role="status" aria-live="polite" aria-atomic="false" className="gary-public-card relative z-[1] my-auto w-full max-w-md p-5 sm:p-6">
         <div className="mb-8 text-center">
           <div className="mb-4 flex justify-center">
@@ -966,6 +939,9 @@ export function SetupPage() {
   const [downloadSteps, setDownloadSteps] = useState<SetupDownloadStep[]>([]);
   const [downloadError, setDownloadError] = useState("");
   const [failedComponent, setFailedComponent] = useState("");
+  const [mosdnsInstallMode, setMosdnsInstallMode] = useState<"upload" | "url">("upload");
+  const [mosdnsBundleFile, setMosdnsBundleFile] = useState<File | null>(null);
+  const [mosdnsBundleURL, setMosdnsBundleURL] = useState("");
   const [system, setSystem] = useState<SetupSystemInfo | null>(null);
   const [privilege, setPrivilege] = useState<PrivilegeInfo | null>(null);
   const [preflight, setPreflight] = useState<SetupPreflight | null>(null);
@@ -979,11 +955,9 @@ export function SetupPage() {
   const [theme, setTheme] = useState<ThemeMode>(() => getInitialTheme());
   const [themeOpen, setThemeOpen] = useState(false);
   const [languageOpen, setLanguageOpen] = useState(false);
-  const [reduceMotion, setReduceMotion] = useState(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches);
   const touchStart = useRef<{ x: number; y: number } | null>(null);
 
   const isDark = theme === "dark" || (theme === "system" && prefersDarkMode());
-  const wavePalette = isDark ? setupWavePalettes.dark : setupWavePalettes.light;
   const ThemeIcon = theme === "system" ? Monitor : isDark ? Moon : Sun;
   const languageOptions: Array<{ id: AppLanguage; label: string }> = [
     { id: "zh-CN", label: "简体中文" },
@@ -998,14 +972,6 @@ export function SetupPage() {
     media.addEventListener("change", handleChange);
     return () => media.removeEventListener("change", handleChange);
   }, [theme]);
-
-  useEffect(() => {
-    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const handleChange = () => setReduceMotion(media.matches);
-    media.addEventListener("change", handleChange);
-    handleChange();
-    return () => media.removeEventListener("change", handleChange);
-  }, []);
 
   useEffect(() => {
     if (!themeOpen && !languageOpen) return;
@@ -1205,7 +1171,7 @@ export function SetupPage() {
         )
       );
       try {
-        await streamSetupDownload(component, (event) => {
+        const onEvent = (event: SetupDownloadEvent) => {
           const eventStatus = String(event.status || "running").toLowerCase();
           const status: SetupDownloadStatus =
             eventStatus === "completed" || eventStatus === "skipped" || eventStatus === "failed"
@@ -1223,7 +1189,23 @@ export function SetupPage() {
                 : item
             )
           );
-        });
+        };
+        if (component === "mosdns") {
+          if (mosdnsInstallMode === "upload") {
+            if (!mosdnsBundleFile) {
+              throw new Error("请先选择 MosDNS 本地 ZIP 文件");
+            }
+            await uploadMosDNSBundle(mosdnsBundleFile, onEvent);
+          } else {
+            const url = mosdnsBundleURL.trim();
+            if (!url) {
+              throw new Error("请输入 MosDNS ZIP 链接");
+            }
+            await installMosDNSBundleFromURL(url, onEvent);
+          }
+        } else {
+          await streamSetupDownload(component, onEvent);
+        }
         setDownloadSteps((items) =>
           items.map((item) =>
             item.component === component ? { ...item, status: item.status === "skipped" ? "skipped" : "completed", progress: 100 } : item
@@ -1253,7 +1235,7 @@ export function SetupPage() {
   };
 
   const completeInitialize = async () => {
-    const errors = validateAllSetupSteps(form);
+    const errors = validateAllSetupSteps({ ...form, mosdnsInstallMode, mosdnsBundleFile, mosdnsBundleURL });
     if (showIssues(errors)) return;
     setBusy(true);
     setMessage("");
@@ -1315,7 +1297,7 @@ export function SetupPage() {
       setStep(target);
       return;
     }
-    const issues = validateSetupStep(step, form);
+    const issues = validateSetupStep(step, { ...form, mosdnsInstallMode, mosdnsBundleFile, mosdnsBundleURL });
     if (showIssues(issues)) return;
     setFieldErrors({});
     setFurthestStep((current) => Math.max(current, target));
@@ -1377,8 +1359,6 @@ export function SetupPage() {
         error={downloadError}
         failedComponent={failedComponent}
         busy={busy}
-        wavePalette={wavePalette}
-        reduceMotion={reduceMotion}
         onRetry={() => void retryDownloads()}
         onManual={() => void goManualDownload()}
       />
@@ -1387,35 +1367,7 @@ export function SetupPage() {
 
   return (
     <div className="gary-public-page msf-setup-page text-foreground">
-      <GradientWaves
-        key={isDark ? "setup-dark" : "setup-light"}
-        className="msf-setup-gradient-waves"
-        horizonColor={wavePalette.horizon}
-        waveColor={wavePalette.wave}
-        crestColor={wavePalette.crest}
-        speed={reduceMotion ? 0 : 0.2}
-        amplitude={3.4}
-        waveScale={0.72}
-        waveRatio={0.9}
-        swell={38}
-        turbulence={22}
-        tilt={1.11}
-        zoom={1}
-        height={5.5}
-        fogDepth={48}
-        detail="medium"
-        brightness={1}
-        opacity={1}
-        mouseInteraction={false}
-        parallaxStrength={0}
-        grain={false}
-        saturation={isDark ? 0.9 : 1.062}
-        contrast={isDark ? 1.24 : 1.32}
-        postBrightness={isDark ? 0.9 : 1}
-        maxRenderPixels={2_300_000}
-        maxDpr={1.5}
-        powerPreference="high-performance"
-      />
+      <SceneBackdrop scene="neutral" />
       <div className="fixed right-[max(1rem,env(safe-area-inset-right))] top-[max(1rem,env(safe-area-inset-top))] z-40 flex items-center gap-1 rounded-[16px] border border-border/60 bg-background/55 p-1 text-muted-foreground shadow-sm backdrop-blur-xl sm:right-8 sm:top-6">
         <div className="relative">
           <button
@@ -1746,7 +1698,7 @@ export function SetupPage() {
               <div className="mx-auto max-w-[960px] space-y-4">
                 <div className="border-b border-border/60 pb-5">
                   <h2 className="text-2xl font-semibold tracking-[-0.025em]">组件与代理</h2>
-                  <p className="mt-1 text-sm leading-6 text-muted-foreground">MosDNS 为必装组件。代理核心保留 Sing-box 与 Mihomo 的选择位置。</p>
+                  <p className="mt-1 text-sm leading-6 text-muted-foreground">MosDNS 可通过本地 ZIP 或 ZIP 链接安装，代理核心使用 Mihomo。</p>
                 </div>
                 <div data-setup-field="mosdnsEnabled" className="flex min-h-[58px] w-full items-center gap-3 rounded-[16px] border border-primary/35 bg-primary/10 px-4 text-left shadow-[inset_0_1px_0_var(--gary-edge-soft)]">
                   <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
@@ -1759,49 +1711,76 @@ export function SetupPage() {
                   <Badge tone="success">必选</Badge>
                   <CheckCircle2 className="h-4 w-4 text-primary" />
                 </div>
+                <div className="rounded-[16px] border border-border/65 bg-card p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold">MosDNS 安装方式</div>
+                      <p className="mt-1 text-xs leading-5 text-muted-foreground">使用包含 MosDNS 与 mosdns-traffic-agent 的 ZIP 包。</p>
+                    </div>
+                    <div className="inline-flex rounded-[10px] border border-border p-1" role="group" aria-label="MosDNS 安装方式">
+                      <button
+                        type="button"
+                        onClick={() => setMosdnsInstallMode("upload")}
+                        className={cn("rounded-[8px] px-3 py-1.5 text-xs font-medium", mosdnsInstallMode === "upload" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent")}
+                      >
+                        本地上传
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setMosdnsInstallMode("url")}
+                        className={cn("rounded-[8px] px-3 py-1.5 text-xs font-medium", mosdnsInstallMode === "url" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent")}
+                      >
+                        ZIP 链接
+                      </button>
+                    </div>
+                  </div>
+                  {mosdnsInstallMode === "upload" ? (
+                    <label className="mt-3 flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border border-dashed border-border/80 bg-background px-3 py-2 text-xs text-muted-foreground hover:bg-accent/40">
+                      <Upload className="h-4 w-4 shrink-0" />
+                      <span className="min-w-0 flex-1 truncate">{mosdnsBundleFile ? mosdnsBundleFile.name : "选择 MosDNS ZIP 文件"}</span>
+                      <input
+                        type="file"
+                        accept=".zip,application/zip"
+                        className="sr-only"
+                        onChange={(event) => setMosdnsBundleFile(event.target.files?.[0] || null)}
+                      />
+                    </label>
+                  ) : (
+                    <input
+                      className={cn(inputClass, "mt-3")}
+                      type="url"
+                      inputMode="url"
+                      placeholder="https://example.com/mosdns-bundle.zip"
+                      value={mosdnsBundleURL}
+                      onChange={(event) => setMosdnsBundleURL(event.target.value)}
+                    />
+                  )}
+                </div>
                 <div>
-                  <div className="text-sm font-semibold">代理核心选择（二选一）</div>
-                  <p className="mt-1 text-xs text-muted-foreground">Sing-box 和 Mihomo 只能选择其中一个</p>
-                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                    <button
-                      type="button"
-                      disabled
-                      aria-label="Sing-box，开发中，暂不可选择"
-                      className="flex min-h-[108px] items-start gap-3 rounded-[16px] border border-border bg-background px-4 py-3 text-left opacity-60"
-                    >
-                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
-                        <Globe2 className="h-4 w-4" />
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="flex items-center gap-2 text-sm font-semibold">
-                          Sing-box <Badge>开发中</Badge>
-                        </span>
-                        <span className="mt-1 block text-xs text-muted-foreground">通用代理平台，支持多种协议</span>
-                      </span>
-                      <Circle className="h-4 w-4 text-muted-foreground" />
-                    </button>
+                  <div className="text-sm font-semibold">代理核心</div>
+                  <div className="mt-3 space-y-3">
                     <button
                       type="button"
                       onClick={() => update("proxyCore", "mihomo")}
                       data-setup-field="proxyCore"
                       aria-pressed={form.proxyCore === "mihomo"}
-                      className="flex min-h-[108px] items-start gap-3 rounded-[16px] border border-primary/40 bg-primary/10 px-4 py-3 text-left shadow-[inset_0_1px_0_var(--gary-edge-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                      className="flex min-h-[58px] w-full items-center gap-3 rounded-[16px] border border-primary/40 bg-primary/10 px-4 py-3 text-left shadow-[inset_0_1px_0_var(--gary-edge-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
                     >
                       <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
                         <ShieldCheck className="h-4 w-4" />
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="block text-sm font-semibold">Mihomo</span>
-                        <span className="mt-1 block text-xs text-muted-foreground">通用代理平台，支持多种协议</span>
-                          <span className="mt-3 block border-t border-border pt-3">
-                            <span className="mb-2 block text-xs text-muted-foreground">Mihomo Core</span>
-                            <span className="inline-flex rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground">
-                              Meta（官方稳定版）
-                            </span>
-                          </span>
+                        <span className="block text-xs text-muted-foreground">通用代理平台，支持多种协议</span>
                       </span>
                       <Circle className="h-4 w-4 fill-primary text-primary" />
                     </button>
+                    <div className="rounded-[16px] border border-border/65 bg-card px-4 py-3">
+                      <div className="text-xs text-muted-foreground">Mihomo Core</div>
+                      <div className="mt-2 inline-flex rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground">
+                        Meta（官方稳定版）
+                      </div>
+                    </div>
                   </div>
                 </div>
                 <div className="rounded-lg border border-border bg-card p-3">

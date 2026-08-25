@@ -78,7 +78,7 @@ func (a *App) migrate() error {
 			username text not null,
 			email text,
 			timezone text default 'Asia/Shanghai',
-			web_port text default '7777',
+			web_port text default '7788',
 			amd64v3_enabled numeric default false,
 			selected_interface text,
 			singbox_core_type text default '',

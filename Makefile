@@ -116,7 +116,7 @@ verify-release-assets:
 	scripts/release/verify-release-assets.sh "$(VERSION)" "$(GIT_COMMIT)" "$(RELEASE_TAG)" "$(DIST)"
 
 dev:
-	go run ./cmd/msf serve -c ./data -p 7777
+	go run ./cmd/msf serve -c ./data -p 7788
 
 test:
 	go test ./...
