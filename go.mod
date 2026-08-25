@@ -1,6 +1,6 @@
 module github.com/scoltzero/msf
 
-go 1.24.0
+go 1.24.13
 
 require (
 	github.com/cloudwego/eino v0.9.15
