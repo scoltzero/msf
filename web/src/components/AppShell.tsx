@@ -10,6 +10,7 @@ import { GlassFilterDefs } from "@/components/liquid-glass/GlassFilterDefs";
 import { SceneBackdrop } from "@/components/liquid-glass/SceneBackdrop";
 import { cn } from "@/lib/utils";
 import { DiagnosticsDialog } from "@/components/system/DiagnosticsDialog";
+import { AssistantWidget } from "@/components/assistant/AssistantWidget";
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -77,6 +78,7 @@ export function AppShell({
       </main>
       <MobileNav />
       <Fab />
+      <AssistantWidget />
       {diagnosticsOpen ? <DiagnosticsDialog onClose={() => setDiagnosticsOpen(false)} /> : null}
     </div>
   );

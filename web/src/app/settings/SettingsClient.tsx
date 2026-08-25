@@ -60,6 +60,7 @@ import {
 import { useLanguage } from "@/lib/localization";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
+import { AssistantSettingsCard } from "@/app/settings/AssistantSettingsCard";
 
 type TabId = "profile" | "system" | "users" | "appearance" | "update" | "reset";
 type ThemeMode = "light" | "dark" | "system";
@@ -1322,7 +1323,7 @@ function InitConfigEditor({
   );
 }
 
-function SystemTab({ showToast }: { showToast: (message: string) => void }) {
+function SystemTab({ showToast, isAdmin }: { showToast: (message: string) => void; isAdmin: boolean }) {
   const [retention, setRetention] = useState(24);
   const [visibleSecrets, setVisibleSecrets] = useState<Record<string, boolean>>({});
   const [editingInit, setEditingInit] = useState(false);
@@ -1422,6 +1423,8 @@ function SystemTab({ showToast }: { showToast: (message: string) => void }) {
           </div>
         </div>
       </Card>
+
+      {isAdmin ? <AssistantSettingsCard showToast={showToast} /> : null}
 
       <Card title="初始化配置" Icon={Settings}>
         {editingInit ? (
@@ -1867,9 +1870,9 @@ function AppearanceTab({ showToast }: { showToast: (message: string) => void }) 
       <Card title="视觉质量" Icon={Eye}>
         <div className="grid gap-3 md:grid-cols-3">
           {([
-            ["full", "完整质感", "动态场景与 28px Thick 玻璃，默认推荐"],
-            ["balanced", "平衡", "静态场景并减少模糊成本，保持玻璃边缘"],
-            ["reduced", "减少效果", "关闭 backdrop blur，改用高 K 值稳定表面"],
+            ["full", "完整质感", "动态场景、230 万像素预算与 28px Thick 玻璃"],
+            ["balanced", "平衡", "保留动态背景，降至 120 万像素与低采样、减少模糊成本"],
+            ["reduced", "减少效果", "保留 65 万像素低清动态背景，关闭 backdrop blur"],
           ] as const).map(([id, label, description]) => (
             <button
               key={id}
@@ -3138,7 +3141,7 @@ export function SettingsClient({ initialTab }: { initialTab: TabId }) {
 
         <div role="tabpanel" className="mt-2 animate-slide-up">
           {activeTab === "profile" && <ProfileTab showToast={showToast} />}
-          {activeTab === "system" && <SystemTab showToast={showToast} />}
+          {activeTab === "system" && <SystemTab showToast={showToast} isAdmin={isAdmin} />}
           {activeTab === "users" && (isAdmin ? <UsersSettingsPanel /> : <SolidPlate tone="strong" className="rounded-[19.2px] p-6 text-sm text-muted-foreground">当前账号没有用户管理权限。</SolidPlate>)}
           {activeTab === "appearance" && <AppearanceTab showToast={showToast} />}
           {activeTab === "update" && <UpdateTab showToast={showToast} />}

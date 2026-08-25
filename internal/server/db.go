@@ -4,7 +4,9 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -198,6 +200,102 @@ func (a *App) migrate() error {
 			created_at datetime,
 			updated_at datetime
 		)`,
+		`create table if not exists assistant_settings (
+			id integer primary key check (id=1),
+			enabled numeric default false,
+			provider text default 'openai_compatible',
+			base_url text default '',
+			api_key_ciphertext blob,
+			api_key_nonce blob,
+			model text default '',
+			protocol text default 'chat_completions',
+			context_tokens integer default 32000,
+			temperature real default 0.2,
+			request_timeout integer default 60,
+			max_tool_rounds integer default 8,
+			execution_mode text default 'confirm_writes',
+			show_tool_details numeric default true,
+			orb_enabled numeric default true,
+			updated_at datetime
+		)`,
+		`create table if not exists assistant_sessions (
+			id text primary key,
+			user_id integer not null,
+			title text,
+			status text default 'idle',
+			messages_json text not null default '[]',
+			runtime text default 'eino',
+			runtime_version text default 'v0.9.15',
+			execution_mode text default 'confirm_writes',
+			checkpoint_id text,
+			active_run_id text,
+			created_at datetime,
+			updated_at datetime
+		)`,
+		`create index if not exists idx_assistant_sessions_user_updated on assistant_sessions(user_id, updated_at desc)`,
+		`create table if not exists assistant_pending_actions (
+			id text primary key,
+			user_id integer not null,
+			session_id text not null,
+			capability text not null,
+			call_json text not null,
+			call_hash text not null,
+			risk text not null,
+			checkpoint_id text,
+			interrupt_id text,
+			tool_call_id text,
+			tool_name text,
+			execution_mode text default 'confirm_writes',
+			decision text,
+			decided_at datetime,
+			status text default 'pending',
+			expires_at datetime not null,
+			created_at datetime
+		)`,
+		`create index if not exists idx_assistant_pending_user_status on assistant_pending_actions(user_id, status)`,
+		`create table if not exists assistant_runtime_checkpoints (
+			id text primary key,
+			user_id integer not null,
+			session_id text not null,
+			runtime text not null default 'eino',
+			runtime_version text not null default 'v0.9.15',
+			payload blob not null,
+			status text not null default 'active',
+			expires_at datetime,
+			created_at datetime,
+			updated_at datetime
+		)`,
+		`create index if not exists idx_assistant_checkpoints_session on assistant_runtime_checkpoints(user_id, session_id, status)`,
+		`create table if not exists assistant_skills (
+			id text primary key,
+			user_id integer not null,
+			name text not null,
+			description text not null default '',
+			prompt text not null,
+			source text not null default 'custom',
+			file_path text not null,
+			created_at datetime,
+			updated_at datetime,
+			deleted_at datetime
+		)`,
+		`create index if not exists idx_assistant_skills_user_updated on assistant_skills(user_id, deleted_at, updated_at desc)`,
+		`create table if not exists assistant_tool_runs (
+			id text primary key,
+			user_id integer not null,
+			session_id text not null,
+			capability text not null,
+			method text not null,
+			path text not null,
+			risk text not null,
+			exposure text not null,
+			confirmed numeric default false,
+			status text not null,
+			arguments_summary text,
+			result_summary text,
+			error_code text,
+			duration_ms integer default 0,
+			created_at datetime
+		)`,
 	}
 	for _, stmt := range stmts {
 		if _, err := a.DB.Exec(stmt); err != nil {
@@ -219,14 +317,79 @@ func (a *App) migrate() error {
 	if err := a.ensureSystemSetupsMihomoCoreTypeColumn(); err != nil {
 		return err
 	}
+	if err := a.ensureAssistantRuntimeColumns(); err != nil {
+		return err
+	}
 	if err := a.normalizePersistedRows(); err != nil {
 		return err
+	}
+	if err := a.repairAssistantSessionTitles(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (a *App) ensureAssistantRuntimeColumns() error {
+	if err := a.ensureTableColumns("assistant_sessions", map[string]string{
+		"runtime":         "text default 'eino'",
+		"runtime_version": "text default 'v0.9.15'",
+		"execution_mode":  "text default 'confirm_writes'",
+		"checkpoint_id":   "text",
+		"active_run_id":   "text",
+	}); err != nil {
+		return err
+	}
+	return a.ensureTableColumns("assistant_pending_actions", map[string]string{
+		"checkpoint_id":  "text",
+		"interrupt_id":   "text",
+		"tool_call_id":   "text",
+		"tool_name":      "text",
+		"execution_mode": "text default 'confirm_writes'",
+		"decision":       "text",
+		"decided_at":     "datetime",
+	})
+}
+
+func (a *App) repairAssistantSessionTitles() error {
+	rows, err := a.DB.Query(`select id,cast(coalesce(title,'') as blob) from assistant_sessions`)
+	if err != nil {
+		return err
+	}
+	type repair struct {
+		id    string
+		title string
+	}
+	repairs := make([]repair, 0)
+	for rows.Next() {
+		var id string
+		var raw []byte
+		if err := rows.Scan(&id, &raw); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		if !utf8.Valid(raw) {
+			repairs = append(repairs, repair{id: id, title: strings.ToValidUTF8(string(raw), "�")})
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	for _, item := range repairs {
+		if _, err := a.DB.Exec(`update assistant_sessions set title=? where id=?`, item.title, item.id); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
 func (a *App) normalizePersistedRows() error {
 	if _, err := a.DB.Exec(`update system_setups set mihomo_core_type='meta', updated_at=? where lower(trim(coalesce(mihomo_core_type,''))) != 'meta'`, time.Now()); err != nil {
+		return err
+	}
+	if _, err := a.DB.Exec(`update assistant_sessions set runtime='eino',runtime_version='v0.9.15',execution_mode=case when execution_mode in ('read_only','confirm_writes','full_auto') then execution_mode else 'confirm_writes' end,status=case when status in ('idle','running','awaiting_approval','stopped','error') then status else 'idle' end,active_run_id=null where runtime is null or runtime!='eino' or runtime_version is null or runtime_version!='v0.9.15' or execution_mode not in ('read_only','confirm_writes','full_auto') or status not in ('idle','running','awaiting_approval','stopped','error')`); err != nil {
+		return err
+	}
+	if _, err := a.DB.Exec(`update assistant_pending_actions set status='cancelled',decision='legacy_runtime',decided_at=?,call_json='[cleared]',call_hash='' where status='pending' and (checkpoint_id is null or checkpoint_id='' or interrupt_id is null or interrupt_id='')`, time.Now()); err != nil {
 		return err
 	}
 	return nil

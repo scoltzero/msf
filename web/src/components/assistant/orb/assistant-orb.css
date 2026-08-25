@@ -1,0 +1,172 @@
+.assistant-orb {
+  position: fixed;
+  right: 1rem;
+  bottom: calc(5.75rem + env(safe-area-inset-bottom));
+  z-index: 70;
+  width: 72px;
+  height: 72px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--primary) 34%, var(--gary-edge-dim));
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--gary-glass-fill-regular) 72%, transparent);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.54), 0 8px 22px color-mix(in srgb, var(--primary) 22%, transparent);
+  isolation: isolate;
+  cursor: pointer;
+  touch-action: none;
+  transition: transform 180ms ease-out, box-shadow 180ms ease-out;
+}
+
+.assistant-orb--positioned {
+  right: auto;
+  bottom: auto;
+}
+
+.assistant-orb--dragging {
+  cursor: grabbing;
+  transition: none;
+}
+
+.assistant-orb--docked-left,
+.assistant-orb--docked-right {
+  border-color: color-mix(in srgb, var(--primary) 48%, var(--gary-edge-dim));
+}
+
+.assistant-orb:hover {
+  transform: translateY(-2px) scale(1.03);
+}
+
+.assistant-orb:active {
+  transform: scale(0.97);
+}
+
+.assistant-orb:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+}
+
+.assistant-orb__canvas,
+.assistant-orb__fallback,
+.assistant-orb__edge {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.assistant-orb__canvas {
+  z-index: 1;
+}
+
+.assistant-orb--rendered {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+.assistant-orb--rendered .assistant-orb__fallback,
+.assistant-orb--rendered .assistant-orb__edge {
+  display: none;
+}
+
+.assistant-orb__fallback {
+  z-index: 0;
+  overflow: hidden;
+  background-image:
+    url("../../../assets/assistant/ler-sent001-orb-poster.png"),
+    radial-gradient(circle at 34% 26%, rgb(255 255 255 / 0.92), transparent 15%),
+    radial-gradient(circle at 62% 72%, color-mix(in srgb, var(--orb-accent) 75%, transparent), transparent 62%);
+  background-position: center, center, center;
+  background-size: cover, auto, auto;
+  background-blend-mode: screen, screen, normal;
+  background-color: color-mix(in srgb, var(--orb-accent) 46%, var(--gary-glass-fill-strong));
+  -webkit-backdrop-filter: blur(10px) saturate(1.6);
+  backdrop-filter: blur(10px) saturate(1.6);
+}
+
+.assistant-orb__fallback::before,
+.assistant-orb__fallback::after {
+  content: "";
+  position: absolute;
+  inset: -24%;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.assistant-orb__fallback::before {
+  background: radial-gradient(ellipse at 24% 54%, color-mix(in srgb, var(--orb-accent) 88%, transparent), transparent 50%), radial-gradient(ellipse at 76% 38%, color-mix(in srgb, var(--orb-secondary) 74%, transparent), transparent 46%);
+  filter: blur(8px);
+  opacity: 0.45;
+  animation: assistant-orb-fluid 7s ease-in-out infinite alternate;
+}
+
+.assistant-orb__fallback::after {
+  inset: 4%;
+  background: radial-gradient(ellipse at 31% 18%, rgb(255 255 255 / 0.75), transparent 18%), linear-gradient(132deg, transparent 38%, rgb(255 255 255 / 0.24) 48%, transparent 61%);
+  mix-blend-mode: screen;
+  opacity: 0.78;
+}
+
+.assistant-orb__edge {
+  z-index: 2;
+  border: 1px solid rgb(255 255 255 / 0.46);
+  box-shadow: inset 0 -6px 12px rgb(5 28 50 / 0.16), inset 4px 5px 10px rgb(255 255 255 / 0.22);
+}
+
+.assistant-orb {
+  --orb-accent: var(--primary);
+  --orb-secondary: oklch(74% 0.16 190);
+}
+
+.assistant-orb--thinking,
+.assistant-orb--tool {
+  --orb-accent: oklch(69% 0.17 286);
+  --orb-secondary: oklch(74% 0.16 210);
+}
+
+.assistant-orb--success {
+  --orb-accent: oklch(66% 0.16 154);
+  --orb-secondary: oklch(82% 0.14 180);
+}
+
+.assistant-orb--warning {
+  --orb-accent: oklch(72% 0.17 72);
+  --orb-secondary: oklch(80% 0.14 42);
+}
+
+.assistant-orb--error {
+  --orb-accent: oklch(64% 0.19 25);
+  --orb-secondary: oklch(73% 0.16 350);
+}
+
+@keyframes assistant-orb-fluid {
+  from { transform: translate3d(-8%, 4%, 0) rotate(-8deg) scale(1.02); }
+  to { transform: translate3d(8%, -6%, 0) rotate(8deg) scale(1.08); }
+}
+
+.assistant-orb--thinking .assistant-orb__edge,
+.assistant-orb--tool .assistant-orb__edge {
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.38), 0 0 18px color-mix(in srgb, var(--primary) 42%, transparent);
+}
+
+.assistant-orb--error .assistant-orb__edge {
+  box-shadow: inset 0 0 0 1px rgb(248 113 113 / 0.66), 0 0 16px rgb(248 113 113 / 0.3);
+}
+
+@media (min-width: 768px) {
+  .assistant-orb {
+    right: 1.5rem;
+    bottom: 1.5rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .assistant-orb {
+    transition: none;
+  }
+
+  .assistant-orb__fallback::before {
+    animation: none;
+  }
+}

@@ -138,6 +138,8 @@ MSF 感谢以下项目和维护者公开其实现、接口、数据或素材。�
 | [React Bits](https://github.com/DavidHDev/react-bits) | `GradientWaves` 与 `GlassSurface` | MIT + Commons Clause |
 | [Solar System Scope](https://www.solarsystemscope.com/textures/) / [Three.js](https://threejs.org/) / [DB-IP](https://db-ip.com/) | 地球纹理、渲染示例和可选 GeoIP 数据 | CC BY 4.0 / MIT / CC BY 4.0 |
 | [nolangz/pixel2motion](https://github.com/nolangz/pixel2motion) | Mizar SVG 拟合与品牌动效制作工具 | MIT |
+| [LerSent001/orb](https://github.com/LerSent001/orb) | 管理员 AI 助手玻璃球的液态玻璃 WGSL、预设、uniform 映射与 WebGPU 渲染基础；MSF 保留原版 WebGPU 路径，并提供从同一着色器生成的 WebGL2 LAN HTTP 兼容后端、React 生命周期和拖动适配 | MIT |
+| [CloudWeGo Eino](https://github.com/cloudwego/eino) | 管理员 AI 助手的 Go 原生 Agent Runtime、流式工具循环、Skill Middleware、Checkpoint 与人工确认后的跨请求恢复 | Apache-2.0 |
 | [Gzh256](https://github.com/Gzh256) | 多版本测试与验证 | 致谢 |
 
 上述鸣谢仅说明来源和贡献，不表示 MSF 与相关项目存在隶属、授权、合作或官方背书关系。MSF 名称与 Mizar 标识的使用边界见 [BRAND_POLICY.md](BRAND_POLICY.md)。

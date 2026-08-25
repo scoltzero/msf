@@ -38,6 +38,16 @@ func currentUser(r *http.Request) *User {
 	return nil
 }
 
+func currentIdentity(r *http.Request) *AuthIdentity {
+	if identity, ok := r.Context().Value(authIdentityContextKey{}).(*AuthIdentity); ok {
+		return identity
+	}
+	if user := currentUser(r); user != nil {
+		return &AuthIdentity{User: user, AuthType: "jwt", TokenScope: "admin"}
+	}
+	return nil
+}
+
 func (a *App) authenticateRequest(r *http.Request) (*AuthIdentity, error) {
 	auth := r.Header.Get("Authorization")
 	if !strings.HasPrefix(auth, "Bearer ") {

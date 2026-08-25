@@ -20,6 +20,10 @@ MSF 自有代码按照 GNU GPL v3.0 发布。下列已经标明的第三方代�
 | `web/src/components/react-bits/GlassSurface.*` | React Bits | Login and setup glass surfaces | MIT + Commons Clause |
 | Optional browser download of DB-IP City Lite | DB-IP | User-consented IP geolocation | CC BY 4.0 |
 | `logo_motion_mizar/**` and active Mizar exports | MSF maintainer prompt and selection, Codex image generation, nolangz/pixel2motion motion conversion | MSF identity and motion assets | Project brand policy; pixel2motion tool is MIT |
+| `web/src/components/assistant/orb/vendor/ler-sent001-orb/**`, `web/src/assets/assistant/ler-sent001-orb-poster.png` | [LerSent001/orb](https://github.com/LerSent001/orb) `fbf6eb8` | Liquid glass orb WGSL shader, presets, uniform mapping, WebGPU renderer, generated WebGL2 shader backend and static poster fallback adapted for the administrator assistant | MIT; Copyright (c) 2026 LerSent001 |
+
+The complete MIT notice for the vendored orb source is preserved in
+[`docs/third-party/ler-sent001-orb-mit.txt`](docs/third-party/ler-sent001-orb-mit.txt).
 
 [`baozaodetudou/mssb`](https://github.com/baozaodetudou/mssb) was an early
 publicly accessible functional reference for the combined MosDNS + Mihomo
@@ -157,6 +161,25 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+## CloudWeGo Eino
+
+The MSF administrator assistant uses
+[`github.com/cloudwego/eino`](https://github.com/cloudwego/eino) v0.9.15 for
+the Go-native agent loop, tool execution, Skills middleware, durable
+checkpoints, and interrupt/resume lifecycle. The OpenAI-compatible model
+adapter is provided by
+[`github.com/cloudwego/eino-ext/components/model/openai`](https://github.com/cloudwego/eino-ext/tree/main/components/model/openai)
+v0.1.13.
+
+Copyright 2024-2026 CloudWeGo Authors
+
+Licensed under the Apache License, Version 2.0. You may obtain a copy at
+<https://www.apache.org/licenses/LICENSE-2.0>.
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 
 ## nolangz/pixel2motion
 

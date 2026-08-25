@@ -13,7 +13,7 @@
     "isolatedModules": true,
     "jsx": "react-jsx",
     "incremental": true,
-    "types": ["vite/client"],
+    "types": ["vite/client", "@webgpu/types"],
     "paths": {
       "@/*": ["./src/*"],
       "next/link": ["./src/compat/next-link.tsx"],

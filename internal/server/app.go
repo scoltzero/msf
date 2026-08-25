@@ -69,6 +69,13 @@ type App struct {
 	networkStateMu          sync.RWMutex
 	networkTransition       string
 	networkLastError        string
+	assistantMu             sync.Mutex
+	assistantCancels        map[string]assistantCancelEntry
+}
+
+type assistantCancelEntry struct {
+	Token  string
+	Cancel context.CancelFunc
 }
 
 type APIError struct {
@@ -106,6 +113,7 @@ func New(opts Options) (*App, error) {
 		DB:                    db,
 		operations:            newOperationController(),
 		requestProcessRestart: opts.RequestProcessRestart,
+		assistantCancels:      make(map[string]assistantCancelEntry),
 	}
 	if request, ok, readErr := readFactoryResetRequest(opts.DataDir); readErr == nil && ok {
 		app.operations.resetID = request.ResetID
@@ -119,6 +127,7 @@ func New(opts Options) (*App, error) {
 		db.Close()
 		return nil, err
 	}
+	app.cleanupAssistantRuntimeState()
 	_, _ = app.DB.Exec(`delete from settings where key='factory_reset.completed_id'`)
 	app.Services = NewServiceManager(app)
 	return app, nil
@@ -150,6 +159,8 @@ func (a *App) EnsureBaseLayout() error {
 		"configs/network/history",
 		"configs/singbox",
 		"configs/supervisor/services",
+		"configs/assistant",
+		"configs/assistant/skills/.trash",
 		"data/binaries/mosdns",
 		"data/binaries/mihomo",
 		"data/binaries/supervisord",
@@ -176,9 +187,16 @@ func (a *App) EnsureBaseLayout() error {
 }
 
 func (a *App) Router() http.Handler {
+	return a.withCommonMiddleware(a.rawRouter())
+}
+
+// rawRouter returns the route table without authentication middleware.  Public
+// requests use Router; the administrator assistant uses this same route table
+// after injecting a freshly verified identity into the request context.
+func (a *App) rawRouter() http.Handler {
 	mux := http.NewServeMux()
 	a.registerRoutes(mux)
-	return a.withCommonMiddleware(mux)
+	return mux
 }
 
 func (a *App) withCommonMiddleware(next http.Handler) http.Handler {
@@ -238,10 +256,14 @@ func (a *App) withCommonMiddleware(next http.Handler) http.Handler {
 			return
 		}
 		if strings.HasPrefix(r.URL.Path, apiPrefix) && !a.publicAPI(r.URL.Path) {
-			identity, err := a.authenticateRequest(r)
-			if err != nil {
-				writeError(rec, http.StatusUnauthorized, "unauthorized", "请提供认证令牌")
-				return
+			identity := currentIdentity(r)
+			if identity == nil {
+				var err error
+				identity, err = a.authenticateRequest(r)
+				if err != nil {
+					writeError(rec, http.StatusUnauthorized, "unauthorized", "请提供认证令牌")
+					return
+				}
 			}
 			if !a.authorizeRequest(identity, r) {
 				writeError(rec, http.StatusForbidden, "forbidden", "当前角色没有执行该操作的权限")
@@ -265,6 +287,9 @@ func factoryResetSafeModePath(path string) bool {
 }
 
 func requestMutatesState(r *http.Request) bool {
+	if r.URL.Path == "/api/v1/assistant/chat/stream" || r.URL.Path == "/api/v1/assistant/settings/test" {
+		return false
+	}
 	if strings.HasPrefix(r.URL.Path, "/api/v1/setup/download/") {
 		return true
 	}
@@ -417,6 +442,7 @@ func (a *App) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/license-activation/refresh", a.handleLicenseNoop)
 
 	a.registerUpdateRoutes(mux)
+	a.registerAssistantRoutes(mux)
 	a.registerMosDNSRoutes(mux)
 	a.registerMihomoRoutes(mux)
 	a.registerSingBoxRoutes(mux)

@@ -1,0 +1,144 @@
+# Explicit high-value capabilities. Remaining registered /api/v1 routes are
+# discovered at runtime and receive conservative method/path-based policy.
+- name: version
+  method: GET
+  path: /api/v1/version
+  description: 查询 MSF 版本、构建和运行平台
+  exposure: auto
+  risk: read
+  required_role: admin
+  result_limit: 8192
+  redact_profile: version
+
+- name: services
+  method: GET
+  path: /api/v1/services
+  description: 查询 MosDNS、Mihomo 和其他受管服务状态
+  exposure: auto
+  risk: read
+  required_role: admin
+  result_limit: 16384
+  redact_profile: service_status
+
+- name: service_status
+  method: GET
+  path: /api/v1/services/{name}
+  description: 查询指定服务状态和运行信息
+  exposure: auto
+  risk: read
+  required_role: admin
+  result_limit: 16384
+  redact_profile: service_status
+
+- name: service_restart
+  method: POST
+  path: /api/v1/services/{name}/restart
+  description: 重启指定受管服务
+  exposure: confirm
+  risk: reversible_write
+  required_role: admin
+  result_limit: 8192
+  redact_profile: service_status
+  query_schema:
+    wait: optional boolean
+    timeout: optional integer
+
+- name: mosdns_status
+  method: GET
+  path: /api/v1/mosdns/status
+  description: 查询 MosDNS 运行状态
+  exposure: auto
+  risk: read
+  required_role: admin
+  result_limit: 16384
+  redact_profile: mosdns_status
+
+- name: mosdns_overview
+  method: GET
+  path: /api/v1/mosdns/overview
+  description: 查询 MosDNS 概览统计
+  exposure: auto
+  risk: read
+  required_role: admin
+  result_limit: 32768
+  redact_profile: mosdns_summary
+
+- name: mosdns_cache_clear
+  method: POST
+  path: /api/v1/mosdns/cache/clear
+  description: 清理 MosDNS 运行时 DNS 缓存
+  exposure: confirm
+  risk: reversible_write
+  required_role: admin
+  result_limit: 8192
+  redact_profile: operation_result
+
+- name: mihomo_status
+  method: GET
+  path: /api/v1/mihomo/status
+  description: 查询 Mihomo 运行状态
+  exposure: auto
+  risk: read
+  required_role: admin
+  result_limit: 16384
+  redact_profile: mihomo_status
+
+- name: mihomo_overview
+  method: GET
+  path: /api/v1/mihomo/overview
+  description: 查询 Mihomo 概览和代理统计
+  exposure: auto
+  risk: read
+  required_role: admin
+  result_limit: 32768
+  redact_profile: mihomo_summary
+
+- name: system_diagnostics
+  method: GET
+  path: /api/v1/system/diagnostics
+  description: 查询最近一次系统诊断结果
+  exposure: auto
+  risk: read
+  required_role: admin
+  result_limit: 65536
+  redact_profile: diagnostics
+
+- name: system_diagnostics_run
+  method: POST
+  path: /api/v1/system/diagnostics/run
+  description: 运行一次受管系统诊断
+  exposure: confirm
+  risk: reversible_write
+  required_role: admin
+  result_limit: 65536
+  redact_profile: diagnostics
+
+- name: assistant_skills
+  method: GET
+  path: /api/v1/assistant/skills
+  description: 查询当前管理员保存的 MSF Skills
+  exposure: auto
+  risk: read
+  required_role: admin
+  result_limit: 32768
+  redact_profile: generic
+
+- name: assistant_skill_create
+  method: POST
+  path: /api/v1/assistant/skills
+  description: 保存一个当前管理员可复用的 MSF Skill
+  exposure: confirm
+  risk: reversible_write
+  required_role: admin
+  result_limit: 16384
+  redact_profile: generic
+
+- name: assistant_skill_delete
+  method: DELETE
+  path: /api/v1/assistant/skills/{id}
+  description: 移除一个当前管理员保存的 MSF Skill
+  exposure: confirm
+  risk: reversible_write
+  required_role: admin
+  result_limit: 8192
+  redact_profile: generic
