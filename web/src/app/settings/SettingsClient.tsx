@@ -1509,7 +1509,7 @@ function AppearanceTab({ showToast }: { showToast: (message: string) => void }) 
   const [theme, setTheme] = useState<ThemeMode>("system");
   const { language, setLanguage } = useLanguage();
   const [scene, setScene] = useState<GlassSceneMode>("dynamic");
-  const [quality, setQuality] = useState<GlassQuality>("full");
+  const [quality, setQuality] = useState<GlassQuality>("balanced");
   const [saved, setSaved] = useState<ContentPlateOpacity>(() => readLocalContentPlateOpacity());
   const [draft, setDraft] = useState<ContentPlateOpacity>(() => readLocalContentPlateOpacity());
   const [snapshot, setSnapshot] = useState<ContentPlateOpacity>(() => readLocalContentPlateOpacity());
@@ -1694,7 +1694,7 @@ function AppearanceTab({ showToast }: { showToast: (message: string) => void }) 
         const storedScene = data.scene || localStorage.getItem("msf-glass-scene");
         const nextScene: GlassSceneMode = storedScene === "static" || storedScene === "neutral" ? storedScene : "dynamic";
         const storedQuality = data.quality || localStorage.getItem("msf-glass-quality");
-        const nextQuality: GlassQuality = storedQuality === "balanced" || storedQuality === "reduced" ? storedQuality : "full";
+        const nextQuality: GlassQuality = storedQuality === "full" || storedQuality === "reduced" ? storedQuality : "balanced";
         setScene(nextScene);
         setQuality(nextQuality);
         document.documentElement.dataset.garyScene = nextScene;
@@ -1849,7 +1849,7 @@ function AppearanceTab({ showToast }: { showToast: (message: string) => void }) 
           {([
             ["dynamic", "动态场景", "Graphite Silk / Pearl Aura 的低频环境流动"],
             ["static", "静态场景", "保留完整借景和玻璃层次，关闭背景运动"],
-            ["neutral", "纯净中性", "纯石墨灰或珍珠灰，用于排障和专注阅读"],
+            ["neutral", "纯净中性", "主页与登录页恢复 v0.4.7.5 / v0.4.7.7 的静态背景特效"],
           ] as const).map(([id, label, description]) => (
             <button
               key={id}

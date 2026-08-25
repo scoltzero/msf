@@ -14,6 +14,7 @@ import {
 
 import { LoginLogoShowcase } from "@/components/login/LoginLogoShowcase";
 import { GlassFilterDefs } from "@/components/liquid-glass/GlassFilterDefs";
+import { SceneBackdrop } from "@/components/liquid-glass/SceneBackdrop";
 import GlassSurface from "@/components/react-bits/GlassSurface";
 import GradientWaves from "@/components/react-bits/GradientWaves";
 import { api, apiData } from "@/lib/api";
@@ -54,13 +55,19 @@ export default function LoginPage() {
   const [isDarkTheme, setIsDarkTheme] = useState(() =>
     typeof document !== "undefined" && document.documentElement.classList.contains("dark")
   );
+  const [sceneMode, setSceneMode] = useState(() =>
+    typeof document !== "undefined" ? document.documentElement.dataset.garyScene || "dynamic" : "dynamic"
+  );
 
   useEffect(() => {
     const root = document.documentElement;
-    const syncTheme = () => setIsDarkTheme(root.classList.contains("dark"));
-    const observer = new MutationObserver(syncTheme);
-    observer.observe(root, { attributes: true, attributeFilter: ["class"] });
-    syncTheme();
+    const syncAppearance = () => {
+      setIsDarkTheme(root.classList.contains("dark"));
+      setSceneMode(root.dataset.garyScene || "dynamic");
+    };
+    const observer = new MutationObserver(syncAppearance);
+    observer.observe(root, { attributes: true, attributeFilter: ["class", "data-gary-scene"] });
+    syncAppearance();
     return () => observer.disconnect();
   }, []);
 
@@ -103,30 +110,34 @@ export default function LoginPage() {
 
   return (
     <main className="gary-public-page msf-login-shell">
-      <GradientWaves
-        key={isDarkTheme ? "dark" : "light"}
-        className="msf-login-gradient-waves"
-        horizonColor={wavePalette.horizon}
-        waveColor={wavePalette.wave}
-        crestColor={wavePalette.crest}
-        speed={0.34}
-        amplitude={3.4}
-        waveScale={0.72}
-        waveRatio={0.9}
-        swell={38}
-        turbulence={22}
-        tilt={1.11}
-        zoom={1}
-        height={5.5}
-        fogDepth={48}
-        detail="medium"
-        brightness={1}
-        opacity={1}
-        mouseInteraction
-        parallaxStrength={0.28}
-        grain
-        grainIntensity={0.015}
-      />
+      {sceneMode === "neutral" ? (
+        <SceneBackdrop />
+      ) : (
+        <GradientWaves
+          key={isDarkTheme ? "dark" : "light"}
+          className="msf-login-gradient-waves"
+          horizonColor={wavePalette.horizon}
+          waveColor={wavePalette.wave}
+          crestColor={wavePalette.crest}
+          speed={sceneMode === "static" ? 0 : 0.34}
+          amplitude={3.4}
+          waveScale={0.72}
+          waveRatio={0.9}
+          swell={38}
+          turbulence={22}
+          tilt={1.11}
+          zoom={1}
+          height={5.5}
+          fogDepth={48}
+          detail="medium"
+          brightness={1}
+          opacity={1}
+          mouseInteraction={sceneMode === "dynamic"}
+          parallaxStrength={0.28}
+          grain
+          grainIntensity={0.015}
+        />
+      )}
       <GlassFilterDefs />
 
       <a className="msf-login-skip" href="#login-form">

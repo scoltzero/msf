@@ -38,10 +38,53 @@
   }
 }
 
-html[data-gary-quality="reduced"] .gary-scene__gradient-waves {
+html[data-gary-scene="neutral"] .gary-scene__gradient-waves {
   display: none;
 }
 
-html[data-gary-scene="neutral"] .gary-scene__gradient-waves {
-  display: none;
+.gary-scene__legacy-gradient {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: var(--gary-scene-base);
+}
+
+.gary-scene__legacy-gradient::before {
+  content: "";
+  position: absolute;
+  inset: -18%;
+  background:
+    radial-gradient(ellipse 56% 44% at 18% 18%, var(--gary-scene-a), transparent 72%),
+    radial-gradient(ellipse 48% 42% at 84% 12%, var(--gary-scene-b), transparent 74%),
+    radial-gradient(ellipse 64% 52% at 64% 86%, var(--gary-scene-c), transparent 76%);
+  transform: translate3d(-1.5%, -1%, 0) scale(1.04);
+}
+
+.gary-scene__legacy-gradient::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 82% 72% at 50% 44%, transparent 36%, var(--gary-scene-mask) 100%),
+    repeating-radial-gradient(circle at 17% 23%, rgba(255, 255, 255, 0.08) 0 0.35px, rgba(0, 0, 0, 0.04) 0.65px 2.8px);
+  background-size: auto, 5px 5px;
+  opacity: 0.30;
+}
+
+.gary-scene__legacy-silk {
+  position: absolute;
+  inset: -14%;
+  background:
+    radial-gradient(ellipse 42% 36% at 32% 72%, var(--gary-scene-b), transparent 76%),
+    radial-gradient(ellipse 44% 38% at 76% 46%, var(--gary-scene-a), transparent 78%);
+  opacity: 0.72;
+  transform: translate3d(1%, 1%, 0) scale(1.02);
+}
+
+@supports (color: color-mix(in srgb, white, transparent)) {
+  .gary-scene__legacy-silk {
+    background:
+      radial-gradient(ellipse 42% 36% at 32% 72%, color-mix(in srgb, var(--gary-scene-b) 68%, transparent), transparent 76%),
+      radial-gradient(ellipse 44% 38% at 76% 46%, color-mix(in srgb, var(--gary-scene-a) 66%, transparent), transparent 78%);
+  }
 }

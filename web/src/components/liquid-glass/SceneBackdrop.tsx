@@ -56,13 +56,22 @@ export function SceneBackdrop() {
   }, []);
 
   const palette = state.dark ? WAVE_PALETTES.dark : WAVE_PALETTES.light;
-  const animated = state.scene === "dynamic" && state.quality === "full" && !state.reducedMotion;
-  const balanced = state.quality === "balanced";
-  const visible = state.scene !== "neutral" && state.quality !== "reduced";
+  const animated = state.scene === "dynamic" && !state.reducedMotion;
+  const qualityProfile = state.quality === "reduced"
+    ? { speed: 0.12, detail: "low" as const, pixels: 650_000, proxyPixels: 500_000, dpr: 0.75 }
+    : state.quality === "balanced"
+      ? { speed: 0.16, detail: "low" as const, pixels: 1_200_000, proxyPixels: 900_000, dpr: 1 }
+      : { speed: 0.2, detail: "medium" as const, pixels: 2_300_000, proxyPixels: 1_200_000, dpr: 1.5 };
+  const visible = state.scene !== "neutral";
   const proxyDense = state.performanceProfile === "proxy-dense";
 
   return (
     <div className="gary-scene" aria-hidden="true">
+      {state.scene === "neutral" ? (
+        <div className="gary-scene__legacy-gradient">
+          <div className="gary-scene__legacy-silk" />
+        </div>
+      ) : null}
       {visible && (
         <GradientWaves
           key={`${state.dark ? "dark" : "light"}-${state.quality}-${state.performanceProfile}`}
@@ -70,7 +79,7 @@ export function SceneBackdrop() {
           horizonColor={palette.horizon}
           waveColor={palette.wave}
           crestColor={palette.crest}
-          speed={animated ? 0.2 : 0}
+          speed={animated ? qualityProfile.speed : 0}
           amplitude={3.4}
           waveScale={0.72}
           waveRatio={0.9}
@@ -80,7 +89,7 @@ export function SceneBackdrop() {
           zoom={1}
           height={5.5}
           fogDepth={48}
-          detail={balanced ? "low" : "medium"}
+          detail={qualityProfile.detail}
           brightness={1}
           opacity={1}
           mouseInteraction={false}
@@ -89,8 +98,8 @@ export function SceneBackdrop() {
           saturation={state.dark ? 0.9 : 1.062}
           contrast={state.dark ? 1.24 : 1.32}
           postBrightness={state.dark ? 0.9 : 1}
-          maxRenderPixels={proxyDense ? 1_200_000 : balanced ? 1_400_000 : 2_300_000}
-          maxDpr={balanced ? 1.25 : 1.5}
+          maxRenderPixels={proxyDense ? qualityProfile.proxyPixels : qualityProfile.pixels}
+          maxDpr={qualityProfile.dpr}
           powerPreference="high-performance"
         />
       )}

@@ -112,7 +112,7 @@ func TestAppearanceOpacityAPIsAtomicAndConsistent(t *testing.T) {
 	if initial.Code != http.StatusOK {
 		t.Fatalf("appearance GET failed: status=%d body=%s", initial.Code, initial.Body.String())
 	}
-	for _, want := range []string{`"theme":"system"`, `"language":"zh-CN"`, `"scene":"dynamic"`, `"quality":"full"`, `"content_plate_opacity_subtle":"56"`, `"content_plate_opacity_regular":"70"`, `"content_plate_opacity_strong":"84"`} {
+	for _, want := range []string{`"theme":"system"`, `"language":"zh-CN"`, `"scene":"dynamic"`, `"quality":"balanced"`, `"content_plate_opacity_subtle":"56"`, `"content_plate_opacity_regular":"70"`, `"content_plate_opacity_strong":"84"`} {
 		if !strings.Contains(initial.Body.String(), want) {
 			t.Fatalf("appearance GET missing %s: %s", want, initial.Body.String())
 		}
@@ -121,7 +121,7 @@ func TestAppearanceOpacityAPIsAtomicAndConsistent(t *testing.T) {
 	if structuredInitial.Code != http.StatusOK {
 		t.Fatalf("structured appearance GET failed: status=%d body=%s", structuredInitial.Code, structuredInitial.Body.String())
 	}
-	for _, want := range []string{`"scene":"dynamic"`, `"quality":"full"`, `"content_plate_opacity_subtle":"56"`, `"content_plate_opacity_regular":"70"`, `"content_plate_opacity_strong":"84"`} {
+	for _, want := range []string{`"scene":"dynamic"`, `"quality":"balanced"`, `"content_plate_opacity_subtle":"56"`, `"content_plate_opacity_regular":"70"`, `"content_plate_opacity_strong":"84"`} {
 		if !strings.Contains(structuredInitial.Body.String(), want) {
 			t.Fatalf("structured GET missing %s: %s", want, structuredInitial.Body.String())
 		}
@@ -200,6 +200,20 @@ func TestAppearanceOpacityAPIsAtomicAndConsistent(t *testing.T) {
 		if ordinaryData[key] != structuredAppearance[key] {
 			t.Fatalf("ordinary/structured GET mismatch for %s: ordinary=%v structured=%v", key, ordinaryData[key], structuredAppearance[key])
 		}
+	}
+}
+
+func TestAppearanceExplicitQualitySurvivesDefaultAndUpgradeFallbacks(t *testing.T) {
+	app := newTestApp(t)
+	for _, quality := range []string{"full", "balanced", "reduced"} {
+		app.setSetting("appearance.quality", quality)
+		if got := app.appearanceSettingsPayload()["quality"]; got != quality {
+			t.Fatalf("explicit quality %q was overwritten by fallback %q", quality, got)
+		}
+	}
+	app.setSetting("appearance.scene", "static")
+	if got := app.appearanceSettingsPayload()["scene"]; got != "static" {
+		t.Fatalf("explicit scene was overwritten by fallback %q", got)
 	}
 }
 
