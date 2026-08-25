@@ -7,9 +7,11 @@ import {
   Lock,
   LogIn,
   Network,
+  Megaphone,
   Server,
   Shield,
   User,
+  X,
 } from "lucide-react";
 
 import { LoginLogoShowcase } from "@/components/login/LoginLogoShowcase";
@@ -41,6 +43,20 @@ const loginWavePalettes = {
   },
 } as const;
 
+const LOGIN_ANNOUNCEMENT_ID = "2026-08-mihomo-config-ai-agent";
+const LOGIN_ANNOUNCEMENT_HIDDEN_KEY = `msf-login-announcement:${LOGIN_ANNOUNCEMENT_ID}:hidden`;
+const LOGIN_ANNOUNCEMENT_SESSION_KEY = `msf-login-announcement:${LOGIN_ANNOUNCEMENT_ID}:session`;
+
+function readLoginAnnouncementVisible() {
+  if (typeof window === "undefined") return true;
+  try {
+    return window.localStorage.getItem(LOGIN_ANNOUNCEMENT_HIDDEN_KEY) !== "1" &&
+      window.sessionStorage.getItem(LOGIN_ANNOUNCEMENT_SESSION_KEY) !== "1";
+  } catch {
+    return true;
+  }
+}
+
 export default function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -52,6 +68,7 @@ export default function LoginPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [releaseVersion, setReleaseVersion] = useState("未知");
+  const [announcementVisible, setAnnouncementVisible] = useState(readLoginAnnouncementVisible);
   const [isDarkTheme, setIsDarkTheme] = useState(() =>
     typeof document !== "undefined" && document.documentElement.classList.contains("dark")
   );
@@ -108,6 +125,24 @@ export default function LoginPage() {
   const passwordToggleLabel = showPassword ? "隐藏密码" : "显示密码";
   const wavePalette = isDarkTheme ? loginWavePalettes.dark : loginWavePalettes.light;
 
+  const closeAnnouncementForSession = () => {
+    try {
+      window.sessionStorage.setItem(LOGIN_ANNOUNCEMENT_SESSION_KEY, "1");
+    } catch {
+      // Storage restrictions should not prevent closing the announcement now.
+    }
+    setAnnouncementVisible(false);
+  };
+
+  const hideAnnouncementPermanently = () => {
+    try {
+      window.localStorage.setItem(LOGIN_ANNOUNCEMENT_HIDDEN_KEY, "1");
+    } catch {
+      // Storage restrictions should not prevent closing the announcement now.
+    }
+    setAnnouncementVisible(false);
+  };
+
   return (
     <main className="gary-public-page msf-login-shell">
       {sceneMode === "neutral" ? (
@@ -147,6 +182,49 @@ export default function LoginPage() {
       <div data-login-version className="msf-login-version" data-no-translate>
         {releaseVersion}
       </div>
+
+      {announcementVisible ? (
+        <aside className="msf-login-announcement" aria-labelledby="login-announcement-title">
+          <button
+            type="button"
+            className="msf-login-announcement-close"
+            onClick={closeAnnouncementForSession}
+            aria-label="关闭本次更新公告"
+            title="本次关闭"
+          >
+            <X aria-hidden="true" />
+          </button>
+
+          <div className="msf-login-announcement-heading">
+            <span className="msf-login-announcement-icon" aria-hidden="true"><Megaphone /></span>
+            <div>
+              <p>本次更新</p>
+              <h2 id="login-announcement-title">新增功能与开发者的话</h2>
+            </div>
+          </div>
+
+          <ol className="msf-login-announcement-features">
+            <li>
+              <strong>全新的 Mihomo 配置</strong>
+              <span>前往 <code>/mihomo/config</code>，通过“重置恢复”获取最新配置，同时保留现有节点信息。</span>
+            </li>
+            <li>
+              <strong>AI Agent 初版</strong>
+              <span>首版支持 OpenAI Responses，可自定义 Skill，具备 MSF 内读写能力；仅管理员可见。</span>
+            </li>
+          </ol>
+
+          <p className="msf-login-announcement-note">
+            <strong>PS</strong>
+            MSF 因代码审计未能完整保留仓库原有的 Star 与 Fork，需要各位老用户的一份助力，感激不尽。
+          </p>
+
+          <div className="msf-login-announcement-actions">
+            <a href="https://github.com/scoltzero/msf" target="_blank" rel="noreferrer">前往 GitHub</a>
+            <button type="button" onClick={hideAnnouncementPermanently}>不再显示</button>
+          </div>
+        </aside>
+      ) : null}
 
       <section className="msf-login-stage" aria-labelledby="msf-login-brand-title">
         <div className="msf-login-brand-lockup">

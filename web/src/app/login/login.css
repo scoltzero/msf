@@ -61,6 +61,201 @@
   backdrop-filter: blur(14px) saturate(var(--gary-saturate));
 }
 
+.msf-login-announcement {
+  position: fixed;
+  top: clamp(1rem, 2.6vh, 1.8rem);
+  left: 50%;
+  z-index: 8;
+  isolation: isolate;
+  width: min(48rem, calc(100vw - 3rem));
+  height: auto;
+  min-height: 0;
+  max-height: min(18rem, calc(100dvh - 2rem));
+  overflow: auto;
+  padding: 1rem 1.15rem 0.9rem;
+  transform: translateX(-50%);
+  border: 1px solid var(--gary-edge-dim);
+  border-radius: 1.35rem;
+  color: var(--foreground);
+  background: var(--gary-glass-fill-regular);
+  box-shadow: var(--gary-contact-shadow), 0 1.2rem 3.2rem color-mix(in srgb, var(--gary-edge-shadow) 54%, transparent);
+  -webkit-backdrop-filter: blur(18px) saturate(var(--gary-saturate)) contrast(var(--gary-contrast));
+  backdrop-filter: blur(18px) saturate(var(--gary-saturate)) contrast(var(--gary-contrast));
+}
+
+.msf-login-announcement-close {
+  position: absolute;
+  top: 0.65rem;
+  right: 0.65rem;
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border: 0;
+  border-radius: 0.7rem;
+  color: var(--muted-foreground);
+  background: transparent;
+  transition: color 160ms ease, background-color 160ms ease, transform 160ms ease;
+}
+
+.msf-login-announcement-close:hover {
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--gary-solid-fill) 68%, transparent);
+}
+
+.msf-login-announcement-close:active {
+  transform: scale(0.94);
+}
+
+.msf-login-announcement-close svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.msf-login-announcement-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding-right: 2.1rem;
+}
+
+.msf-login-announcement-icon {
+  display: grid;
+  width: 2.15rem;
+  height: 2.15rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 0.78rem;
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+}
+
+.msf-login-announcement-icon svg {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
+.msf-login-announcement-heading p,
+.msf-login-announcement-heading h2 {
+  margin: 0;
+}
+
+.msf-login-announcement-heading p {
+  color: var(--primary);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.msf-login-announcement-heading h2 {
+  margin-top: 0.08rem;
+  font-size: 0.98rem;
+  font-weight: 680;
+  line-height: 1.25;
+}
+
+.msf-login-announcement-features {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: announcement-feature;
+}
+
+.msf-login-announcement-features li {
+  position: relative;
+  min-width: 0;
+  padding: 0.65rem 0.72rem 0.65rem 2.25rem;
+  border: 1px solid color-mix(in srgb, var(--gary-edge-dim) 58%, transparent);
+  border-radius: 0.9rem;
+  background: color-mix(in srgb, var(--gary-solid-fill) 45%, transparent);
+  counter-increment: announcement-feature;
+}
+
+.msf-login-announcement-features li::before {
+  content: counter(announcement-feature);
+  position: absolute;
+  top: 0.67rem;
+  left: 0.72rem;
+  display: grid;
+  width: 1.1rem;
+  height: 1.1rem;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  font-size: 0.65rem;
+  font-weight: 750;
+}
+
+.msf-login-announcement-features strong,
+.msf-login-announcement-features span {
+  display: block;
+}
+
+.msf-login-announcement-features strong {
+  font-size: 0.77rem;
+  font-weight: 680;
+}
+
+.msf-login-announcement-features span {
+  margin-top: 0.2rem;
+  color: var(--muted-foreground);
+  font-size: 0.7rem;
+  line-height: 1.55;
+}
+
+.msf-login-announcement-features code {
+  color: var(--foreground);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.66rem;
+}
+
+.msf-login-announcement-note {
+  margin: 0.65rem 0 0;
+  padding: 0.55rem 0.7rem;
+  border-radius: 0.8rem;
+  color: var(--muted-foreground);
+  background: color-mix(in srgb, var(--gary-solid-fill) 38%, transparent);
+  font-size: 0.7rem;
+  line-height: 1.5;
+}
+
+.msf-login-announcement-note strong {
+  margin-right: 0.4rem;
+  color: var(--primary);
+}
+
+.msf-login-announcement-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  margin-top: 0.65rem;
+}
+
+.msf-login-announcement-actions a,
+.msf-login-announcement-actions button {
+  min-height: 2rem;
+  padding: 0.4rem 0.72rem;
+  border-radius: 0.68rem;
+  font-size: 0.7rem;
+  font-weight: 620;
+  text-decoration: none;
+}
+
+.msf-login-announcement-actions a {
+  color: var(--primary);
+}
+
+.msf-login-announcement-actions button {
+  border: 1px solid color-mix(in srgb, var(--gary-edge-dim) 68%, transparent);
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--gary-solid-fill) 54%, transparent);
+}
+
 .msf-login-stage {
   position: relative;
   z-index: 1;
@@ -681,6 +876,25 @@
     display: none;
   }
 
+  .msf-login-announcement {
+    position: relative;
+    top: auto;
+    left: auto;
+    width: auto;
+    max-height: none;
+    margin: max(4.4rem, calc(env(safe-area-inset-top) + 4rem)) 0.8rem 0.75rem;
+    padding: 0.9rem;
+    transform: none;
+  }
+
+  .msf-login-announcement-features {
+    grid-template-columns: 1fr;
+  }
+
+  .msf-login-announcement-note {
+    text-wrap: pretty;
+  }
+
   .msf-login-version {
     top: max(1.15rem, env(safe-area-inset-top));
     right: max(1rem, env(safe-area-inset-right));
@@ -744,6 +958,22 @@
 }
 
 @media (max-width: 480px) {
+  .msf-login-announcement {
+    margin-right: max(0.6rem, env(safe-area-inset-right));
+    margin-left: max(0.6rem, env(safe-area-inset-left));
+    border-radius: 1.15rem;
+  }
+
+  .msf-login-announcement-actions {
+    justify-content: stretch;
+  }
+
+  .msf-login-announcement-actions a,
+  .msf-login-announcement-actions button {
+    flex: 1;
+    text-align: center;
+  }
+
   .msf-login-entry {
     padding-right: max(0.85rem, env(safe-area-inset-right));
     padding-left: max(0.85rem, env(safe-area-inset-left));
@@ -831,6 +1061,7 @@ html[data-gary-quality="reduced"] .msf-login-card {
 }
 
 @media (prefers-reduced-transparency: reduce) {
+  .msf-login-announcement,
   .msf-login-card,
   .msf-login-version {
     -webkit-backdrop-filter: none;
@@ -838,6 +1069,10 @@ html[data-gary-quality="reduced"] .msf-login-card {
   }
 
   .msf-login-card {
+    background: var(--gary-solid-fill-strong);
+  }
+
+  .msf-login-announcement {
     background: var(--gary-solid-fill-strong);
   }
 }
