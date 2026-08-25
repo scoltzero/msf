@@ -60,12 +60,26 @@ dmg_root="$tmp/dmg-root"
 /bin/cp "$repo_root/docs/install/macos.md" "$dmg_root/安装说明.md"
 /bin/cp "$repo_root/LICENSE" "$dmg_root/LICENSE.txt"
 /bin/cp "$repo_root/THIRD_PARTY_NOTICES.md" "$dmg_root/THIRD_PARTY_NOTICES.md"
+
+# GitHub's macOS runner can fail while hdiutil infers a source-folder image
+# size, despite sufficient host disk space. Create a bounded writable image,
+# populate it, then compress it into the release DMG instead.
+rw_dmg="$tmp/$asset_prefix-rw.dmg"
 /usr/bin/hdiutil create \
+  -size 1g \
+  -fs HFS+ \
   -volname "MSF Unsigned Beta" \
-  -srcfolder "$dmg_root" \
   -ov \
-  -format UDZO \
-  "$dmg"
+  -format UDRW \
+  "$rw_dmg"
+/bin/mkdir -p "$mount_point"
+/usr/bin/hdiutil attach "$rw_dmg" -nobrowse -mountpoint "$mount_point" -quiet
+mounted=1
+/usr/bin/ditto "$dmg_root" "$mount_point"
+/usr/bin/sync
+/usr/bin/hdiutil detach "$mount_point" -quiet
+mounted=0
+/usr/bin/hdiutil convert "$rw_dmg" -format UDZO -ov -o "$dmg" >/dev/null
 /usr/bin/hdiutil verify "$dmg" >/dev/null
 
 zip_check="$tmp/zip-check"
@@ -73,7 +87,6 @@ zip_check="$tmp/zip-check"
 /usr/bin/ditto -x -k "$zip" "$zip_check"
 verify_app "$zip_check/MSF.app"
 
-/bin/mkdir -p "$mount_point"
 /usr/bin/hdiutil attach "$dmg" -readonly -nobrowse -mountpoint "$mount_point" -quiet
 mounted=1
 verify_app "$mount_point/MSF.app"
