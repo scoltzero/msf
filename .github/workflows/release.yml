@@ -180,6 +180,17 @@ jobs:
           npm --prefix web run check
           make macos-app-test XCODE_DEVELOPER_DIR="$(xcode-select -p)"
 
+      - name: Reclaim macOS packaging space
+        shell: bash
+        run: |
+          set -euo pipefail
+          df -h .
+          rm -rf \
+            macos/MSFMenuBar/.build \
+            macos/MSFMenuBar/DerivedData \
+            web/node_modules
+          df -h .
+
       - name: Build and package unsigned macOS beta assets
         run: |
           echo "::warning::The macOS Beta is intentionally unsigned and uses the legacy administrator installer."
