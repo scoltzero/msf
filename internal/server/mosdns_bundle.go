@@ -100,7 +100,7 @@ func (a *App) installMosDNSBundle(ctx context.Context, archive, iface string) er
 	if err := copyDir(layout.TrafficRoot, trafficConfig); err != nil {
 		return err
 	}
-	if err := forceMosDNSAPILoopback(filepath.Join(mosdnsConfig, "config_custom.yaml")); err != nil {
+	if err := forceMosDNSAPIListen(filepath.Join(mosdnsConfig, "config_custom.yaml")); err != nil {
 		return err
 	}
 	if err := configureTrafficAgent(filepath.Join(trafficConfig, "config.json"), iface); err != nil {
@@ -208,7 +208,7 @@ func validateLinuxAMD64ELF(path string) error {
 	return nil
 }
 
-func forceMosDNSAPILoopback(path string) error {
+func forceMosDNSAPIListen(path string) error {
 	content, err := os.ReadFile(path)
 	if err != nil {
 		return err
@@ -228,7 +228,7 @@ func forceMosDNSAPILoopback(path string) error {
 			inAPI = false
 		}
 		if inAPI && strings.HasPrefix(trimmed, "http:") {
-			lines[i] = line[:indent] + `http: "127.0.0.1:9099"`
+			lines[i] = line[:indent] + `http: "0.0.0.0:9099"`
 			updated = true
 			break
 		}
@@ -248,9 +248,9 @@ func configureTrafficAgent(path, iface string) error {
 	if err := json.Unmarshal(content, &config); err != nil {
 		return fmt.Errorf("read traffic-agent config: %w", err)
 	}
-	config["listen"] = "127.0.0.1:9199"
+	config["listen"] = "0.0.0.0:9199"
 	config["mosdns_backend"] = "http://127.0.0.1:9099"
-	config["cors_allowed_origins"] = []string{}
+	config["cors_allowed_origins"] = []string{"*"}
 	if iface = strings.TrimSpace(iface); iface != "" {
 		config["interfaces"] = []string{iface}
 	}

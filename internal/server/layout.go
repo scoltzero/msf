@@ -12,9 +12,10 @@ func databasePath(dataDir string) string {
 
 func (a *App) ensureRuntimeLayout() error {
 	for rel, content := range map[string]string{
-		"configs/supervisor/supervisord.conf":    a.renderSupervisorConf(),
-		"configs/supervisor/services/mihomo.ini": a.renderSupervisorService("mihomo"),
-		"configs/supervisor/services/mosdns.ini": a.renderSupervisorService("mosdns"),
+		"configs/supervisor/supervisord.conf":                  a.renderSupervisorConf(),
+		"configs/supervisor/services/mihomo.ini":               a.renderSupervisorService("mihomo"),
+		"configs/supervisor/services/mosdns.ini":               a.renderSupervisorService("mosdns"),
+		"configs/supervisor/services/mosdns-traffic-agent.ini": a.renderSupervisorService("mosdns-traffic-agent"),
 	} {
 		path := filepath.Join(a.DataDir, rel)
 		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
@@ -54,6 +55,22 @@ func (a *App) ensureRuntimeLayout() error {
 		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 			return err
 		}
+	}
+	trafficConfigPath := filepath.Join(a.DataDir, "configs/monitor/config.json")
+	if _, err := os.Stat(trafficConfigPath); err == nil {
+		if err := configureTrafficAgent(trafficConfigPath, ""); err != nil {
+			return fmt.Errorf("repair traffic-agent config: %w", err)
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	mosdnsConfigPath := filepath.Join(a.DataDir, "configs/mosdns/config_custom.yaml")
+	if _, err := os.Stat(mosdnsConfigPath); err == nil {
+		if err := forceMosDNSAPIListen(mosdnsConfigPath); err != nil {
+			return fmt.Errorf("repair MosDNS API config: %w", err)
+		}
+	} else if !os.IsNotExist(err) {
+		return err
 	}
 	configPath := filepath.Join(a.DataDir, "configs/mihomo/config.yaml")
 	backupPath := filepath.Join(a.DataDir, "configs/mihomo/config.yaml.backup")
@@ -107,6 +124,20 @@ stderr_logfile=%s
 			filepath.Join(a.DataDir, "configs/mihomo"),
 			filepath.Join(a.DataDir, "logs/mihomo.out.log"),
 			filepath.Join(a.DataDir, "logs/mihomo.err.log"))
+	case "mosdns-traffic-agent":
+		config := filepath.Join(a.DataDir, "configs/monitor/config.json")
+		return fmt.Sprintf(`[program:mosdns-traffic-agent]
+command=%s -config %s
+directory=%s
+autostart=false
+autorestart=true
+stdout_logfile=%s
+stderr_logfile=%s
+`, filepath.Join(a.DataDir, "data/binaries/mosdns-traffic-agent/mosdns-traffic-agent"),
+			config,
+			filepath.Dir(config),
+			filepath.Join(a.DataDir, "logs/mosdns-traffic-agent.out.log"),
+			filepath.Join(a.DataDir, "logs/mosdns-traffic-agent.err.log"))
 	default:
 		return fmt.Sprintf(`[program:mosdns]
 command=%s start --dir %s

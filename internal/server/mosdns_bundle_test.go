@@ -42,8 +42,8 @@ include:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(config), `http: "127.0.0.1:9099"`) {
-		t.Fatalf("MosDNS API must be loopback-only:\n%s", config)
+	if !strings.Contains(string(config), `http: "0.0.0.0:9099"`) {
+		t.Fatalf("MosDNS API must be reachable by the uploaded WebUI:\n%s", config)
 	}
 	if _, err := os.Stat(filepath.Join(app.DataDir, "configs/mosdns/config.yaml")); !os.IsNotExist(err) {
 		t.Fatalf("legacy generated config.yaml must not survive bundle installation: %v", err)
@@ -60,8 +60,12 @@ include:
 	if err := json.Unmarshal(trafficConfig, &traffic); err != nil {
 		t.Fatal(err)
 	}
-	if traffic["listen"] != "127.0.0.1:9199" || traffic["mosdns_backend"] != "http://127.0.0.1:9099" {
-		t.Fatalf("traffic agent endpoints were not restricted to loopback: %#v", traffic)
+	if traffic["listen"] != "0.0.0.0:9199" || traffic["mosdns_backend"] != "http://127.0.0.1:9099" {
+		t.Fatalf("traffic agent endpoints were not aligned with the uploaded package: %#v", traffic)
+	}
+	cors, _ := traffic["cors_allowed_origins"].([]any)
+	if len(cors) != 1 || cors[0] != "*" {
+		t.Fatalf("traffic agent CORS must remain compatible with the MosDNS UI: %#v", traffic["cors_allowed_origins"])
 	}
 	interfaces, _ := traffic["interfaces"].([]any)
 	if len(interfaces) != 1 || interfaces[0] != "eth0" {
@@ -81,6 +85,56 @@ include:
 	}
 	if agentSpec.Config != filepath.Join(app.DataDir, "configs/monitor/config.json") {
 		t.Fatalf("traffic agent config mismatch: %#v", agentSpec)
+	}
+}
+
+func TestRuntimeLayoutRepairsExistingTrafficAgentConnectivity(t *testing.T) {
+	app := newTestApp(t)
+	configPath := filepath.Join(app.DataDir, "configs/monitor/config.json")
+	if err := os.WriteFile(configPath, []byte(`{"listen":"127.0.0.1:9199","interfaces":["ens18"],"cors_allowed_origins":[]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := app.ensureRuntimeLayout(); err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config map[string]any
+	if err := json.Unmarshal(content, &config); err != nil {
+		t.Fatal(err)
+	}
+	if config["listen"] != "0.0.0.0:9199" {
+		t.Fatalf("existing traffic-agent listen address was not repaired: %#v", config)
+	}
+	cors, _ := config["cors_allowed_origins"].([]any)
+	if len(cors) != 1 || cors[0] != "*" {
+		t.Fatalf("existing traffic-agent CORS was not repaired: %#v", config)
+	}
+	interfaces, _ := config["interfaces"].([]any)
+	if len(interfaces) != 1 || interfaces[0] != "ens18" {
+		t.Fatalf("runtime repair must preserve configured interfaces: %#v", config)
+	}
+}
+
+func TestRuntimeLayoutRepairsExistingMosDNSAPIListen(t *testing.T) {
+	app := newTestApp(t)
+	configPath := filepath.Join(app.DataDir, "configs/mosdns/config_custom.yaml")
+	if err := os.WriteFile(configPath, []byte("api:\n  http: \"127.0.0.1:9099\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := app.ensureRuntimeLayout(); err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(content), `http: "0.0.0.0:9099"`) {
+		t.Fatalf("existing MosDNS API listen address was not repaired:\n%s", content)
 	}
 }
 

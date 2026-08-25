@@ -36,7 +36,7 @@ monitor/config/config.json
 5. MSF 将暂存发布包原子替换到受管 MosDNS 运行目录。验证、配置或替换失败时，当前正在运行的发布包与配置必须保持不变。
 6. MSF 将 `mosdns` 与 `mosdns-traffic-agent` 作为一个运行单元启动和监管。MosDNS 的重启、升级、重装、回滚、停止与恢复出厂设置，均在适当顺序中作用于这两个进程。
 
-MSF 继续负责管理面：发布包中的 MosDNS API 与流量代理 API 仅监听回环地址，浏览器不直接访问 `9099` 或 `9199`。
+为兼容发布包自带的 MosDNS WebUI，发布包中的 MosDNS API 与流量代理 API 监听 `0.0.0.0:9099` 和 `0.0.0.0:9199`；流量代理保留 `cors_allowed_origins: ["*"]`，由 WebUI 直连其 API。MSF 管理面仍通过本机回环地址代理流量 API。
 
 ## 配置模型
 

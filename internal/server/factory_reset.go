@@ -506,8 +506,8 @@ func (a *App) createFactoryResetBaseLayout(secret string, state factoryResetStat
 		"configs/mosdns/cache", "configs/mosdns/gen", "configs/mosdns/genblank", "configs/mosdns/rule",
 		"configs/mosdns/srs", "configs/mosdns/unpack", "configs/mihomo/rules", "configs/mihomo/proxy_providers",
 		"configs/mihomo/user_configs", "configs/mihomo/ui", "configs/network", "configs/network/history",
-		"configs/supervisor/services", "data/binaries/mosdns", "data/binaries/mihomo",
-		"data/binaries/supervisord", "data/binaries/zashboard", "logs/supervisor", "database", "backups",
+		"configs/supervisor/services", "configs/monitor", "data/binaries/mosdns", "data/binaries/mosdns-traffic-agent",
+		"data/binaries/mihomo", "data/binaries/supervisord", "data/binaries/zashboard", "logs/supervisor", "database", "backups",
 	}
 	for _, rel := range dirs {
 		if err := os.MkdirAll(filepath.Join(a.DataDir, filepath.FromSlash(rel)), 0o755); err != nil {

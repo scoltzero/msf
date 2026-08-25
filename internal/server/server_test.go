@@ -636,6 +636,7 @@ func TestCompatibilityLayoutMatchesMSFTreeShape(t *testing.T) {
 		"configs/supervisor/supervisord.conf",
 		"configs/supervisor/services/mihomo.ini",
 		"configs/supervisor/services/mosdns.ini",
+		"configs/supervisor/services/mosdns-traffic-agent.ini",
 		"configs/network/history/.keep",
 		"configs/mosdns/cache/.keep",
 		"configs/mosdns/unpack/.keep",
@@ -643,6 +644,29 @@ func TestCompatibilityLayoutMatchesMSFTreeShape(t *testing.T) {
 	} {
 		if _, err := os.Stat(filepath.Join(app.DataDir, rel)); err != nil {
 			t.Fatalf("expected MSF-compatible layout path %s: %v", rel, err)
+		}
+	}
+}
+
+func TestTrafficAgentSupervisorServiceUsesInstalledMonitorConfig(t *testing.T) {
+	app := newTestApp(t)
+
+	ini, err := os.ReadFile(filepath.Join(app.DataDir, "configs/supervisor/services/mosdns-traffic-agent.ini"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"[program:mosdns-traffic-agent]",
+		"command=" + filepath.Join(app.DataDir, "data/binaries/mosdns-traffic-agent/mosdns-traffic-agent") + " -config " + filepath.Join(app.DataDir, "configs/monitor/config.json"),
+		"directory=" + filepath.Join(app.DataDir, "configs/monitor"),
+		"autostart=false",
+		"autorestart=true",
+		"stdout_logfile=" + filepath.Join(app.DataDir, "logs/mosdns-traffic-agent.out.log"),
+		"stderr_logfile=" + filepath.Join(app.DataDir, "logs/mosdns-traffic-agent.err.log"),
+	}
+	for _, line := range want {
+		if !strings.Contains(string(ini), line) {
+			t.Fatalf("traffic-agent supervisor config missing %q:\n%s", line, ini)
 		}
 	}
 }
