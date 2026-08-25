@@ -145,9 +145,7 @@ done
 
 for release_artifact in \
   "$ROOT/dist/msf-linux-amd64" \
-  "$ROOT/dist/msf-linux-arm64" \
-  "$ROOT/dist/msf-linux-amd64.tar.gz" \
-  "$ROOT/dist/msf-linux-arm64.tar.gz"; do
+  "$ROOT/dist/msf-linux-amd64.tar.gz"; do
   [[ -f "$release_artifact" ]] || continue
   for pattern in "${known_patterns[@]}"; do
     if strings "$release_artifact" 2>/dev/null | rg -q -i -e "$pattern"; then

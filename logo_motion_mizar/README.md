@@ -16,7 +16,6 @@ All active raster outputs are generated from the maintained SVG by `scripts/bran
 - `exports/transparent/`: transparent PNG exports from 16px through 2048px.
 - `exports/favicon/`: cropped SVG, 16/32/48px PNGs, and a multi-size ICO.
 - `exports/app-icon/`: white rounded-square application icons with transparent outer corners.
-- `exports/unraid/`: transparent 256px CA icon and 128px local plugin icon.
 - `exports/motion/`: approved ribbon-orbit animation in SVG, WebP, and GIF formats.
 - `exports/SHA256SUMS`: integrity hashes for all generated delivery assets.
 
@@ -28,4 +27,4 @@ The generator requires Node.js and Sharp:
 node scripts/brand/generate-mizar-brand-assets.cjs
 ```
 
-The generated assets are also copied into their active Web, macOS, fnOS/root, and Unraid locations.
+The generated assets are also copied into their active Web locations.

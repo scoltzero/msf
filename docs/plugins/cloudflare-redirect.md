@@ -21,16 +21,12 @@ Cloudflare Redirect 是一个**命令行测试插件**，用于改善**不走代
 <数据目录>/configs/cloudflare-redirect/cfyouxuan.yaml
 ```
 
-数据目录不是按 CPU 架构区分，而是按运行方式区分。常见位置如下：
+数据目录由 Linux 安装方式决定。常见位置如下：
 
 | 部署方式 | 数据目录 | YAML 完整路径 |
 |---|---|---|
-| Linux systemd 安装包，含 amd64/arm64 | `/opt/msf` | `/opt/msf/configs/cloudflare-redirect/cfyouxuan.yaml` |
+| Linux amd64 systemd 安装包 | `/opt/msf` | `/opt/msf/configs/cloudflare-redirect/cfyouxuan.yaml` |
 | Linux 安装包指定 `--data-dir` | 用户指定目录 | `<指定目录>/configs/cloudflare-redirect/cfyouxuan.yaml` |
-| fnOS FPK | `/var/apps/msf/var` | `/var/apps/msf/var/configs/cloudflare-redirect/cfyouxuan.yaml` |
-| Unraid PLG | `/mnt/user/appdata/msf` | `/mnt/user/appdata/msf/configs/cloudflare-redirect/cfyouxuan.yaml` |
-| Docker Compose / `docker-run.sh` 宿主机 | 默认当前目录的 `./msf-data` | `./msf-data/configs/cloudflare-redirect/cfyouxuan.yaml` |
-| Docker 容器内 | `/opt/msf` | `/opt/msf/configs/cloudflare-redirect/cfyouxuan.yaml` |
 | 源码本地非 root 运行 | 通常是 `./data`，取决于 `-c` / `--config` | `./data/configs/cloudflare-redirect/cfyouxuan.yaml` |
 | root 直接运行裸二进制且未设置环境变量 | `/opt/msf` | `/opt/msf/configs/cloudflare-redirect/cfyouxuan.yaml` |
 
@@ -42,7 +38,7 @@ Cloudflare Redirect 是一个**命令行测试插件**，用于改善**不走代
 sudo msf cloudflare-redirect status
 ```
 
-输出里的 `config` 字段就是正在读取的 `cfyouxuan.yaml`。命令会自动从 `MSF_DATA_DIR`、Unraid 配置、systemd service 配置、`.msf` 兼容目录和常见安装目录中发现当前数据目录。通常不需要加 `--config`。如果自动发现失败，可以显式指定：
+输出里的 `config` 字段就是正在读取的 `cfyouxuan.yaml`。命令会自动从 `MSF_DATA_DIR`、systemd service 配置、`.msf` 兼容目录和常见安装目录中发现当前数据目录。通常不需要加 `--config`。如果自动发现失败，可以显式指定：
 
 ```bash
 sudo msf cloudflare-redirect status --config /path/to/msf-data

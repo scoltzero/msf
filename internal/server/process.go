@@ -87,7 +87,6 @@ func (sm *ServiceManager) Start(ctx context.Context, name string) (ServiceStatus
 	}
 	if st := sm.Status(name); st.Running {
 		sm.setDesired(name, true)
-		sm.app.afterServiceStart(name)
 		return st, nil
 	}
 	if _, err := os.Stat(spec.Binary); err != nil {
@@ -160,7 +159,6 @@ func (sm *ServiceManager) Start(ctx context.Context, name string) (ServiceStatus
 	st := sm.Status(name)
 	if !exitedDuringStartup && st.Running {
 		sm.setDesired(name, true)
-		sm.app.afterServiceStart(name)
 		return st, nil
 	}
 	lines := make([]string, 0, 8)

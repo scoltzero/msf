@@ -209,7 +209,7 @@ func printUsage() {
   msf logs [--lines 100] [msf|mosdns|mihomo]
   msf doctor [--config /opt/msf]
   msf cloudflare-redirect start|stop|scan|apply|status [--config PATH]
-  msf update [--repo scoltzero/msf] [--url https://.../msf-linux-amd64.tar.gz]
+  msf update [--repo zAhYAng/msf] [--url https://.../msf-linux-amd64.tar.gz]
   msf uninstall [--config /opt/msf] [--prefix /usr/local] [--service-name msf] [--purge --yes|--keep-data]
   msf migrate [--config /opt/msf]
   msf reset-password [--config /opt/msf] [password]
@@ -219,9 +219,9 @@ func printUsage() {
 
 Notes:
   stop sends SIGTERM to the running msf process and waits for MosDNS/Mihomo child services to exit.
-  update is for Linux tarball/systemd installs. Docker, Unraid, and fnOS FPK installs must be updated from their platform manager.
+  update is for Linux amd64 tarball/systemd installs.
   update reuses the data directory from --config or the installed systemd service to avoid resetting setup state.
-  uninstall is for Linux tarball/systemd installs. Docker, Unraid, and fnOS FPK installs must be removed from their platform manager.
+  uninstall is for Linux amd64 tarball/systemd installs.
   uninstall asks whether to remove the data directory on interactive terminals. In automation, pass --purge --yes to remove it or --keep-data to retain it.
 `)
 }
@@ -1483,7 +1483,7 @@ func defaultGitHubRepo() string {
 	if v := strings.TrimSpace(os.Getenv("MSF_GITHUB_REPO")); v != "" {
 		return v
 	}
-	return "scoltzero/msf"
+	return "zAhYAng/msf"
 }
 
 func isUnraidRuntime() bool {

@@ -10,16 +10,16 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/scoltzero/msf/stargazers"><img src="https://img.shields.io/github/stars/scoltzero/msf?style=flat-square&logo=github&label=Stars" alt="GitHub Stars"></a>
-  <a href="https://github.com/scoltzero/msf/forks"><img src="https://img.shields.io/github/forks/scoltzero/msf?style=flat-square&logo=github&label=Forks" alt="GitHub Forks"></a>
-  <a href="https://github.com/scoltzero/msf/releases"><img src="https://img.shields.io/github/downloads/scoltzero/msf/total?style=flat-square&label=Downloads" alt="GitHub Downloads"></a>
-  <a href="https://github.com/scoltzero/msf/releases/latest"><img src="https://img.shields.io/github/v/release/scoltzero/msf?style=flat-square&label=Release" alt="Latest Release"></a>
+  <a href="https://github.com/zAhYAng/msf/stargazers"><img src="https://img.shields.io/github/stars/zAhYAng/msf?style=flat-square&logo=github&label=Stars" alt="GitHub Stars"></a>
+  <a href="https://github.com/zAhYAng/msf/forks"><img src="https://img.shields.io/github/forks/zAhYAng/msf?style=flat-square&logo=github&label=Forks" alt="GitHub Forks"></a>
+  <a href="https://github.com/zAhYAng/msf/releases"><img src="https://img.shields.io/github/downloads/zAhYAng/msf/total?style=flat-square&label=Downloads" alt="GitHub Downloads"></a>
+  <a href="https://github.com/zAhYAng/msf/releases/latest"><img src="https://img.shields.io/github/v/release/zAhYAng/msf?style=flat-square&label=Release" alt="Latest Release"></a>
   <a href="https://discord.gg/Fu3SBgWwRp"><img src="https://dcbadge.limes.pink/api/server/https://discord.gg/Fu3SBgWwRp?style=flat" alt="MSF Discord"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/scoltzero/msf?style=flat-square&label=License" alt="License"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/zAhYAng/msf?style=flat-square&label=License" alt="License"></a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/scoltzero/msf/releases/latest"><img src="https://img.shields.io/badge/Download-Latest%20Release-0969DA?style=for-the-badge&logo=github&logoColor=white" alt="Download latest release"></a>
+  <a href="https://github.com/zAhYAng/msf/releases/latest"><img src="https://img.shields.io/badge/Download-Latest%20Release-0969DA?style=for-the-badge&logo=github&logoColor=white" alt="Download latest release"></a>
   <a href="docs/install/linux.md"><img src="https://img.shields.io/badge/Documentation-Install%20Guide-334155?style=for-the-badge&logo=readthedocs&logoColor=white" alt="Installation documentation"></a>
   <a href="https://discord.gg/Fu3SBgWwRp"><img src="https://img.shields.io/badge/Community-Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Join Discord"></a>
   <a href="#support-msf"><img src="https://img.shields.io/badge/Sponsor-Alipay-1677FF?style=for-the-badge&logo=alipay&logoColor=white" alt="Support MSF through Alipay"></a>
@@ -39,28 +39,24 @@
 
 | Capability | What it provides |
 |---|---|
-| Unified control | Manage MosDNS, Mihomo, rules, connections, logs, components, and system state from one WebUI. |
+| Unified control | Manage MosDNS, Mihomo, rules, connections, logs, components, device traffic, and system state from one WebUI. |
 | Auditable operation | Keep configuration, sources, runtime state, and updates visible instead of hiding the underlying services. |
-| Independent implementation | The Go backend, React WebUI, Mizar identity, and cross-platform control logic are maintained in this repository. |
-| Flexible deployment | Run on Linux, Docker, Unraid, fnOS, or macOS with nftables or TUN where supported. |
+| Independent implementation | The Go backend, React WebUI, Mizar identity, and Linux control logic are maintained in this repository. |
+| Linux-only deployment | Linux amd64 tarball and systemd installation with nftables or TUN support. |
 | Configuration ownership | Bring your own subscriptions, manual connections, rule sources, custom Mihomo configuration, and offline components. |
 | Clear boundaries | No bundled nodes, accounts, or credentials, with explicit provenance, licensing, and use policies. |
 
-## Platform Support
+## Supported Platform
 
 | Platform | Status | Install guide | Update and removal |
 |---|---|---|---|
-| Linux tarball / systemd | Stable | [Linux install](docs/install/linux.md) | `msf update` / `msf uninstall` |
-| Docker TUN | Supported | [Docker deployment](docs/docker.en.md) | Docker / Compose |
-| Unraid PLG | Stable | [Unraid install](docs/install/unraid-plg.md) | Unraid plugin manager |
-| fnOS FPK | Supported | [fnOS install](docs/install/fnos-fpk.md) | Feiniu App Center / FPK manager |
-| macOS 15-26 | Unsigned Beta, TUN only | [macOS install](docs/install/macos.md) | In-app daemon install, repair, and removal |
+| Linux amd64 tarball / systemd | Stable | [Linux install](docs/install/linux.md) | `msf update` / `msf uninstall` |
 
 ## Quick Start
 
-1. Download the package for your platform from [Latest Release](https://github.com/scoltzero/msf/releases/latest).
-2. Follow the matching [platform install guide](#platform-support).
-3. Open `http://<server-ip>:7788` and complete the six-step setup flow.
+1. Download the Linux amd64 package from [Latest Release](https://github.com/zAhYAng/msf/releases/latest).
+2. Follow the [Linux install guide](docs/install/linux.md).
+3. Open `http://<server-ip>:7788` and complete the four-step setup flow.
 4. Configure DHCP DNS and the Fake-IP static route only on a router you own or are authorized to manage.
 
 <details>
@@ -68,11 +64,7 @@
 
 | Platform | Release asset |
 |---|---|
-| Linux x86_64 | `msf-linux-amd64.tar.gz` |
-| Linux ARM64 | `msf-linux-arm64.tar.gz` |
-| Unraid | `msf.plg` and `msf-*-x86_64-1.txz` |
-| fnOS x86 / ARM | `msf_*_x86.fpk` / `msf_*_arm.fpk` |
-| macOS Universal 2 | `MSF-*-macos-universal-unsigned.dmg` / `.zip` |
+| Linux x86_64 / amd64 | `msf-linux-amd64.tar.gz` |
 
 Every formal asset should correspond to the same Git tag and include a SHA-256 checksum file.
 
@@ -84,7 +76,7 @@ Every formal asset should correspond to the same Git tag and include a SHA-256 c
   <img src="docs/png/framework-architecture.en.svg" alt="MSF network and component architecture" width="920">
 </p>
 
-The default chain combines MosDNS `:53`, Mihomo DNS `:6666`, Fake-IP, and either TProxy / Redirect or TUN. The exact mode depends on the platform and setup choices.
+The default chain combines MosDNS `:53`, Mihomo DNS `:6666`, Fake-IP, and either TProxy / Redirect or TUN. The mode is selected during Linux setup.
 
 ## Documentation
 
@@ -92,7 +84,6 @@ The default chain combines MosDNS `:53`, Mihomo DNS `:6666`, Fake-IP, and either
 |---|---|
 | Router integration | [Overview](docs/guide/en/router-integration.md)<br>[RouterOS](docs/guide/en/routeros.md)<br>[iKuai](docs/guide/en/ikuai.md)<br>[OpenWrt](docs/guide/en/openwrt.md)<br>[UniFi](docs/guide/en/unifi.md) |
 | Runtime reference | [Directories, ports, and file layout](docs/reference/runtime.md) |
-| Docker | [Deployment guide](docs/docker.en.md) |
 | Plugin | [Cloudflare Redirect](docs/plugins/cloudflare-redirect.md) |
 | FAQ | [Frequently asked questions](docs/faq.en.md) |
 | Release engineering | [RELEASING.md](RELEASING.md) |
@@ -105,14 +96,14 @@ The default chain combines MosDNS `:53`, Mihomo DNS `:6666`, Fake-IP, and either
 - Users or relevant third parties supply imported subscriptions, connections, rules, configuration, and external content.
 - Users must independently verify the source, authorization, legality, and security of external material.
 - Maintainers do not provide individualized configuration, remote deployment, or troubleshooting intended to evade regulation or access controls.
-- Linux tarball / systemd installs may use `msf update` and `msf uninstall`; other platforms should use their package manager.
+- Linux tarball / systemd installs may use `msf update` and `msf uninstall`.
 
 <details>
 <summary><strong>Public references, cross-language reimplementation, and copyright boundary</strong></summary>
 
 Studying publicly accessible source code to understand its functions, processing flow, and operating methods, and then independently redesigning and implementing those functions in another programming language, is not unlawful by itself and does not automatically constitute copyright infringement. Software copyright protects concrete program expression. It does not grant a monopoly over ideas, functions, processing methods, operating methods, compatibility interfaces, or configuration structures constrained by common upstream projects.
 
-During early development, MSF consulted the MosDNS + Mihomo workflow shown by the publicly accessible implementation of [`baozaodetudou/mssb`](https://github.com/baozaodetudou/mssb), then used Go to reimplement, redesign, optimize, and extend the management backend and control plane. mssb primarily organizes installation and runtime behavior through Shell/Python scripts and configuration files. MSF uses an independent Go service architecture, database model, HTTP API, configuration transactions, state recovery, component management, and cross-platform runtime logic.
+During early development, MSF consulted the MosDNS + Mihomo workflow shown by the publicly accessible implementation of [`baozaodetudou/mssb`](https://github.com/baozaodetudou/mssb), then used Go to reimplement, redesign, optimize, and extend the management backend and control plane. mssb primarily organizes installation and runtime behavior through Shell/Python scripts and configuration files. MSF uses an independent Go service architecture, database model, HTTP API, configuration transactions, state recovery, component management, and Linux runtime logic.
 
 The current file-by-file audit found no mssb Shell/Python program source included or distributed by MSF, and no line-by-line translation or direct copying of that program code. Shared MosDNS/Mihomo fields, plugin types, ports, rule formats, and required processing steps primarily arise from common upstreams, standard interfaces, functional constraints, and configuration structures with limited practical expression. The real upstream sources and licenses for relevant templates and rule data are recorded individually.
 
@@ -149,7 +140,7 @@ These acknowledgements describe provenance and contributions only. They do not i
 If MSF is useful to you, support the project with a Star, issue reports, documentation improvements, testing, or maintenance sponsorship.
 
 <p align="center">
-  <a href="https://github.com/scoltzero/msf/stargazers"><img src="https://img.shields.io/badge/Support-Give%20a%20Star-181717?style=for-the-badge&logo=github&logoColor=white" alt="Give MSF a Star"></a>
+  <a href="https://github.com/zAhYAng/msf/stargazers"><img src="https://img.shields.io/badge/Support-Give%20a%20Star-181717?style=for-the-badge&logo=github&logoColor=white" alt="Give MSF a Star"></a>
   <a href="https://discord.gg/Fu3SBgWwRp"><img src="https://img.shields.io/badge/Support-Join%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Join MSF Discord"></a>
 </p>
 
@@ -166,7 +157,7 @@ If MSF is useful to you, support the project with a Star, issue reports, documen
 go run ./cmd/msf serve -c ./data -p 7788
 ```
 
-See [RELEASING.md](RELEASING.md) for release engineering and [packaging/unraid/README.md](packaging/unraid/README.md) for Unraid packaging.
+See [RELEASING.md](RELEASING.md) for release engineering.
 
 ## License
 

@@ -1,22 +1,21 @@
 # Linux tarball/systemd 安装
 
-本页面适用于普通 Linux 主机上的 `msf-linux-amd64.tar.gz` / `msf-linux-arm64.tar.gz` 安装包。Linux tarball/systemd 是当前推荐的通用安装方式，也是唯一支持 `msf update` 和 `msf uninstall` 的安装方式。
+本页面适用于普通 Linux amd64 主机上的 `msf-linux-amd64.tar.gz` 安装包。Linux tarball/systemd 是当前唯一支持的安装方式，支持 `msf update` 和 `msf uninstall`。
 
 初始化向导支持 nftables 与 TUN。选择 TUN 时，宿主机必须以 root 运行并提供可用的 `/dev/net/tun`。
 
-当前稳定版本：[GitHub Latest Release](https://github.com/scoltzero/msf/releases/latest)
+当前稳定版本：[GitHub Latest Release](https://github.com/zAhYAng/msf/releases/latest)
 
 ## 下载
 
 | 架构 | 下载地址 |
 |---|---|
-| x86_64 / amd64 | `https://github.com/scoltzero/msf/releases/latest/download/msf-linux-amd64.tar.gz` |
-| ARM64 / aarch64 | `https://github.com/scoltzero/msf/releases/latest/download/msf-linux-arm64.tar.gz` |
+| x86_64 / amd64 | `https://github.com/zAhYAng/msf/releases/latest/download/msf-linux-amd64.tar.gz` |
 
 Release 页面：
 
 ```text
-https://github.com/scoltzero/msf/releases/latest
+https://github.com/zAhYAng/msf/releases/latest
 ```
 
 ## 安装
@@ -25,22 +24,11 @@ x86_64 / amd64：
 
 ```bash
 curl -L -o msf-linux-amd64.tar.gz \
-  https://github.com/scoltzero/msf/releases/latest/download/msf-linux-amd64.tar.gz
+  https://github.com/zAhYAng/msf/releases/latest/download/msf-linux-amd64.tar.gz
 
 msf_extract_dir="$(mktemp -d)"
 tar -xzf msf-linux-amd64.tar.gz -C "$msf_extract_dir"
 sudo "$msf_extract_dir"/msf-*-linux-amd64/install.sh
-```
-
-ARM64 / aarch64：
-
-```bash
-curl -L -o msf-linux-arm64.tar.gz \
-  https://github.com/scoltzero/msf/releases/latest/download/msf-linux-arm64.tar.gz
-
-msf_extract_dir="$(mktemp -d)"
-tar -xzf msf-linux-arm64.tar.gz -C "$msf_extract_dir"
-sudo "$msf_extract_dir"/msf-*-linux-arm64/install.sh
 ```
 
 安装脚本默认完成这些操作：
@@ -48,18 +36,18 @@ sudo "$msf_extract_dir"/msf-*-linux-arm64/install.sh
 - 安装二进制到 `/usr/local/bin/msf`
 - 初始化数据目录 `/opt/msf`
 - 安装 systemd 服务 `msf.service`
-- 启动 WebUI，默认监听 `0.0.0.0:7777`
+- 启动 WebUI，默认监听 `0.0.0.0:7788`
 
 自定义数据目录、监听地址和端口：
 
 ```bash
-sudo ./install.sh --data-dir /opt/msf --host 0.0.0.0 --port 7777
+sudo ./install.sh --data-dir /opt/msf --host 0.0.0.0 --port 7788
 ```
 
 安装完成后打开：
 
 ```text
-http://<服务器IP>:7777
+http://<服务器IP>:7788
 ```
 
 首次进入会显示初始化向导。完成初始化后，`msf` 会持久化运行态；后续重启时会按配置恢复 Mihomo、MosDNS 和 nftables，除非用户在 WebUI 中显式停止服务或清除 nftables。
@@ -134,7 +122,7 @@ sudo ./uninstall.sh
 sudo ./uninstall.sh --purge --yes
 ```
 
-`msf uninstall` 只面向 Linux tarball/systemd 安装。Docker、Unraid、fnOS FPK 请使用对应平台的容器、插件或应用管理器卸载。
+`msf uninstall` 仅适用于 Linux amd64 tarball/systemd 安装。
 
 ## 数据目录
 

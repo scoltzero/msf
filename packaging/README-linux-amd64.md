@@ -1,12 +1,12 @@
 # msf Linux 安装包
 
-这个压缩包包含 `msf` Linux 二进制、systemd 安装脚本和卸载脚本。请下载与机器架构匹配的压缩包，例如 `linux-amd64` 或 `linux-arm64`。
+这个压缩包包含 `msf` Linux amd64 二进制、systemd 安装脚本和卸载脚本。
 
 ## 安装
 
 ```sh
-tar -xzf msf-linux-<arch>.tar.gz
-cd msf-*-linux-<arch>
+tar -xzf msf-linux-amd64.tar.gz
+cd msf-*-linux-amd64
 sudo ./install.sh
 ```
 
@@ -72,7 +72,7 @@ sudo ./install.sh
 sudo msf uninstall
 ```
 
-`msf uninstall` 只面向 Linux tarball/systemd 安装。Docker、Unraid、fnOS FPK 请使用对应平台的容器、插件或应用管理器卸载。
+`msf uninstall` 仅适用于 Linux amd64 tarball/systemd 安装。
 
 也可以使用压缩包内的卸载脚本：
 

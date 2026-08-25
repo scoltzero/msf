@@ -15,18 +15,6 @@ const motionCssPath = path.join(root, "logo_motion_mizar/orbit_weave_v2/motion.c
 const brandRoot = path.join(root, "logo_motion_mizar/exports");
 
 const transparentSizes = [16, 32, 64, 128, 256, 512, 1024, 2048];
-const macIconFiles = new Map([
-  ["icon_16x16.png", 16],
-  ["icon_16x16@2x.png", 32],
-  ["icon_32x32.png", 32],
-  ["icon_32x32@2x.png", 64],
-  ["icon_128x128.png", 128],
-  ["icon_128x128@2x.png", 256],
-  ["icon_256x256.png", 256],
-  ["icon_256x256@2x.png", 512],
-  ["icon_512x512.png", 512],
-  ["icon_512x512@2x.png", 1024],
-]);
 
 async function ensureParent(filePath) {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
@@ -164,7 +152,6 @@ function makeAnimatedSvg(svg, css) {
 async function main() {
   const sourceSvg = await fs.readFile(sourceSvgPath, "utf8");
   const faviconSvg = withViewBox(sourceSvg, "170 150 910 910", 512, 512);
-  const unraidSvg = withViewBox(sourceSvg, "135 115 984 984", 512, 512);
 
   await writeFile(path.join(brandRoot, "vector/msf-mizar.svg"), sourceSvg);
   await writeFile(path.join(brandRoot, "favicon/msf-mizar-favicon.svg"), faviconSvg);
@@ -199,9 +186,6 @@ async function main() {
     await writeFile(path.join(brandRoot, `app-icon/msf-mizar-app-icon-${size}.png`), data);
   }
 
-  await renderSvg(unraidSvg, 256, path.join(brandRoot, "unraid/msf-mizar-unraid-256.png"));
-  await renderSvg(unraidSvg, 128, path.join(brandRoot, "unraid/msf-mizar-unraid-128.png"));
-
   await writeFile(path.join(root, "web/public/logo/logo-square.svg"), sourceSvg);
   await writeFile(path.join(root, "web/public/logo/favicon.svg"), faviconSvg);
   await renderSvg(sourceSvg, 1024, path.join(root, "web/public/logo/logo-square.png"));
@@ -221,26 +205,6 @@ async function main() {
   );
 
   await writeFile(path.join(root, "logo.png"), appMaster);
-  await writeFile(path.join(root, "macos/MSFMenuBar/Resources/AppIcon-master.png"), appMaster);
-  for (const [filename, size] of macIconFiles) {
-    await writeFile(
-      path.join(root, "macos/MSFMenuBar/Resources/Assets.xcassets/AppIcon.appiconset", filename),
-      await sharp(appMaster)
-        .resize(size, size, { kernel: sharp.kernel.lanczos3 })
-        .png({ compressionLevel: 9, adaptiveFiltering: true })
-        .toBuffer(),
-    );
-  }
-
-  await fs.copyFile(
-    path.join(brandRoot, "unraid/msf-mizar-unraid-256.png"),
-    path.join(root, "packaging/unraid/msf.png"),
-  );
-  await fs.copyFile(
-    path.join(brandRoot, "unraid/msf-mizar-unraid-128.png"),
-    path.join(root, "packaging/unraid/root/usr/local/emhttp/plugins/msf/msf.png"),
-  );
-
   const motionSvg = await fs.readFile(motionSvgPath, "utf8");
   const motionCss = await fs.readFile(motionCssPath, "utf8");
   const animatedSvg = makeAnimatedSvg(motionSvg, motionCss);

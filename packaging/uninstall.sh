@@ -69,27 +69,6 @@ if [ "$(id -u)" -ne 0 ]; then
   exit 1
 fi
 
-if [ -f /.dockerenv ] || grep -qaE '/docker/|/kubepods/|/containerd/' /proc/1/cgroup 2>/dev/null || [ "${MSF_RUNTIME:-}" = "docker" ]; then
-  echo "Docker / Compose installs must be removed from Docker, Compose, or your container manager; remove the container and its volume there" >&2
-  exit 1
-fi
-
-if [ -f /etc/unraid-version ] || [ -x /usr/local/sbin/emhttp ] || [ -d /boot/config/plugins ] || echo "${UNRAID_VERSION:-}" | grep -qi unraid; then
-  echo "on Unraid, remove msf from the WebGUI plugin page; application data is kept under /mnt/user/appdata/msf" >&2
-  exit 1
-fi
-
-case "$(printf '%s %s %s %s %s' "${MSF_RUNTIME:-}" "${MSF_PACKAGE_RUNTIME:-}" "${MSF_PACKAGE_TYPE:-}" "${FNOS_RUNTIME:-}" "${FNOS_PACKAGE_TYPE:-}" | tr '[:upper:]' '[:lower:]')" in
-  *fnos*|*fpk*)
-    echo "fnOS FPK installs must be removed from fnOS / 飞牛应用中心 or the FPK package manager" >&2
-    exit 1
-    ;;
-esac
-if [ -f /etc/fnos-release ] || [ -f /etc/feiniu-release ] || [ -f /etc/fnOS-release ] || [ -e /usr/local/fnos ] || [ -e /var/packages/msf ]; then
-  echo "fnOS FPK installs must be removed from fnOS / 飞牛应用中心 or the FPK package manager" >&2
-  exit 1
-fi
-
 SERVICE_PATH="/etc/systemd/system/$SERVICE_NAME.service"
 BIN_DEST="$PREFIX/bin/$APP_NAME"
 
