@@ -762,7 +762,7 @@ func TestSelfUpdateStateExposesInstallAndAcceleratedDownloadURL(t *testing.T) {
 		values(?,?,?,?,?,?,?)`, now, now, "root", "7777", true, "https://gh-proxy.example", true); err != nil {
 		t.Fatal(err)
 	}
-	rawURL := "https://github.com/scoltzero/msf/releases/download/v9.9.9/msf-linux-amd64.tar.gz"
+	rawURL := "https://github.com/zAhYAng/msf/releases/download/v9.9.9/msf-linux-amd64.tar.gz"
 	updateDir := filepath.Join(app.DataDir, "data", "updates")
 	if err := os.MkdirAll(updateDir, 0755); err != nil {
 		t.Fatal(err)
@@ -780,7 +780,7 @@ func TestSelfUpdateStateExposesInstallAndAcceleratedDownloadURL(t *testing.T) {
 		`"phase":"downloaded"`,
 		`"message":"更新包已下载"`,
 		`"can_install":true`,
-		`"effective_download_url":"https://gh-proxy.example/https://github.com/scoltzero/msf/releases/download/v9.9.9/msf-linux-amd64.tar.gz"`,
+		`"effective_download_url":"https://gh-proxy.example/https://github.com/zAhYAng/msf/releases/download/v9.9.9/msf-linux-amd64.tar.gz"`,
 	} {
 		if !strings.Contains(status.Body.String(), want) {
 			t.Fatalf("self update status missing %q: status=%d body=%s", want, status.Code, status.Body.String())

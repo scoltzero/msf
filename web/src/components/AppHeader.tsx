@@ -28,7 +28,7 @@ const languageOptions: Array<{ id: AppLanguage; label: string }> = [
   { id: "zh-CN", label: "简体中文" },
   { id: "en-US", label: "English" },
 ];
-const README_URL = "https://github.com/scoltzero/msf/blob/main/README.md";
+const README_URL = "https://github.com/zAhYAng/msf/blob/main/README.md";
 
 export function AppHeader({ onToggleSidebar, onOpenDiagnostics, sidebarHidden = false }: { onToggleSidebar?: () => void; onOpenDiagnostics?: () => void; sidebarHidden?: boolean }) {
   const router = useRouter();

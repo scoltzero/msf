@@ -26,8 +26,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/scoltzero/msf/internal/cloudflareredirect"
-	"github.com/scoltzero/msf/internal/server"
+	"github.com/zAhYAng/msf/internal/cloudflareredirect"
+	"github.com/zAhYAng/msf/internal/server"
 )
 
 var (

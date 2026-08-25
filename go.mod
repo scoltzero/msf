@@ -1,4 +1,4 @@
-module github.com/scoltzero/msf
+module github.com/zAhYAng/msf
 
 go 1.24.0
 

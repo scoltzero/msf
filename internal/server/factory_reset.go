@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/scoltzero/msf/internal/cloudflareredirect"
+	"github.com/zAhYAng/msf/internal/cloudflareredirect"
 )
 
 const (

@@ -208,7 +208,7 @@ const themeOptions: Array<{ id: ThemeMode; label: string; Icon: LucideIcon }> = 
   { id: "system", label: "跟随系统", Icon: Monitor },
 ];
 
-const RELEASE_REPO_OWNER = "scoltzero";
+const RELEASE_REPO_OWNER = "zAhYAng";
 const RELEASE_REPO_NAME = "msf";
 const RELEASE_REPO = `${RELEASE_REPO_OWNER}/${RELEASE_REPO_NAME}`;
 const RELEASE_REPO_URL = `https://github.com/${RELEASE_REPO}`;
