@@ -70,7 +70,7 @@ rw_dmg="$tmp/$asset_prefix-rw.dmg"
   -fs HFS+ \
   -volname "MSF Unsigned Beta" \
   -ov \
-  -format UDRW \
+  -type UDIF \
   "$rw_dmg"
 /bin/mkdir -p "$mount_point"
 /usr/bin/hdiutil attach "$rw_dmg" -nobrowse -mountpoint "$mount_point" -quiet
