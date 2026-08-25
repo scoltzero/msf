@@ -188,10 +188,17 @@ func (a *App) assistantKeyPath() string {
 
 func (a *App) assistantKey() ([]byte, error) {
 	path := a.assistantKeyPath()
-	if key, err := os.ReadFile(path); err == nil {
+	readKey := func() ([]byte, error) {
+		key, err := os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
 		if len(key) != 32 {
 			return nil, fmt.Errorf("assistant key has invalid length")
 		}
+		return key, nil
+	}
+	if key, err := readKey(); err == nil {
 		return key, nil
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, err
@@ -203,35 +210,33 @@ func (a *App) assistantKey() ([]byte, error) {
 	if _, err := io.ReadFull(rand.Reader, key); err != nil {
 		return nil, err
 	}
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
-	if errors.Is(err, os.ErrExist) {
-		existing, readErr := os.ReadFile(path)
-		if readErr != nil {
-			return nil, readErr
-		}
-		if len(existing) != 32 {
-			return nil, fmt.Errorf("assistant key has invalid length")
-		}
-		return existing, nil
-	}
+	file, err := os.CreateTemp(filepath.Dir(path), ".assistant-key-*")
 	if err != nil {
+		return nil, err
+	}
+	temporaryPath := file.Name()
+	defer func() { _ = os.Remove(temporaryPath) }()
+	if err := file.Chmod(0600); err != nil {
+		_ = file.Close()
 		return nil, err
 	}
 	if _, err := file.Write(key); err != nil {
 		_ = file.Close()
-		_ = os.Remove(path)
 		return nil, err
 	}
 	if err := file.Sync(); err != nil {
 		_ = file.Close()
-		_ = os.Remove(path)
 		return nil, err
 	}
 	if err := file.Close(); err != nil {
-		_ = os.Remove(path)
 		return nil, err
 	}
-	return key, nil
+	if err := os.Link(temporaryPath, path); err == nil {
+		return key, nil
+	} else if !errors.Is(err, os.ErrExist) {
+		return nil, err
+	}
+	return readKey()
 }
 
 func (a *App) encryptAssistantSecret(value string) ([]byte, []byte, error) {
