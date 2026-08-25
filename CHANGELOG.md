@@ -2,6 +2,18 @@
 
 ## 未发布
 
+## v0.6.1 - 2026-08-25
+
+### 中文
+
+- 收敛为 Linux amd64 发布包，移除 Docker、macOS、Unraid 和 fnOS 的安装、文档及发布链路。
+- 增加 `mosdns/Mosdns_Unifi_UI.zip` 组件资源。
+
+### English
+
+- Restrict the release package to Linux amd64 and remove Docker, macOS, Unraid, and fnOS installation, documentation, and release paths.
+- Add the `mosdns/Mosdns_Unifi_UI.zip` component resource.
+
 ## v0.6.0 - 2026-08-23
 
 ### 中文
