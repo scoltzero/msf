@@ -2,6 +2,28 @@
 
 ## 未发布
 
+## v0.6.1 - 2026-08-25
+
+### 中文
+
+#### AI Agent、动态质量档位与登录更新公告
+
+- 接入首版 AI Agent 管理能力，支持 OpenAI Responses、自定义 Skill 与管理员专属入口。
+- 视觉质量的“平衡”和“减少效果”档位继续保留动态背景，通过降低像素预算、DPR、采样和玻璃成本改善性能；新初始化默认使用“动态场景 + 平衡”。
+- 用户保存过的场景与质量参数在启动、刷新和升级后保持不变。
+- “纯净中性”恢复 v0.4.7.5/v0.4.7.7 的静态背景特效，并同步应用到主页与登录页。
+- 登录页增加可按会话关闭或永久隐藏的版本更新公告，介绍 Mihomo 配置恢复和 AI Agent 能力。
+
+### English
+
+#### AI Agent, dynamic quality tiers, and login update announcement
+
+- Added the first AI Agent management experience with OpenAI Responses, custom Skills, and an administrator-only entry point.
+- Kept the background animated in the Balanced and Reduced Effects quality tiers while lowering pixel budgets, DPR, sampling, and glass cost; new installations now default to Dynamic scene + Balanced quality.
+- Preserved user-selected scene and quality settings across startup, reloads, and upgrades.
+- Restored the v0.4.7.5/v0.4.7.7 static background effect for the Neutral scene on both the main shell and login page.
+- Added a versioned login update announcement that can be dismissed for the session or permanently hidden, covering Mihomo config recovery and the AI Agent.
+
 ## v0.6.0 - 2026-08-23
 
 ### 中文
