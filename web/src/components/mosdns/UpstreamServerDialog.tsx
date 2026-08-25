@@ -32,8 +32,7 @@ function displayProtocol(value: string) {
 }
 
 function defaultServerName(group: UpstreamGroup) {
-  if (group.id === "nocnfake") return "nocnfake";
-  if (group.id === "cnfake") return "cnfake";
+  if (group.id === "foreign_fakeip") return "SingBox";
   return "";
 }
 

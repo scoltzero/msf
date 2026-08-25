@@ -122,16 +122,8 @@ func (a *App) ensureDefaultConfigs() error {
 	}
 	files := map[string]string{
 		"configs/app.yaml":             a.renderAppYAML(cfg),
-		"configs/mosdns/config.yaml":   a.renderMosDNSYAML(cfg),
 		"configs/network/network.yaml": a.renderNetworkYAML(cfg),
 		"configs/singbox/config.json":  renderDisabledSingBoxJSON(),
-	}
-	mosDNSFiles, err := a.renderMosDNSManagedFiles(cfg)
-	if err != nil {
-		return err
-	}
-	for rel, content := range mosDNSFiles {
-		files[rel] = content
 	}
 	if shouldRestoreNFT(cfg) {
 		files["configs/network/network.nft"] = a.renderNFT(cfg)
@@ -150,9 +142,6 @@ func (a *App) ensureDefaultConfigs() error {
 			}
 		}
 	}
-	if err := a.ensureMosDNSRuleFiles(); err != nil {
-		return err
-	}
 	if a.mihomoConfigMode() != "custom" {
 		a.ensureGeneratedMihomoConfigCompatibility()
 	}
@@ -165,21 +154,19 @@ func (a *App) writeGeneratedConfigs(cfg SetupConfig) error {
 	if err := a.ensureRuntimeTemplateDefaults(true); err != nil {
 		return err
 	}
-	if err := a.ensureMosDNSRuleFiles(); err != nil {
-		return err
-	}
 	files := map[string]string{
 		"configs/app.yaml":             a.renderAppYAML(cfg),
-		"configs/mosdns/config.yaml":   a.renderMosDNSYAML(cfg),
 		"configs/network/network.yaml": a.renderNetworkYAML(cfg),
 		"configs/singbox/config.json":  renderDisabledSingBoxJSON(),
 	}
-	mosDNSFiles, err := a.renderMosDNSManagedFiles(cfg)
-	if err != nil {
-		return err
-	}
-	for rel, content := range mosDNSFiles {
-		files[rel] = content
+	if a.hasMosDNSBundle() {
+		mosDNSFiles, err := a.renderMosDNSManagedFiles()
+		if err != nil {
+			return err
+		}
+		for rel, content := range mosDNSFiles {
+			files[rel] = content
+		}
 	}
 	if shouldRestoreNFT(cfg) {
 		files["configs/network/network.nft"] = a.renderNFT(cfg)
@@ -822,215 +809,6 @@ func renderProxyProvidersYAML(providers map[string]string, includeManual bool) s
 	return b.String()
 }
 
-func (a *App) renderMosDNSYAML(cfg SetupConfig) string {
-	if template, ok := runtimeTemplateText("mosdns/config.yaml"); ok {
-		logPath := filepath.ToSlash(filepath.Join(a.DataDir, "logs/mosdns.log"))
-		content := strings.Replace(template, `file: "/tmp/mosdns.log"`, fmt.Sprintf(`file: "%s"`, logPath), 1)
-		content = strings.ReplaceAll(content, "28.0.0.0/8", fakeIPv4RouteCIDR(cfg.FakeIPRangeV4))
-		content = strings.ReplaceAll(content, "2001:2::/64", fakeIPv6RouteCIDR(cfg.FakeIPRangeV6))
-		content = strings.ReplaceAll(content, "f2b0::/18", fakeIPv6RouteCIDR(cfg.FakeIPRangeV6))
-		if !cfg.EnableIPv6 {
-			content = addMosDNSRealAAAABypass(content)
-		}
-		return content
-	}
-	return fmt.Sprintf(`log:
-  level: warn
-  file: "%s"
-api:
-  http: "0.0.0.0:9099"
-include:
-  - "sub_config/switch.yaml"
-  - "sub_config/forward_local.yaml"
-  - "sub_config/forward_remote.yaml"
-plugins:
-  - tag: blocklist
-    type: domain_set
-    args:
-      files:
-        - "rules/blocklist.txt"
-  - tag: client_ip
-    type: ip_set
-    args:
-      files:
-        - "client_ip.txt"
-  - tag: forward_local
-    type: forward
-    args:
-      concurrent: 2
-      upstreams:
-        - addr: "udp://223.5.5.5"
-        - addr: "udp://119.29.29.29"
-  - tag: forward_remote
-    type: forward
-    args:
-      concurrent: 2
-      upstreams:
-        - addr: "udp://127.0.0.1:6666"
-  - tag: sequence_main
-    type: sequence
-    args:
-      - matches:
-          - qname $blocklist
-        exec: reject 0
-      - matches:
-          - client_ip $client_ip
-        exec: $forward_remote
-      - exec: $forward_local
-  - tag: udp_all
-    type: udp_server
-    args:
-      entry: sequence_main
-      listen: ":53"
-      enable_audit: true
-  - tag: tcp_all
-    type: tcp_server
-    args:
-      entry: sequence_main
-      listen: ":53"
-      enable_audit: true
-`, filepath.ToSlash(filepath.Join(a.DataDir, "logs/mosdns.log")))
-}
-
-func removeMosDNSClientPriorityWrapper(content string) string {
-	const wrapperStart = "\n  - tag: forward_priority_core\n"
-	const serverMarker = "\n#对外服务器"
-	start := strings.Index(content, wrapperStart)
-	if start < 0 {
-		return content
-	}
-	end := strings.Index(content[start:], serverMarker)
-	if end < 0 {
-		return content
-	}
-	return content[:start] + content[start+end:]
-}
-
-func removeMosDNSUnusedMainSplitLoopback(content string) string {
-	const block = `
-  - tag: forward_all_in
-    type: forward
-    args:
-      concurrent: 1
-      upstreams:
-        - addr: "udp://127.0.0.1:5656"
-
-  - tag: udp_main
-    type: udp_server
-    args:
-      entry: sequence_6666
-      listen: 127.0.0.1:5656
-
-  - tag: tcp_main
-    type: tcp_server
-    args:
-      entry: sequence_6666
-      listen: 127.0.0.1:5656
-      idle_timeout: 720
-`
-	return strings.ReplaceAll(content, block, "\n")
-}
-
-func normalizeMosDNSInlinePriority(content string) string {
-	const marker = `      - matches: fast_mark 6                #向上游请求ddns域名，无过期缓存`
-	if strings.Count(content, marker) < 2 {
-		return content
-	}
-	const priority = `      - matches:
-        - switch8 'A'                       #Prefer IPV4开
-        - switch10 'B'                      #Prefer IPV6关
-        exec: prefer_ipv4
-      - matches:
-        - switch8 'B'                       #Prefer IPV4关
-        - switch10 'A'                      #Prefer IPV6开
-        exec: prefer_ipv6
-`
-	content = strings.ReplaceAll(content, "\n"+strings.TrimSuffix(priority, "\n"), "")
-	return strings.ReplaceAll(content, marker, priority+marker)
-}
-
-func (a *App) migrateLegacyMosDNSConfig() error {
-	const rel = "configs/mosdns/config.yaml"
-	content, err := a.readTextFile(rel)
-	if err != nil {
-		// Bundle installations use config_custom.yaml and do not retain the legacy file.
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-	next := content
-	if strings.Contains(next, "tag: forward_priority_core") || strings.Contains(next, "entry: sequence_client") {
-		next = removeMosDNSClientPriorityWrapper(next)
-		next = strings.ReplaceAll(next, "entry: sequence_client", "entry: sequence_6666")
-	}
-	next = normalizeMosDNSInlinePriority(next)
-	next = removeMosDNSUnusedMainSplitLoopback(next)
-	if next != content {
-		a.createConfigHistory("mosdns", rel, content, "auto backup before legacy MosDNS entry migration", "system")
-		if err := a.writeTextFile(rel, next); err != nil {
-			return err
-		}
-	}
-	staleForward2 := filepath.Join(a.DataDir, "configs/mosdns/sub_config/forward_2.yaml")
-	if err := os.Remove(staleForward2); err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	if err := a.migrateLegacyMosDNSDomainRules(); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (a *App) migrateLegacyMosDNSDomainRules() error {
-	for _, category := range []string{"whitelist", "blocklist", "greylist", "ddnslist"} {
-		rel := mosDNSRuleCategoryFile(category)
-		content, err := a.readTextFile(rel)
-		if err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			return err
-		}
-		patterns := splitNonEmptyLines(content)
-		normalized := make([]string, 0, len(patterns))
-		seen := make(map[string]bool, len(patterns))
-		for _, pattern := range patterns {
-			pattern = normalizeMosDNSRulePattern(category, pattern)
-			if pattern == "" || seen[pattern] {
-				continue
-			}
-			seen[pattern] = true
-			normalized = append(normalized, pattern)
-		}
-		next := strings.Join(normalized, "\n")
-		if next != "" {
-			next += "\n"
-		}
-		if next == content {
-			continue
-		}
-		a.createConfigHistory("mosdns", rel, content, "auto backup before domain rule normalization", "system")
-		if err := a.writeTextFile(rel, next); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func addMosDNSRealAAAABypass(content string) string {
-	const marker = `      - matches:                            #web ui中选择泄露版（默认），用cache_all，否则用cache_all_noleak`
-	const bypass = `
-      - matches:                            #IPv6 数据面关闭时显式返回真实 AAAA
-        - "qtype 28"
-        - switch6 'B'
-        exec:
-          - $sequence_google
-          - exit
-`
-	return strings.ReplaceAll(content, marker, strings.TrimPrefix(bypass, "\n")+marker)
-}
-
 func (a *App) renderNetworkYAML(cfg SetupConfig) string {
 	v := map[string]any{
 		"mode":            cfg.LinuxProxyMode,
@@ -1200,30 +978,6 @@ func removeNFTSetBlock(content, name string) string {
 		out = append(out, line)
 	}
 	return strings.Join(out, "")
-}
-
-func (a *App) ensureMosDNSRuleFiles() error {
-	files := map[string]string{
-		"configs/mosdns/client_ip.txt":      "",
-		"configs/mosdns/rule/blocklist.txt": "",
-	}
-	for rel, content := range files {
-		path := filepath.Join(a.DataDir, rel)
-		if _, err := os.Stat(path); os.IsNotExist(err) {
-			if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-				return err
-			}
-			if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-				return err
-			}
-		}
-	}
-	defaults := defaultMosDNSSwitchStates()
-	for i := 1; i <= 15; i++ {
-		key := fmt.Sprintf("switch%d", i)
-		_, _ = a.DB.Exec(`insert or ignore into mosdns_switch_states(switch_key,enabled,created_at,updated_at) values(?,?,?,?)`, key, defaults[key], nowString(), nowString())
-	}
-	return nil
 }
 
 func replaceMihomoProxyProviders(content, providersYAML string) string {

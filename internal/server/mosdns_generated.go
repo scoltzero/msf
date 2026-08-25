@@ -9,7 +9,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func (a *App) renderMosDNSManagedFiles(cfg SetupConfig) (map[string]string, error) {
+func (a *App) renderMosDNSManagedFiles() (map[string]string, error) {
 	files := map[string]string{}
 	overrides := a.jsonSettingWithFileFallback("mosdns_upstream_overrides", "configs/mosdns/upstream_overrides.json", map[string]any{})
 	groups, err := normalizeMosDNSUpstreamGroups(overrides)
@@ -23,12 +23,13 @@ func (a *App) renderMosDNSManagedFiles(cfg SetupConfig) (map[string]string, erro
 		"local":   {rel: "mosdns/sub_config/forward_local.yaml", tags: []string{"domestic"}},
 		"foreign": {rel: "mosdns/sub_config/forward_nocn.yaml", tags: []string{"foreign"}},
 		"ecs":     {rel: "mosdns/sub_config/forward_nocn_ecs.yaml", tags: []string{"foreignecs"}},
-		"fake":    {rel: "mosdns/sub_config/forward_1.yaml", tags: []string{"nocnfake", "cnfake"}},
+		"fake":    {rel: "mosdns/sub_config/forward_1.yaml", tags: []string{"foreign_fakeip"}},
 	}
 	for _, target := range targets {
-		content, ok := runtimeTemplateText(target.rel)
-		if !ok {
-			return nil, fmt.Errorf("missing embedded MosDNS template %s", target.rel)
+		destRel := "configs/" + target.rel
+		content, err := a.readTextFile(destRel)
+		if err != nil {
+			return nil, fmt.Errorf("read installed MosDNS config %s: %w", destRel, err)
 		}
 		for _, tag := range target.tags {
 			if upstreams, exists := groups[tag]; exists {
@@ -44,26 +45,8 @@ func (a *App) renderMosDNSManagedFiles(cfg SetupConfig) (map[string]string, erro
 				return nil, err
 			}
 		}
-		files["configs/"+target.rel] = content
+		files[destRel] = content
 	}
-	fixIP, ok := runtimeTemplateText("mosdns/nft/fixip.txt")
-	if !ok {
-		return nil, fmt.Errorf("missing embedded MosDNS fixip template")
-	}
-	fixIP = strings.ReplaceAll(fixIP, defaultFakeIPv4Prefix, fakeIPv4RouteCIDR(cfg.FakeIPRangeV4))
-	fixIP = strings.ReplaceAll(fixIP, defaultFakeIPv6Prefix, fakeIPv6RouteCIDR(cfg.FakeIPRangeV6))
-	if !cfg.EnableIPv6 {
-		lines := strings.Split(fixIP, "\n")
-		kept := lines[:0]
-		for _, line := range lines {
-			if strings.Contains(strings.TrimSpace(line), ":") {
-				continue
-			}
-			kept = append(kept, line)
-		}
-		fixIP = strings.Join(kept, "\n")
-	}
-	files["configs/mosdns/nft/fixip.txt"] = fixIP
 	return files, nil
 }
 
@@ -122,10 +105,6 @@ func normalizeMosDNSUpstreamGroups(raw any) (map[string][]map[string]any, error)
 			}
 			out[group] = append(out[group], upstream)
 		}
-		if group == "cnfake" && len(out[group]) == 0 {
-			delete(out, group)
-			continue
-		}
 		if len(items) > 0 && len(out[group]) == 0 {
 			return nil, fmt.Errorf("mosdns upstream group %s must keep at least one enabled server", group)
 		}
@@ -177,7 +156,11 @@ func replaceMosDNSPluginUpstreams(content, tag string, upstreams []map[string]an
 func (a *App) mosDNSECSAddress() string {
 	raw := a.jsonSettingWithFileFallback("mosdns_overrides", "configs/mosdns/config_overrides.json", map[string]any{})
 	root, _ := raw.(map[string]any)
-	value := strings.TrimSpace(fmtAny(root["ecs"]))
+	field, exists := root["ecs"]
+	if !exists || field == nil {
+		return "2408:8214:213::1"
+	}
+	value := strings.TrimSpace(fmtAny(field))
 	if value == "" {
 		return "2408:8214:213::1"
 	}

@@ -6,7 +6,17 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
+
+func assertValidYAML(t *testing.T, content []byte) {
+	t.Helper()
+	var parsed any
+	if err := yaml.Unmarshal(content, &parsed); err != nil {
+		t.Fatalf("generated YAML should parse: %v\n%s", err, string(content))
+	}
+}
 
 func TestEnsureGeneratedMihomoConfigCompatibilityPatchesOldGeneratedConfig(t *testing.T) {
 	app := &App{DataDir: t.TempDir()}

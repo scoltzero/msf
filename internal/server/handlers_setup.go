@@ -997,7 +997,40 @@ func (a *App) handleSetupDownload(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (a *App) handleSetupMosDNSInstall(w http.ResponseWriter, r *http.Request) {
+	if a.IsInitialized() {
+		writeError(w, http.StatusConflict, "setup_complete", "use the authenticated MosDNS installation endpoint after setup")
+		return
+	}
+	if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
+		iface := strings.TrimSpace(r.FormValue("interface"))
+		if err := a.installMosDNSBundleUpload(r.Context(), r, iface); err != nil {
+			writeError(w, http.StatusBadRequest, "mosdns_bundle_install_failed", err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"success": true, "data": map[string]any{"interface": iface}})
+		return
+	}
+	var req struct {
+		URL       string `json:"url"`
+		Interface string `json:"interface"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	iface := strings.TrimSpace(req.Interface)
+	if err := a.installMosDNSBundleFromURL(r.Context(), req.URL, iface); err != nil {
+		writeError(w, http.StatusBadRequest, "mosdns_bundle_install_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "data": map[string]any{"interface": iface}})
+}
+
 func (a *App) setupComponentInstalled(component string) bool {
+	if component == "mosdns" {
+		return a.hasMosDNSBundle()
+	}
 	target := a.componentTarget(component)
 	if target == "" {
 		return false
@@ -1028,6 +1061,9 @@ func (a *App) setupMissingComponentsForConfig(cfg SetupConfig) []string {
 }
 
 func (a *App) installSetupComponent(component string, emit func(DownloadEvent)) error {
+	if component == "mosdns" {
+		return fmt.Errorf("MosDNS must be installed from a ZIP file or ZIP URL")
+	}
 	if component != "mihomo" {
 		return a.installComponent(component, emit)
 	}

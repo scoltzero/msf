@@ -91,15 +91,10 @@ const GROUP_META: Record<string, { name: string; subtitle: string; defaultExpand
   domestic: { name: "国内", subtitle: "国内直连上游", defaultExpanded: true },
   foreign: { name: "国外", subtitle: "国外代理上游", defaultExpanded: false },
   foreignecs: { name: "国外 ECS", subtitle: "国外 ECS 上游", defaultExpanded: false },
-  nocnfake: { name: "代理 FakeIP", subtitle: "foreign-fakeip", defaultExpanded: true, fake: true },
-  cnfake: { name: "国内 FakeIP", subtitle: "cn-fakeip", defaultExpanded: true, fake: true },
+  foreign_fakeip: { name: "代理 FakeIP", subtitle: "foreign-fakeip", defaultExpanded: true, fake: true },
 };
 
-const GROUP_ORDER = ["domestic", "foreign", "foreignecs", "nocnfake", "cnfake"];
-const FAKE_SERVER_TAGS: Record<string, { canonical: string; legacy: string[] }> = {
-  nocnfake: { canonical: "nocnfake", legacy: ["sing-box", "singbox", "foreign-fakeip", "foreign_fakeip"] },
-  cnfake: { canonical: "cnfake", legacy: ["mihomo", "clash", "cn-fakeip", "cn_fakeip"] },
-};
+const GROUP_ORDER = ["domestic", "foreign", "foreignecs", "foreign_fakeip"];
 
 function asBool(value: unknown) {
   if (typeof value === "boolean") return value;
@@ -123,14 +118,8 @@ function sortUpstreamGroups(nextGroups: UpstreamGroup[]) {
   });
 }
 
-function normalizeFakeServerName(groupId: string, value: unknown) {
-  const name = String(value || "").trim();
-  const fakeMeta = FAKE_SERVER_TAGS[groupId];
-  if (!fakeMeta) return name;
-  if (!name) return fakeMeta.canonical;
-  const lower = name.toLowerCase();
-  if (lower === fakeMeta.canonical || fakeMeta.legacy.includes(lower)) return fakeMeta.canonical;
-  return name;
+function normalizeServerName(value: unknown) {
+  return String(value || "").trim();
 }
 
 function cacheStatFromRecord(value: unknown): CacheStats | null {
@@ -193,7 +182,7 @@ function normalizeUpstreamGroups(payload: unknown): UpstreamGroup[] {
       servers: servers.map((server, index) => {
         const raw = server && typeof server === "object" ? { ...(server as RawRecord) } : {};
         const address = String(raw.addr || raw.server_addr || raw.address || "");
-        const name = normalizeFakeServerName(key, raw.tag || raw.name || `上游 ${index + 1}`);
+        const name = normalizeServerName(raw.tag || raw.name || `上游 ${index + 1}`);
         if (GROUP_META[key]?.fake) raw.tag = name;
         const noteParts = [raw.note, raw.account_id ? `账户: ${raw.account_id}` : "", raw.socks5 ? `SOCKS5 ${raw.socks5}` : "", raw.dial_addr ? `拨号 ${raw.dial_addr}` : ""].filter(Boolean);
         return {
@@ -221,7 +210,7 @@ function groupsToPayload(groups: UpstreamGroup[], socks5?: string) {
       const editable = server as EditableServer;
       const raw = { ...(editable.raw || {}) };
       const addressKey = raw.server_addr !== undefined && raw.addr === undefined ? "server_addr" : "addr";
-      raw.tag = normalizeFakeServerName(group.id, server.name);
+      raw.tag = normalizeServerName(server.name);
       raw.protocol = server.protocol;
       raw.enabled = server.enabled;
       raw[addressKey] = server.address;
@@ -513,7 +502,7 @@ export default function MosdnsSystemPage() {
   const rawForServer = (groupId: string, server: UpstreamServer | undefined, values: UpstreamServerFormValues) => {
     const editable = server as EditableServer | undefined;
     const raw = { ...(editable?.raw || {}) };
-    raw.tag = normalizeFakeServerName(groupId, values.name);
+    raw.tag = normalizeServerName(values.name);
     raw.protocol = values.protocol;
     raw.enabled = values.enabled;
     if (values.protocol === "aliapi") {
@@ -533,7 +522,7 @@ export default function MosdnsSystemPage() {
 
   const saveUpstreamDialog = (values: UpstreamServerFormValues) => {
     if (!upstreamDialog) return;
-    const canonicalName = normalizeFakeServerName(upstreamDialog.groupId, values.name);
+    const canonicalName = normalizeServerName(values.name);
     if (upstreamDialog.mode === "edit") {
       const nextGroups = groups.map((group) => ({
         ...group,

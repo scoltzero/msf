@@ -52,6 +52,24 @@ func (sm *ServiceManager) List() []ServiceStatus {
 }
 
 func (sm *ServiceManager) Status(name string) ServiceStatus {
+	status := sm.statusOne(name)
+	if name != "mosdns" {
+		return status
+	}
+	agent := sm.statusOne("mosdns-traffic-agent")
+	status.Installed = status.Installed && agent.Installed
+	status.Running = status.Running && agent.Running
+	if status.Running {
+		return status
+	}
+	if (status.PID > 0) != (agent.PID > 0) {
+		status.Status = "degraded"
+		status.Error = "MosDNS and traffic agent are not running together"
+	}
+	return status
+}
+
+func (sm *ServiceManager) statusOne(name string) ServiceStatus {
 	spec, err := sm.spec(name)
 	if err != nil {
 		return ServiceStatus{Name: name, Status: "unknown", Error: err.Error()}
@@ -79,36 +97,59 @@ func (sm *ServiceManager) Status(name string) ServiceStatus {
 }
 
 func (sm *ServiceManager) Start(ctx context.Context, name string) (ServiceStatus, error) {
+	if name == "mosdns" {
+		return sm.startMosDNSBundle(ctx)
+	}
+	return sm.startOne(ctx, name)
+}
+
+func (sm *ServiceManager) startMosDNSBundle(ctx context.Context) (ServiceStatus, error) {
+	st, err := sm.startOne(ctx, "mosdns")
+	if err != nil {
+		return st, err
+	}
+	if _, err := sm.startOne(ctx, "mosdns-traffic-agent"); err != nil {
+		_, _ = sm.stop(ctx, "mosdns", false)
+		sm.setDesired("mosdns", false)
+		sm.setDesired("mosdns-traffic-agent", false)
+		return sm.Status("mosdns"), fmt.Errorf("start mosdns-traffic-agent: %w", err)
+	}
+	sm.setDesired("mosdns", true)
+	sm.setDesired("mosdns-traffic-agent", false)
+	return sm.Status("mosdns"), nil
+}
+
+func (sm *ServiceManager) startOne(ctx context.Context, name string) (ServiceStatus, error) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 	spec, err := sm.spec(name)
 	if err != nil {
-		return sm.Status(name), err
+		return sm.statusOne(name), err
 	}
-	if st := sm.Status(name); st.Running {
+	if st := sm.statusOne(name); st.Running {
 		sm.setDesired(name, true)
 		return st, nil
 	}
 	if _, err := os.Stat(spec.Binary); err != nil {
-		return sm.Status(name), fmt.Errorf("%s binary not installed at %s", name, spec.Binary)
+		return sm.statusOne(name), fmt.Errorf("%s binary not installed at %s", name, spec.Binary)
 	}
 	if name == "mosdns" {
 		dns53 := setupDNS53Preflight(ctx, collectSetupPortListeners(ctx, []int{53}), true)
 		if dns53.Status == "blocked" {
-			return sm.Status(name), fmt.Errorf("mosdns cannot bind 53: %s", dns53.Message)
+			return sm.statusOne(name), fmt.Errorf("mosdns cannot bind 53: %s", dns53.Message)
 		}
 	}
 	if err := os.MkdirAll(filepath.Dir(spec.Stdout), 0755); err != nil {
-		return sm.Status(name), err
+		return sm.statusOne(name), err
 	}
 	stdout, err := os.OpenFile(spec.Stdout, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
-		return sm.Status(name), err
+		return sm.statusOne(name), err
 	}
 	stderr, err := os.OpenFile(spec.Stderr, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
 		stdout.Close()
-		return sm.Status(name), err
+		return sm.statusOne(name), err
 	}
 	stdoutOffset := openedFileSize(stdout)
 	stderrOffset := openedFileSize(stderr)
@@ -156,7 +197,7 @@ func (sm *ServiceManager) Start(ctx context.Context, name string) (ServiceStatus
 		default:
 		}
 	}
-	st := sm.Status(name)
+	st := sm.statusOne(name)
 	if !exitedDuringStartup && st.Running {
 		sm.setDesired(name, true)
 		return st, nil
@@ -180,7 +221,22 @@ func (sm *ServiceManager) Start(ctx context.Context, name string) (ServiceStatus
 }
 
 func (sm *ServiceManager) Stop(ctx context.Context, name string) (ServiceStatus, error) {
+	if name == "mosdns" {
+		return sm.stopMosDNSBundle(ctx, true)
+	}
 	return sm.stop(ctx, name, true)
+}
+
+func (sm *ServiceManager) stopMosDNSBundle(ctx context.Context, persistDesired bool) (ServiceStatus, error) {
+	_, agentErr := sm.stop(ctx, "mosdns-traffic-agent", false)
+	st, mosErr := sm.stop(ctx, "mosdns", persistDesired)
+	if persistDesired {
+		sm.setDesired("mosdns-traffic-agent", false)
+	}
+	if mosErr != nil {
+		return st, mosErr
+	}
+	return st, agentErr
 }
 
 func (sm *ServiceManager) stop(ctx context.Context, name string, persistDesired bool) (ServiceStatus, error) {
@@ -188,14 +244,14 @@ func (sm *ServiceManager) stop(ctx context.Context, name string, persistDesired 
 	defer sm.mu.Unlock()
 	spec, err := sm.spec(name)
 	if err != nil {
-		return sm.Status(name), err
+		return sm.statusOne(name), err
 	}
 	pid := readPID(spec.PIDFile)
 	if pid <= 0 {
 		if persistDesired {
 			sm.setDesired(name, false)
 		}
-		return sm.Status(name), nil
+		return sm.statusOne(name), nil
 	}
 	proc, err := os.FindProcess(pid)
 	if err != nil {
@@ -203,7 +259,7 @@ func (sm *ServiceManager) stop(ctx context.Context, name string, persistDesired 
 		if persistDesired {
 			sm.setDesired(name, false)
 		}
-		return sm.Status(name), nil
+		return sm.statusOne(name), nil
 	}
 	termErr := proc.Signal(syscall.SIGTERM)
 	deadline := time.Now().Add(5 * time.Second)
@@ -213,11 +269,11 @@ func (sm *ServiceManager) stop(ctx context.Context, name string, persistDesired 
 			if persistDesired {
 				sm.setDesired(name, false)
 			}
-			return sm.Status(name), nil
+			return sm.statusOne(name), nil
 		}
 		select {
 		case <-ctx.Done():
-			return sm.Status(name), ctx.Err()
+			return sm.statusOne(name), ctx.Err()
 		case <-time.After(200 * time.Millisecond):
 		}
 	}
@@ -229,28 +285,35 @@ func (sm *ServiceManager) stop(ctx context.Context, name string, persistDesired 
 			if persistDesired {
 				sm.setDesired(name, false)
 			}
-			return sm.Status(name), nil
+			return sm.statusOne(name), nil
 		}
 		select {
 		case <-ctx.Done():
-			return sm.Status(name), ctx.Err()
+			return sm.statusOne(name), ctx.Err()
 		case <-time.After(100 * time.Millisecond):
 		}
 	}
 	if killErr != nil {
-		return sm.Status(name), fmt.Errorf("failed to stop %s process %d: SIGTERM=%v SIGKILL=%w", name, pid, termErr, killErr)
+		return sm.statusOne(name), fmt.Errorf("failed to stop %s process %d: SIGTERM=%v SIGKILL=%w", name, pid, termErr, killErr)
 	}
-	return sm.Status(name), fmt.Errorf("failed to stop %s process %d after SIGKILL", name, pid)
+	return sm.statusOne(name), fmt.Errorf("failed to stop %s process %d after SIGKILL", name, pid)
 }
 
 func (sm *ServiceManager) Restart(ctx context.Context, name string) (ServiceStatus, error) {
+	if name == "mosdns" {
+		_, _ = sm.stopMosDNSBundle(ctx, false)
+		return sm.Start(ctx, name)
+	}
 	_, _ = sm.stop(ctx, name, false)
 	return sm.Start(ctx, name)
 }
 
 func (sm *ServiceManager) StopAll(ctx context.Context) error {
 	var errs []string
-	for _, name := range []string{"mosdns", "mihomo"} {
+	if _, err := sm.stopMosDNSBundle(ctx, false); err != nil {
+		errs = append(errs, err.Error())
+	}
+	for _, name := range []string{"mihomo"} {
 		if _, err := sm.stop(ctx, name, false); err != nil {
 			errs = append(errs, err.Error())
 		}
@@ -331,12 +394,24 @@ func (sm *ServiceManager) spec(name string) (serviceSpec, error) {
 		return serviceSpec{
 			DisplayName: "MosDNS",
 			Binary:      bin,
-			Args:        []string{"start", "--dir", cfgDir},
+			Args:        []string{"start", "-c", filepath.Join(cfgDir, "config_custom.yaml"), "-d", cfgDir},
 			Dir:         cfgDir,
-			Config:      filepath.Join(cfgDir, "config.yaml"),
+			Config:      filepath.Join(cfgDir, "config_custom.yaml"),
 			Stdout:      filepath.Join(root, "logs/mosdns.out.log"),
 			Stderr:      filepath.Join(root, "logs/mosdns.err.log"),
 			PIDFile:     filepath.Join(root, "data/mosdns.pid"),
+		}, nil
+	case "mosdns-traffic-agent":
+		config := filepath.Join(root, "configs/monitor/config.json")
+		return serviceSpec{
+			DisplayName: "MosDNS Traffic Agent",
+			Binary:      filepath.Join(root, "data/binaries/mosdns-traffic-agent/mosdns-traffic-agent"),
+			Args:        []string{"-config", config},
+			Dir:         filepath.Dir(config),
+			Config:      config,
+			Stdout:      filepath.Join(root, "logs/mosdns-traffic-agent.out.log"),
+			Stderr:      filepath.Join(root, "logs/mosdns-traffic-agent.err.log"),
+			PIDFile:     filepath.Join(root, "data/mosdns-traffic-agent.pid"),
 		}, nil
 	default:
 		return serviceSpec{}, fmt.Errorf("unknown service %s", name)

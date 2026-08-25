@@ -42,10 +42,6 @@ func (a *App) RestoreConfiguredRuntime(ctx context.Context) RuntimeRestoreReport
 		report.Errors = append(report.Errors, "initialized setup config is missing")
 		return report
 	}
-	if err := a.migrateLegacyMosDNSConfig(); err != nil {
-		report.Errors = append(report.Errors, "failed to migrate legacy MosDNS entries: "+err.Error())
-		return report
-	}
 	migrated, err := a.migrateSetupProxyModeForRuntime(&cfg)
 	if err != nil {
 		report.Errors = append(report.Errors, err.Error())

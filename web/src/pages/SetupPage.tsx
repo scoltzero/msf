@@ -260,19 +260,20 @@ function streamSetupDownload(component: string, onEvent: (event: SetupDownloadEv
   });
 }
 
-async function uploadMosDNSBundle(file: File, onEvent: (event: SetupDownloadEvent) => void) {
+async function uploadMosDNSBundle(file: File, interfaceName: string, onEvent: (event: SetupDownloadEvent) => void) {
   onEvent({ status: "running", progress: 5, message: "正在上传 MosDNS ZIP" });
   const body = new FormData();
   body.append("file", file, file.name);
+  body.append("interface", interfaceName);
   await api("/api/v1/setup/mosdns/install", { method: "POST", body, skipAuth: true });
   onEvent({ status: "completed", progress: 100, message: "MosDNS 与流量代理已安装" });
 }
 
-async function installMosDNSBundleFromURL(url: string, onEvent: (event: SetupDownloadEvent) => void) {
+async function installMosDNSBundleFromURL(url: string, interfaceName: string, onEvent: (event: SetupDownloadEvent) => void) {
   onEvent({ status: "running", progress: 5, message: "正在下载 MosDNS ZIP" });
   await api("/api/v1/setup/mosdns/install", {
     method: "POST",
-    body: JSON.stringify({ url }),
+    body: JSON.stringify({ url, interface: interfaceName }),
     skipAuth: true,
   });
   onEvent({ status: "completed", progress: 100, message: "MosDNS 与流量代理已安装" });
@@ -1146,6 +1147,19 @@ export function SetupPage() {
     navigate("/login", { replace: true });
   };
 
+  const installMosdnsBundle = async (
+    onEvent: (event: SetupDownloadEvent) => void = (event) => setMessage(event.message || "正在安装 MosDNS ZIP 包")
+  ) => {
+    if (mosdnsInstallMode === "upload") {
+      if (!mosdnsBundleFile) throw new Error("请先选择 MosDNS 本地 ZIP 文件");
+      await uploadMosDNSBundle(mosdnsBundleFile, form.selected_interface, onEvent);
+      return;
+    }
+    const url = mosdnsBundleURL.trim();
+    if (!url) throw new Error("请输入 MosDNS ZIP 链接");
+    await installMosDNSBundleFromURL(url, form.selected_interface, onEvent);
+  };
+
   const runDownloadFlow = async (componentsValue: unknown) => {
     const components = normalizeDownloadComponents(componentsValue, form);
     if (components.length === 0) {
@@ -1191,18 +1205,7 @@ export function SetupPage() {
           );
         };
         if (component === "mosdns") {
-          if (mosdnsInstallMode === "upload") {
-            if (!mosdnsBundleFile) {
-              throw new Error("请先选择 MosDNS 本地 ZIP 文件");
-            }
-            await uploadMosDNSBundle(mosdnsBundleFile, onEvent);
-          } else {
-            const url = mosdnsBundleURL.trim();
-            if (!url) {
-              throw new Error("请输入 MosDNS ZIP 链接");
-            }
-            await installMosDNSBundleFromURL(url, onEvent);
-          }
+          await installMosdnsBundle(onEvent);
         } else {
           await streamSetupDownload(component, onEvent);
         }
@@ -1250,6 +1253,8 @@ export function SetupPage() {
         setMessage("检测到非常用端口占用，请确认风险后再继续初始化");
         return;
       }
+      await installMosdnsBundle();
+      setMessage("正在保存初始化配置...");
       const payload = await api<any>("/api/v1/setup/initialize", {
         method: "POST",
         body: JSON.stringify({

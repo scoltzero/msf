@@ -89,6 +89,8 @@ func (a *App) handleServiceConfig(w http.ResponseWriter, r *http.Request) {
 	rel := "configs/" + name + "/config.yaml"
 	if name == "proxy" {
 		rel = "configs/mihomo/config.yaml"
+	} else if name == "mosdns" {
+		rel = mosDNSConfigPath
 	}
 	historyID, err := a.saveConfigFileWithHistory(rel, req.Content, firstNonEmpty(req.Comment, "service config update"), currentUsername(r))
 	if err != nil {

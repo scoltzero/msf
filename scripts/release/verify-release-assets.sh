@@ -52,4 +52,14 @@ if bad:
     raise SystemExit(bad)
 ' "$provenance" "$VERSION" "$COMMIT" "$TAG" || fail "$binary embedded provenance mismatch"
 
+python3 - "$binary" <<'PY' || fail "embedded frontend or legacy MosDNS template validation failed"
+import sys
+
+binary = open(sys.argv[1], "rb").read()
+if "正在保存初始化配置".encode() not in binary:
+    raise SystemExit("embedded frontend is missing the MosDNS-before-initialize flow")
+if b"type: nft_add" in binary:
+    raise SystemExit("legacy nft_add MosDNS template is still embedded")
+PY
+
 echo "release asset verified for $TAG ($COMMIT)"

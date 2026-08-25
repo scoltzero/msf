@@ -203,7 +203,7 @@ func SubConfigPath(dataDir string) string {
 }
 
 func MosDNSConfigPath(dataDir string) string {
-	return filepath.Join(dataDir, "configs/mosdns/config.yaml")
+	return filepath.Join(dataDir, "configs/mosdns/config_custom.yaml")
 }
 
 func EnsureDefaultConfig(dataDir string) error {

@@ -1,5 +1,0 @@
-plugins:
-  - tag: clientname
-    type: webinfo
-    args:
-      file: "webinfo/clientname.json"

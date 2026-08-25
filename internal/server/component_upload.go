@@ -68,14 +68,26 @@ func (a *App) handleComponentUpdateUpload(w http.ResponseWriter, r *http.Request
 		on conflict(component) do update set current_version=excluded.current_version,latest_version=excluded.latest_version,has_update=excluded.has_update,download_url=excluded.download_url,download_digest='',verified_digest='',verified=false,verification_source=excluded.verification_source,status='running',progress=5,error_message='',last_check_time=excluded.last_check_time,updated_at=excluded.updated_at`,
 		component, a.componentCurrentVersion(component), version, true, downloadURL, "", "", false, componentVerificationSourceLocalUpload, "running", 5, "", now, now, now)
 
-	if err := a.installUploadedComponent(component, tmpPath, header.Filename); err != nil {
-		_, _ = a.DB.Exec(`update component_update_info set status='failed',progress=5,error_message=?,updated_at=? where component=?`, err.Error(), nowString(), component)
-		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": err.Error(), "data": a.componentUpdateState(component)})
+	restarted := false
+	var installErr error
+	if component == "mosdns" {
+		iface := defaultSetupInterface()
+		if cfg, ok := a.latestSetupConfig(); ok && strings.TrimSpace(cfg.SelectedInterface) != "" {
+			iface = cfg.SelectedInterface
+		}
+		restarted, installErr = a.replaceMosDNSBundle(r.Context(), func() error {
+			return a.installMosDNSBundle(r.Context(), tmpPath, iface)
+		})
+	} else {
+		installErr = a.installUploadedComponent(component, tmpPath, header.Filename)
+	}
+	if installErr != nil {
+		_, _ = a.DB.Exec(`update component_update_info set status='failed',progress=5,error_message=?,updated_at=? where component=?`, installErr.Error(), nowString(), component)
+		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": installErr.Error(), "data": a.componentUpdateState(component)})
 		return
 	}
 
-	restarted := false
-	if component == "mosdns" || component == "mihomo" {
+	if component == "mihomo" {
 		if a.Services.Status(component).Running {
 			_, _ = a.Services.Restart(r.Context(), component)
 			restarted = true
@@ -89,6 +101,9 @@ func (a *App) handleComponentUpdateUpload(w http.ResponseWriter, r *http.Request
 }
 
 func (a *App) installUploadedComponent(component, src, originalName string) error {
+	if component == "mosdns" {
+		return fmt.Errorf("MosDNS must be installed from a complete bundle ZIP")
+	}
 	target := a.componentTarget(component)
 	if target == "" {
 		return fmt.Errorf("unknown component %s", component)

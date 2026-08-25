@@ -127,40 +127,6 @@ func TestMosDNSDomainMapperBackedTags(t *testing.T) {
 	}
 }
 
-func TestMigrateLegacyMosDNSDomainRules(t *testing.T) {
-	app := newTestApp(t)
-	tests := []struct {
-		category string
-		input    string
-		want     string
-	}{
-		{category: "whitelist", input: "example.com\nfull:exact.example\nexample.com\n", want: "domain:example.com\nfull:exact.example\n"},
-		{category: "blocklist", input: "ads.example\nkeyword:tracker\n", want: "domain:ads.example\nkeyword:tracker\n"},
-		{category: "greylist", input: "proxy.example\nregexp:^api\\.example$\n", want: "domain:proxy.example\nregexp:^api\\.example$\n"},
-		{category: "ddnslist", input: "home.example\nfull:exact.example\nhome.example\n", want: "full:home.example\nfull:exact.example\n"},
-	}
-	for _, test := range tests {
-		if err := app.writeTextFile(mosDNSRuleCategoryFile(test.category), test.input); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := app.migrateLegacyMosDNSDomainRules(); err != nil {
-		t.Fatal(err)
-	}
-	for _, test := range tests {
-		content, err := app.readTextFile(mosDNSRuleCategoryFile(test.category))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if content != test.want {
-			t.Fatalf("migrated %s rules = %q, want %q", test.category, content, test.want)
-		}
-	}
-	if err := app.migrateLegacyMosDNSDomainRules(); err != nil {
-		t.Fatalf("migration should be idempotent: %v", err)
-	}
-}
-
 func TestMosDNSDDNSImportNormalizesPlainDomains(t *testing.T) {
 	app := newTestApp(t)
 	token := tokenForRole(t, app, "admin")
@@ -495,11 +461,13 @@ func assertMosDNSFrontCacheFlushes(t *testing.T, calls <-chan mosDNSRuntimeCall)
 
 func markMosDNSRunningForTest(t *testing.T, app *App) {
 	t.Helper()
-	pidPath := filepath.Join(app.DataDir, "data/mosdns.pid")
-	if err := os.MkdirAll(filepath.Dir(pidPath), 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(pidPath, []byte(strconv.Itoa(os.Getpid())), 0644); err != nil {
-		t.Fatal(err)
+	for _, name := range []string{"mosdns", "mosdns-traffic-agent"} {
+		pidPath := filepath.Join(app.DataDir, "data", name+".pid")
+		if err := os.MkdirAll(filepath.Dir(pidPath), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(pidPath, []byte(strconv.Itoa(os.Getpid())), 0644); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

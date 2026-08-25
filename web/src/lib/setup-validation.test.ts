@@ -9,6 +9,8 @@ const validForm: SetupValidationValues = {
   webPort: "7788",
   selected_interface: "eth0",
   mosdnsEnabled: true,
+  mosdnsInstallMode: "url",
+  mosdnsBundleURL: "https://example.com/mosdns.zip",
   proxyCore: "mihomo",
 };
 

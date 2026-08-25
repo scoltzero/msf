@@ -66,7 +66,7 @@ function summaryValue(payload: unknown, keys: string[]) {
 
 function Metric({ icon: Icon, label, value, tone }: { icon: typeof ArrowDownToLine; label: string; value: string; tone: string }) {
   return (
-    <GlassSurface material="thin" className="min-w-0 p-3" style={{ "--gary-local-radius": "12px" } as CSSProperties}>
+    <GlassSurface material="ultrathin" className="min-w-0 p-3" style={{ "--gary-local-radius": "12px" } as CSSProperties}>
       <div className="flex items-center gap-2">
         <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px]", tone)}><Icon className="h-4 w-4" /></span>
         <div className="min-w-0">

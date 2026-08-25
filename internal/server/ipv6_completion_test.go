@@ -69,34 +69,6 @@ func TestIPv6GeneratedArtifactsSharePrefixAndDisableDataPlane(t *testing.T) {
 			t.Fatalf("IPv6-disabled nftables config retained %q:\n%s", forbidden, nft)
 		}
 	}
-	mosdns := app.renderMosDNSYAML(disabled)
-	if count := strings.Count(mosdns, "IPv6 数据面关闭时显式返回真实 AAAA"); count != 2 {
-		t.Fatalf("real AAAA bypass count=%d, want 2", count)
-	}
-	if strings.Contains(mosdns, "sequence_client") || strings.Contains(mosdns, "forward_priority_core") {
-		t.Fatal("client entry must not forward through a localhost wrapper that loses the original client IP")
-	}
-	if strings.Count(mosdns, "entry: sequence_6666") != 2 {
-		t.Fatal("only the public UDP/TCP :53 entries should enter sequence_6666 directly")
-	}
-	for _, want := range []string{"switch6 'A'", `listen: ":53"`, "fast_accel: true", "exec: prefer_ipv4", "exec: prefer_ipv6"} {
-		if !strings.Contains(mosdns, want) {
-			t.Fatalf("MosDNS direct client sequence missing %q", want)
-		}
-	}
-	if strings.Count(mosdns, "exec: prefer_ipv4") != 2 || strings.Count(mosdns, "exec: prefer_ipv6") != 2 {
-		t.Fatal("IPv4/IPv6 preference must execute inline in both primary MosDNS sequences")
-	}
-	priorityIndex := strings.Index(mosdns, "exec: prefer_ipv4")
-	clientExitIndex := strings.Index(mosdns, "matches: fast_mark 39")
-	bypassIndex := strings.Index(mosdns, "IPv6 数据面关闭时显式返回真实 AAAA")
-	cacheIndex := strings.Index(mosdns, "#web ui中选择泄露版")
-	if priorityIndex < 0 || clientExitIndex < 0 || priorityIndex > clientExitIndex {
-		t.Fatal("resolution priority must run before client-specific branches can exit")
-	}
-	if bypassIndex < clientExitIndex || cacheIndex < bypassIndex {
-		t.Fatal("real AAAA fallback must run after priority/client routing and before cache routing")
-	}
 }
 
 func TestCustomMihomoRepairsOnlyManagedIPv6Artifacts(t *testing.T) {
@@ -136,6 +108,9 @@ func TestCustomMihomoRepairsOnlyManagedIPv6Artifacts(t *testing.T) {
 
 func TestMosDNSOverridesRenderIntoRuntimeYAML(t *testing.T) {
 	app := newTestApp(t)
+	if err := app.installMosDNSBundle(context.Background(), writeMosDNSBundleFixture(t, completeMosDNSBundleFixture()), "eth0"); err != nil {
+		t.Fatal(err)
+	}
 	app.storeJSONSetting("mosdns_overrides", map[string]any{"ecs": "2001:4860:4860::8888"})
 	app.storeJSONSetting("mosdns_upstream_overrides", map[string]any{
 		"foreign": []any{map[string]any{
@@ -143,6 +118,11 @@ func TestMosDNSOverridesRenderIntoRuntimeYAML(t *testing.T) {
 			"protocol":  "https",
 			"addr":      "https://dns.example/dns-query",
 			"dial_addr": "203.0.113.53",
+		}},
+		"foreign_fakeip": []any{map[string]any{
+			"enabled":  true,
+			"protocol": "udp",
+			"addr":     "127.0.0.1:9555",
 		}},
 	})
 	cfg := SetupConfig{SelectedInterface: "eth0", EnableIPv6: true, ProxyCore: "mihomo", MosDNSEnabled: true}
@@ -156,6 +136,13 @@ func TestMosDNSOverridesRenderIntoRuntimeYAML(t *testing.T) {
 	}
 	if !strings.Contains(string(foreign), "https://dns.example/dns-query") || strings.Contains(string(foreign), "https://1.1.1.1/dns-query") {
 		t.Fatalf("foreign upstream override was not rendered:\n%s", foreign)
+	}
+	fakeIP, err := os.ReadFile(filepath.Join(app.DataDir, "configs/mosdns/sub_config/forward_1.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(fakeIP), "127.0.0.1:9555") || strings.Contains(string(fakeIP), "127.0.0.1:9333") {
+		t.Fatalf("foreign FakeIP upstream override was not rendered:\n%s", fakeIP)
 	}
 	ecs, err := os.ReadFile(filepath.Join(app.DataDir, "configs/mosdns/sub_config/forward_nocn_ecs.yaml"))
 	if err != nil {
@@ -198,87 +185,6 @@ func TestMosDNSPrioritySwitchesAreMutuallyExclusive(t *testing.T) {
 	switches := app.mosDNSSwitchMap()
 	if switches["switch8"] || !switches["switch10"] {
 		t.Fatalf("priority switches should be mutually exclusive: %#v", switches)
-	}
-}
-
-func TestLegacyMosDNSConfigMigratesWithoutUnusedLoopbackHops(t *testing.T) {
-	app := newTestApp(t)
-	legacy := `plugins:
-  - tag: forward_priority_core
-    type: forward
-    args:
-      upstreams:
-        - addr: "udp://127.0.0.1:5656"
-
-  - tag: sequence_client
-    type: sequence
-    args:
-      - exec: $forward_priority_core
-#对外服务器
-  - tag: udp_all
-    type: udp_server
-    args:
-      entry: sequence_client
-      listen: ":53"
-  - tag: sequence_6666
-    type: sequence
-    args:
-      - matches: fast_mark 6                #向上游请求ddns域名，无过期缓存
-        exec: $domestic
-      - matches:                            #web ui中选择泄露版（默认），用cache_all，否则用cache_all_noleak
-        exec: $cache_all
-  - tag: sequence_requery
-    type: sequence
-    args:
-      - matches: fast_mark 6                #向上游请求ddns域名，无过期缓存
-        exec: $domestic
-      - matches:                            #web ui中选择泄露版（默认），用cache_all，否则用cache_all_noleak
-        exec: $cache_all
-
-  - tag: forward_all_in
-    type: forward
-    args:
-      concurrent: 1
-      upstreams:
-        - addr: "udp://127.0.0.1:5656"
-
-  - tag: udp_main
-    type: udp_server
-    args:
-      entry: sequence_6666
-      listen: 127.0.0.1:5656
-
-  - tag: tcp_main
-    type: tcp_server
-    args:
-      entry: sequence_6666
-      listen: 127.0.0.1:5656
-      idle_timeout: 720
-`
-	if err := app.writeTextFile("configs/mosdns/config.yaml", legacy); err != nil {
-		t.Fatal(err)
-	}
-	if err := app.writeTextFile("configs/mosdns/sub_config/forward_2.yaml", "stale\n"); err != nil {
-		t.Fatal(err)
-	}
-	if err := app.migrateLegacyMosDNSConfig(); err != nil {
-		t.Fatal(err)
-	}
-	got, err := app.readTextFile("configs/mosdns/config.yaml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(got, "sequence_client") || strings.Contains(got, "forward_priority_core") || strings.Contains(got, "127.0.0.1:5656") || strings.Contains(got, "forward_all_in") || strings.Contains(got, "tag: udp_main") || strings.Contains(got, "tag: tcp_main") {
-		t.Fatalf("deprecated localhost wrapper remains after migration:\n%s", got)
-	}
-	if !strings.Contains(got, "entry: sequence_6666") {
-		t.Fatalf("direct MosDNS entry missing after migration:\n%s", got)
-	}
-	if strings.Count(got, "exec: prefer_ipv4") != 2 || strings.Count(got, "exec: prefer_ipv6") != 2 {
-		t.Fatalf("inline IPv4/IPv6 preference was not restored during migration:\n%s", got)
-	}
-	if _, err := os.Stat(filepath.Join(app.DataDir, "configs/mosdns/sub_config/forward_2.yaml")); !os.IsNotExist(err) {
-		t.Fatalf("stale forward_2.yaml was not removed, err=%v", err)
 	}
 }
 

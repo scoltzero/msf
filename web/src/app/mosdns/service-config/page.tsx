@@ -54,7 +54,7 @@ function collectSelectedDirectoryPaths(nodes: ConfigFileNode[], selectedPath: st
 }
 
 function displayPath(path?: string) {
-  return path || "config.yaml";
+  return path || "config_custom.yaml";
 }
 
 function formatUptime(seconds?: number) {
@@ -111,7 +111,7 @@ export default function ServiceConfigPage() {
     const query = path ? `?path=${encodeURIComponent(path)}` : "";
     const payload = await api(`/api/v1/mosdns/config/file${query}`);
     const data = apiData<{ content?: string; path?: string }>(payload, payload as { content?: string; path?: string });
-    setSelectedPath(data?.path || path || "config.yaml");
+    setSelectedPath(data?.path || path || "config_custom.yaml");
     setContent(String(data?.content || ""));
   }, []);
 
@@ -124,9 +124,9 @@ export default function ServiceConfigPage() {
       setTree(nodes);
       setTreeRoot(String((treePayload as any)?.absolute_path || (treePayload as any)?.root || "configs/mosdns"));
       const flatFiles = flattenConfigFiles(nodes);
-      const firstConfig = flatFiles.find((file) => file.name === "config.yaml") || flatFiles.find((file) => file.name?.endsWith(".yaml") || file.name?.endsWith(".yml"));
+      const firstConfig = flatFiles.find((file) => file.name === "config_custom.yaml") || flatFiles.find((file) => file.name?.endsWith(".yaml") || file.name?.endsWith(".yml"));
       if (!treeInitialized.current) {
-        setExpandedPaths(collectSelectedDirectoryPaths(nodes, firstConfig?.path || "config.yaml"));
+        setExpandedPaths(collectSelectedDirectoryPaths(nodes, firstConfig?.path || "config_custom.yaml"));
         treeInitialized.current = true;
       }
       await loadFile(firstConfig?.path);
@@ -191,7 +191,7 @@ export default function ServiceConfigPage() {
   };
 
   const running = serviceRunning(service);
-  const currentFileName = displayPath(selectedPath).split("/").pop() || "config.yaml";
+  const currentFileName = displayPath(selectedPath).split("/").pop() || "config_custom.yaml";
 
   return (
     <AppShell fillViewport>

@@ -529,13 +529,10 @@ func (a *App) createFactoryResetBaseLayout(secret string, state factoryResetStat
 	}
 	cfg.defaults()
 	files := map[string]string{
-		"configs/app.yaml":                  a.renderAppYAMLWithSecret(cfg, []byte(secret)),
-		"configs/mosdns/config.yaml":        a.renderMosDNSYAML(cfg),
-		"configs/mosdns/client_ip.txt":      "",
-		"configs/mosdns/rule/blocklist.txt": "",
-		"configs/network/network.yaml":      a.renderNetworkYAML(cfg),
-		"configs/singbox/config.json":       renderDisabledSingBoxJSON(),
-		"configs/mihomo/config.yaml":        a.renderMihomoYAML(cfg),
+		"configs/app.yaml":             a.renderAppYAMLWithSecret(cfg, []byte(secret)),
+		"configs/network/network.yaml": a.renderNetworkYAML(cfg),
+		"configs/singbox/config.json":  renderDisabledSingBoxJSON(),
+		"configs/mihomo/config.yaml":   a.renderMihomoYAML(cfg),
 	}
 	if shouldRestoreNFT(cfg) {
 		files["configs/network/network.nft"] = a.renderNFT(cfg)

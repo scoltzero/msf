@@ -30,6 +30,7 @@ func TestNetworkRuntimeLifecycle(t *testing.T) {
 	}
 	installRuntimeTestBinary(t, app, "mihomo")
 	installRuntimeTestBinary(t, app, "mosdns")
+	installRuntimeTestBinary(t, app, "mosdns-traffic-agent")
 
 	var modesMu sync.Mutex
 	var modes []string
@@ -429,5 +430,22 @@ func installRuntimeTestBinary(t *testing.T, app *App, component string) {
 	script := "#!/bin/sh\ntrap 'exit 0' TERM INT\nwhile :; do sleep 1; done\n"
 	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
+	}
+	var configPath, config string
+	switch component {
+	case "mosdns":
+		configPath = filepath.Join(app.DataDir, "configs/mosdns/config_custom.yaml")
+		config = "api:\n  http: \"127.0.0.1:9099\"\n"
+	case "mosdns-traffic-agent":
+		configPath = filepath.Join(app.DataDir, "configs/monitor/config.json")
+		config = "{}\n"
+	}
+	if configPath != "" {
+		if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(configPath, []byte(config), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

@@ -1,5 +1,0 @@
-plugins:
-  - tag: requery
-    type: requery
-    args:
-      file: "webinfo/requeryconfig.json"

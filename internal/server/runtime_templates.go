@@ -29,7 +29,7 @@ func (a *App) ensureRuntimeTemplateDefaults(overwriteStructural bool) error {
 			return nil
 		}
 		rel := strings.TrimPrefix(path, root+"/")
-		if rel == "mosdns/config.yaml" || strings.HasPrefix(rel, "mihomo/") {
+		if strings.HasPrefix(rel, "mihomo/") {
 			return nil
 		}
 		destRel := filepath.ToSlash(filepath.Join("configs", rel))
@@ -52,18 +52,6 @@ func (a *App) ensureRuntimeTemplateDefaults(overwriteStructural bool) error {
 
 func isRuntimeStructuralTemplate(rel string) bool {
 	switch {
-	case rel == "mosdns/config.yaml":
-		return true
-	case strings.HasPrefix(rel, "mosdns/sub_config/"):
-		return true
-	case strings.HasPrefix(rel, "mosdns/adguard/"):
-		return true
-	case strings.HasPrefix(rel, "mosdns/webinfo/"):
-		return true
-	case strings.HasPrefix(rel, "mosdns/nft/"):
-		return true
-	case strings.HasPrefix(rel, "mosdns/srs/") && strings.HasSuffix(rel, ".json"):
-		return true
 	case rel == "mihomo/config.yaml", rel == "mihomo/phone_config.yaml":
 		return true
 	default:

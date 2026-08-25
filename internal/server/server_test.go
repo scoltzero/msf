@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"compress/zlib"
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -23,6 +24,9 @@ import (
 
 func TestSetupInitializeLoginAndGeneratedConfigs(t *testing.T) {
 	app := newTestApp(t)
+	if err := app.installMosDNSBundle(context.Background(), writeMosDNSBundleFixture(t, completeMosDNSBundleFixture()), "eth0"); err != nil {
+		t.Fatal(err)
+	}
 	body := map[string]any{
 		"username":             "root",
 		"password":             "test-password-123",
@@ -98,41 +102,11 @@ func TestSetupInitializeLoginAndGeneratedConfigs(t *testing.T) {
 			t.Fatalf("manual provider missing %q:\n%s", want, manualText)
 		}
 	}
-	mosdnsConfig, err := os.ReadFile(filepath.Join(app.DataDir, "configs/mosdns/config.yaml"))
-	if err != nil {
-		t.Fatal(err)
+	if !app.hasMosDNSBundle() {
+		t.Fatal("setup generation must preserve the installed MosDNS bundle")
 	}
-	mosdnsText := string(mosdnsConfig)
-	for _, want := range []string{"sequence_6666", `listen: ":53"`, `listen: ":66"`, `listen: ":77"`} {
-		if !strings.Contains(mosdnsText, want) {
-			t.Fatalf("mosdns config missing %q:\n%s", want, mosdnsText)
-		}
-	}
-	for _, obsolete := range []string{"127.0.0.1:5656", "forward_all_in", "tag: udp_main", "tag: tcp_main"} {
-		if strings.Contains(mosdnsText, obsolete) {
-			t.Fatalf("mosdns config contains unused loopback entry %q:\n%s", obsolete, mosdnsText)
-		}
-	}
-	runtimeFiles := map[string][]string{
-		"configs/mosdns/sub_config/forward_1.yaml":        {"udp://127.0.0.1:6666", `listen: ":2222"`},
-		"configs/mosdns/sub_config/forward_nocn.yaml":     {`listen: ":3333"`},
-		"configs/mosdns/sub_config/forward_nocn_ecs.yaml": {`listen: ":4444"`},
-		"configs/mosdns/sub_config/for_singbox.yaml":      {`listen: ":7778"`, `listen: ":8888"`},
-	}
-	for rel, wants := range runtimeFiles {
-		b, err := os.ReadFile(filepath.Join(app.DataDir, rel))
-		if err != nil {
-			t.Fatal(err)
-		}
-		got := string(b)
-		for _, want := range wants {
-			if !strings.Contains(got, want) {
-				t.Fatalf("%s missing %q:\n%s", rel, want, got)
-			}
-		}
-	}
-	if _, err := os.Stat(filepath.Join(app.DataDir, "configs/mosdns/sub_config/forward_2.yaml")); !os.IsNotExist(err) {
-		t.Fatalf("unused forward_2.yaml should not be generated, err=%v", err)
+	if _, err := os.Stat(filepath.Join(app.DataDir, "configs/mosdns/config.yaml")); !os.IsNotExist(err) {
+		t.Fatalf("setup generation must not create legacy MosDNS config.yaml: %v", err)
 	}
 	nft, err := os.ReadFile(filepath.Join(app.DataDir, "configs/network/network.nft"))
 	if err != nil {
@@ -985,6 +959,7 @@ func TestComponentUpdateStateDisplaysEquivalentMosDNSPackageVersion(t *testing.T
 	if err := os.WriteFile(bin, []byte("#!/bin/sh\necho 'dev-20260604-7a2a3f3'\n"), 0755); err != nil {
 		t.Fatal(err)
 	}
+	installRuntimeTestBinary(t, app, "mosdns-traffic-agent")
 	now := time.Now()
 	if _, err := app.DB.Exec(`insert into component_update_info(component,current_version,latest_version,has_update,download_url,status,progress,last_check_time,created_at,updated_at)
 		values(?,?,?,?,?,?,?,?,?,?)`, "mosdns", "dev-20260604-7a2a3f3", "ph-yyds-20260515-7a2a3f3", false, "https://example.com/mosdns.zip", "checked", 0, now, now, now); err != nil {
@@ -1016,6 +991,7 @@ func TestMosDNSStatusDisplaysEquivalentYYYSuoReleaseVersion(t *testing.T) {
 	if err := os.WriteFile(bin, []byte("#!/bin/sh\necho 'dev-20260604-7a2a3f3'\n"), 0755); err != nil {
 		t.Fatal(err)
 	}
+	installRuntimeTestBinary(t, app, "mosdns-traffic-agent")
 	now := time.Now()
 	if _, err := app.DB.Exec(`insert into component_update_info(component,current_version,latest_version,has_update,download_url,status,progress,last_check_time,created_at,updated_at)
 		values(?,?,?,?,?,?,?,?,?,?)`, "mosdns", "dev-20260604-7a2a3f3", "ph-yyds-20260515-7a2a3f3", false, "https://github.com/yyysuo/mosdns/releases", "checked", 0, now, now, now); err != nil {
@@ -1309,7 +1285,10 @@ func TestSetupCheckReportsRecoveryWhenConfiguredComponentsAreMissing(t *testing.
 		t.Fatalf("setup check should report missing components: status=%d body=%s", recovery.Code, recovery.Body.String())
 	}
 
-	for _, component := range []string{"mosdns", "mihomo", "zashboard"} {
+	if err := app.installMosDNSBundle(context.Background(), writeMosDNSBundleFixture(t, completeMosDNSBundleFixture()), "eth0"); err != nil {
+		t.Fatal(err)
+	}
+	for _, component := range []string{"mihomo", "zashboard"} {
 		target := app.componentTarget(component)
 		if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
 			t.Fatal(err)
@@ -1466,6 +1445,9 @@ func TestMosDNSRuleSourceManagementAndUpdate(t *testing.T) {
 
 func TestMosDNSMSFCompatRuleAndSystemEndpoints(t *testing.T) {
 	app := newTestApp(t)
+	if err := app.installMosDNSBundle(context.Background(), writeMosDNSBundleFixture(t, completeMosDNSBundleFixture()), "eth0"); err != nil {
+		t.Fatal(err)
+	}
 	token := tokenForRole(t, app, "admin")
 	ruleServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var payload bytes.Buffer
@@ -1501,7 +1483,7 @@ func TestMosDNSMSFCompatRuleAndSystemEndpoints(t *testing.T) {
 		t.Fatalf("system overrides should fall back to runtime template: status=%d body=%s", overrides.Code, overrides.Body.String())
 	}
 	upstreams := requestJSON(t, app, http.MethodGet, "/api/v1/mosdns/system/upstream-overrides", token, nil)
-	if upstreams.Code != http.StatusOK || !strings.Contains(upstreams.Body.String(), "domestic") || !strings.Contains(upstreams.Body.String(), "nocnfake") {
+	if upstreams.Code != http.StatusOK || !strings.Contains(upstreams.Body.String(), "domestic") || !strings.Contains(upstreams.Body.String(), "foreign_fakeip") {
 		t.Fatalf("upstream overrides should fall back to runtime template: status=%d body=%s", upstreams.Code, upstreams.Body.String())
 	}
 	capacity := requestJSON(t, app, http.MethodGet, "/api/v1/mosdns/system/log-capacity", token, nil)
@@ -1875,15 +1857,18 @@ func TestMosDNSRoutingTaskGeneratesRuleFiles(t *testing.T) {
 
 func TestMosDNSConfigSaveCreatesHistory(t *testing.T) {
 	app := newTestApp(t)
+	if err := app.installMosDNSBundle(context.Background(), writeMosDNSBundleFixture(t, completeMosDNSBundleFixture()), "eth0"); err != nil {
+		t.Fatal(err)
+	}
 	token := tokenForRole(t, app, "admin")
 	put := requestJSON(t, app, http.MethodPut, "/api/v1/mosdns/config/file", token, map[string]string{
-		"path": "configs/mosdns/config.yaml", "content": "log:\n  level: info\n",
+		"path": mosDNSConfigPath, "content": "log:\n  level: info\n",
 	})
 	if put.Code != http.StatusOK || !strings.Contains(put.Body.String(), "restart_required") {
 		t.Fatalf("config put status=%d body=%s", put.Code, put.Body.String())
 	}
 	var count int
-	if err := app.DB.QueryRow(`select count(*) from config_histories where service='mosdns' and file_path='configs/mosdns/config.yaml'`).Scan(&count); err != nil {
+	if err := app.DB.QueryRow(`select count(*) from config_histories where service='mosdns' and file_path=?`, mosDNSConfigPath).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
 	if count == 0 {

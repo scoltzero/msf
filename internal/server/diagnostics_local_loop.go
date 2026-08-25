@@ -236,7 +236,7 @@ func isLocalDNSAddress(value string) bool {
 }
 
 func (a *App) checkLocalDNSLoop(cfg SetupConfig) localLoopCheck {
-	mosdns, err := os.ReadFile(filepath.Join(a.DataDir, "configs/mosdns/config.yaml"))
+	mosdns, err := os.ReadFile(filepath.Join(a.DataDir, mosDNSConfigPath))
 	if err != nil {
 		return warningCheck("entry.dns_loop", "entry", "本机入口与系统 DNS", "本机 DNS 递归自环", "无法读取 MosDNS 生效配置来分析本地 DNS 关系。", err.Error())
 	}
@@ -262,7 +262,7 @@ func (a *App) checkMosDNSRuntime(ctx context.Context) localLoopCheck {
 }
 
 func (a *App) checkMosDNSConfig() localLoopCheck {
-	path := filepath.Join(a.DataDir, "configs/mosdns/config.yaml")
+	path := filepath.Join(a.DataDir, mosDNSConfigPath)
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return blockedCheck("mosdns.config", "mosdns", "MosDNS 本机处理链", "MosDNS 生效配置", "无法读取 MosDNS 生效配置。", path, "不可读", err.Error())

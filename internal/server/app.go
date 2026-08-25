@@ -80,6 +80,11 @@ func New(opts Options) (*App, error) {
 	if opts.DataDir == "" {
 		return nil, errors.New("data dir is required")
 	}
+	dataDir, err := filepath.Abs(opts.DataDir)
+	if err != nil {
+		return nil, err
+	}
+	opts.DataDir = dataDir
 	if opts.Version == "" {
 		opts.Version = "dev"
 	}
@@ -151,7 +156,9 @@ func (a *App) EnsureBaseLayout() error {
 		"configs/singbox",
 		"configs/supervisor/services",
 		"data/binaries/mosdns",
+		"data/binaries/mosdns-traffic-agent",
 		"data/binaries/mihomo",
+		"configs/monitor",
 		"data/binaries/supervisord",
 		"data/binaries/zashboard",
 		"logs/supervisor",
@@ -285,6 +292,7 @@ func (a *App) publicAPI(path string) bool {
 		"/api/v1/setup/privilege",
 		"/api/v1/setup/preflight",
 		"/api/v1/setup/initialize",
+		"/api/v1/setup/mosdns/install",
 		"/api/v1/setup/activate",
 		"/api/v1/setup/reset/status",
 		"/api/v1/auth/login",
@@ -314,6 +322,7 @@ func (a *App) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/setup/config", a.handleSetupGetConfig)
 	mux.HandleFunc("PUT /api/v1/setup/config", a.handleSetupPutConfig)
 	mux.HandleFunc("POST /api/v1/setup/initialize", a.handleSetupInitialize)
+	mux.HandleFunc("POST /api/v1/setup/mosdns/install", a.handleSetupMosDNSInstall)
 	mux.HandleFunc("POST /api/v1/setup/activate", a.handleSetupActivate)
 	mux.HandleFunc("POST /api/v1/setup/reset", a.handleSetupReset)
 	mux.HandleFunc("GET /api/v1/setup/reset/status", a.handleSetupResetStatus)

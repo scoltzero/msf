@@ -264,7 +264,12 @@ func (a *App) handleConfigValidate(w http.ResponseWriter, r *http.Request) {
 		req.Path = req.FilePath
 	}
 	if req.Path == "" && req.Service != "" {
-		req.Path = filepath.ToSlash(filepath.Join("configs", normalizeServiceName(req.Service), "config.yaml"))
+		service := normalizeServiceName(req.Service)
+		if service == "mosdns" {
+			req.Path = mosDNSConfigPath
+		} else {
+			req.Path = filepath.ToSlash(filepath.Join("configs", service, "config.yaml"))
+		}
 	}
 	req.Path = normalizeConfigRel(req.Path)
 	if req.Content == "" && req.Path != "" {

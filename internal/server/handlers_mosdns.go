@@ -32,6 +32,10 @@ func (a *App) registerMosDNSRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/mosdns/version", a.handleMosDNSVersionSwitch)
 	mux.HandleFunc("GET /api/v1/mosdns/logs", a.handleMosDNSLogs)
 	mux.HandleFunc("POST /api/v1/mosdns/install", a.handleMosDNSInstall)
+	mux.HandleFunc("GET /api/v1/mosdns/traffic/status", a.handleMosDNSTrafficStatus)
+	mux.HandleFunc("GET /api/v1/mosdns/traffic/snapshot", a.handleMosDNSTrafficSnapshot)
+	mux.HandleFunc("GET /api/v1/mosdns/traffic/clients", a.handleMosDNSTrafficClients)
+	mux.HandleFunc("GET /api/v1/mosdns/traffic/client", a.handleMosDNSTrafficClient)
 	mux.HandleFunc("POST /api/v1/mosdns/start", a.handleMosDNSStart)
 	mux.HandleFunc("POST /api/v1/mosdns/stop", a.handleMosDNSStop)
 	mux.HandleFunc("POST /api/v1/mosdns/restart", a.handleMosDNSRestart)
@@ -191,7 +195,29 @@ func (a *App) handleMosDNSLogs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleMosDNSInstall(w http.ResponseWriter, r *http.Request) {
-	a.runInstallJSON(w, "mosdns")
+	iface := defaultSetupInterface()
+	if cfg, ok := a.latestSetupConfig(); ok && strings.TrimSpace(cfg.SelectedInterface) != "" {
+		iface = cfg.SelectedInterface
+	}
+	var install func() error
+	if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
+		install = func() error { return a.installMosDNSBundleUpload(r.Context(), r, iface) }
+	} else {
+		var req struct {
+			URL string `json:"url"`
+		}
+		if err := decodeJSON(r, &req); err != nil {
+			writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+			return
+		}
+		install = func() error { return a.installMosDNSBundleFromURL(r.Context(), req.URL, iface) }
+	}
+	restarted, err := a.replaceMosDNSBundle(r.Context(), install)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "mosdns_bundle_install_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "data": map[string]any{"interface": iface, "restarted": restarted}})
 }
 
 func (a *App) handleMosDNSStart(w http.ResponseWriter, r *http.Request) {
@@ -1034,7 +1060,7 @@ func (a *App) handleMosDNSUpstreamsPut(w http.ResponseWriter, r *http.Request) {
 func (a *App) handleMosDNSConfigFile(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Query().Get("path")
 	if path == "" {
-		path = "configs/mosdns/config.yaml"
+		path = mosDNSConfigPath
 	}
 	if !strings.HasPrefix(path, "configs/mosdns/") {
 		path = filepath.ToSlash(filepath.Join("configs/mosdns", path))
@@ -1057,7 +1083,7 @@ func (a *App) handleMosDNSConfigFilePut(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if req.Path == "" {
-		req.Path = "configs/mosdns/config.yaml"
+		req.Path = mosDNSConfigPath
 	}
 	if !strings.HasPrefix(req.Path, "configs/mosdns/") {
 		req.Path = filepath.ToSlash(filepath.Join("configs/mosdns", req.Path))
