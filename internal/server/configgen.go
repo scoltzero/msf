@@ -123,7 +123,6 @@ func (a *App) ensureDefaultConfigs() error {
 	files := map[string]string{
 		"configs/app.yaml":             a.renderAppYAML(cfg),
 		"configs/network/network.yaml": a.renderNetworkYAML(cfg),
-		"configs/singbox/config.json":  renderDisabledSingBoxJSON(),
 	}
 	if shouldRestoreNFT(cfg) {
 		files["configs/network/network.nft"] = a.renderNFT(cfg)
@@ -157,7 +156,6 @@ func (a *App) writeGeneratedConfigs(cfg SetupConfig) error {
 	files := map[string]string{
 		"configs/app.yaml":             a.renderAppYAML(cfg),
 		"configs/network/network.yaml": a.renderNetworkYAML(cfg),
-		"configs/singbox/config.json":  renderDisabledSingBoxJSON(),
 	}
 	if a.hasMosDNSBundle() {
 		mosDNSFiles, err := a.renderMosDNSManagedFiles()
@@ -390,35 +388,6 @@ func restoreGeneratedConfigSnapshot(snapshot generatedConfigSnapshot) error {
 		return err
 	}
 	return os.Rename(tmpPath, snapshot.Path)
-}
-
-func renderDisabledSingBoxJSON() string {
-	return `{
-  "log": {
-    "level": "info",
-    "timestamp": true
-  },
-  "dns": {
-    "servers": [
-      {
-        "tag": "local",
-        "address": "223.5.5.5"
-      }
-    ]
-  },
-  "inbounds": [],
-  "outbounds": [
-    {
-      "type": "direct",
-      "tag": "direct"
-    }
-  ],
-  "route": {
-    "rules": [],
-    "final": "direct"
-  }
-}
-`
 }
 
 func (a *App) renderAppYAML(cfg SetupConfig) string {

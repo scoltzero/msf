@@ -153,7 +153,6 @@ func (a *App) EnsureBaseLayout() error {
 		"configs/mihomo/ui",
 		"configs/network",
 		"configs/network/history",
-		"configs/singbox",
 		"configs/supervisor/services",
 		"data/binaries/mosdns",
 		"data/binaries/mosdns-traffic-agent",

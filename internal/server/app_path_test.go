@@ -24,3 +24,10 @@ func TestNewNormalizesRelativeDataDir(t *testing.T) {
 		t.Fatalf("DataDir must be absolute, got %q", app.DataDir)
 	}
 }
+
+func TestNewDoesNotCreateSingBoxConfigDirectory(t *testing.T) {
+	app := newTestApp(t)
+	if _, err := os.Stat(filepath.Join(app.DataDir, "configs", "singbox")); !os.IsNotExist(err) {
+		t.Fatalf("configs/singbox should not be created, err=%v", err)
+	}
+}

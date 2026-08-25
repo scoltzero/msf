@@ -780,10 +780,9 @@ func normalizeConfigRel(rel string) string {
 		return rel
 	}
 	switch {
-	case rel == "mihomo" || rel == "mosdns" || rel == "network" || rel == "singbox" || rel == "sing-box":
-		return "configs/" + strings.ReplaceAll(rel, "sing-box", "singbox")
-	case strings.HasPrefix(rel, "mihomo/") || strings.HasPrefix(rel, "mosdns/") || strings.HasPrefix(rel, "network/") || strings.HasPrefix(rel, "singbox/") || strings.HasPrefix(rel, "sing-box/"):
-		rel = strings.Replace(rel, "sing-box/", "singbox/", 1)
+	case rel == "mihomo" || rel == "mosdns" || rel == "network":
+		return "configs/" + rel
+	case strings.HasPrefix(rel, "mihomo/") || strings.HasPrefix(rel, "mosdns/") || strings.HasPrefix(rel, "network/"):
 		return "configs/" + rel
 	default:
 		return rel
