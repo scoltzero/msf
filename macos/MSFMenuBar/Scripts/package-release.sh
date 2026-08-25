@@ -76,7 +76,7 @@ rw_dmg="$tmp/$asset_prefix-rw.dmg"
 /usr/bin/hdiutil attach "$rw_dmg" -nobrowse -mountpoint "$mount_point" -quiet
 mounted=1
 /usr/bin/ditto "$dmg_root" "$mount_point"
-/usr/bin/sync
+/bin/sync
 /usr/bin/hdiutil detach "$mount_point" -quiet
 mounted=0
 /usr/bin/hdiutil convert "$rw_dmg" -format UDZO -ov -o "$dmg" >/dev/null
