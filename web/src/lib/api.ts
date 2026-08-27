@@ -1,5 +1,6 @@
 export const TOKEN_KEY = "msf_token";
 export const REFRESH_TOKEN_KEY = "msf_refresh_token";
+const PERSISTENT_LOGIN_ANNOUNCEMENT_KEY = /^msf-login-announcement:[^:]+:hidden$/;
 
 export interface ApiErrorPayload {
   error?: string;
@@ -45,7 +46,10 @@ export function clearSession() {
     const keys: string[] = [];
     for (let index = 0; index < storage.length; index += 1) {
       const key = storage.key(index);
-      if (key && key.toLowerCase().startsWith("msf")) keys.push(key);
+      if (!key || !key.toLowerCase().startsWith("msf")) continue;
+      const isPermanentAnnouncementPreference =
+        storage === window.localStorage && PERSISTENT_LOGIN_ANNOUNCEMENT_KEY.test(key.toLowerCase());
+      if (!isPermanentAnnouncementPreference) keys.push(key);
     }
     keys.forEach((key) => storage.removeItem(key));
   }
