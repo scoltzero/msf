@@ -307,7 +307,36 @@ func (a *App) mihomoSecret() string {
 }
 
 func (a *App) mihomoControllerJSON(method, path string, body []byte) (any, bool, error) {
-	client := &http.Client{Timeout: 1500 * time.Millisecond}
+	return a.mihomoControllerJSONWithTimeout(method, path, body, 1500*time.Millisecond)
+}
+
+type mihomoControllerHTTPError struct {
+	StatusCode int
+	Message    string
+}
+
+func (e *mihomoControllerHTTPError) Error() string {
+	message := strings.TrimSpace(e.Message)
+	if message == "" {
+		return fmt.Sprintf("mihomo controller http %d", e.StatusCode)
+	}
+	return fmt.Sprintf("mihomo controller http %d: %s", e.StatusCode, message)
+}
+
+func mihomoControllerErrorMessage(body []byte) string {
+	var payload map[string]any
+	if json.Unmarshal(body, &payload) == nil {
+		for _, key := range []string{"message", "error"} {
+			if value := strings.TrimSpace(fmt.Sprint(payload[key])); value != "" && value != "<nil>" {
+				return value
+			}
+		}
+	}
+	return strings.TrimSpace(string(body))
+}
+
+func (a *App) mihomoControllerJSONWithTimeout(method, path string, body []byte, timeout time.Duration) (any, bool, error) {
+	client := &http.Client{Timeout: timeout}
 	req, err := http.NewRequest(method, a.mihomoControllerURL(path), bytes.NewReader(body))
 	if err != nil {
 		return nil, false, err
@@ -323,14 +352,18 @@ func (a *App) mihomoControllerJSON(method, path string, body []byte) (any, bool,
 		return nil, false, err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode >= 300 {
-		return nil, false, fmt.Errorf("mihomo controller http %d", resp.StatusCode)
+	responseBody, readErr := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	if readErr != nil {
+		return nil, false, readErr
 	}
-	if resp.Body == http.NoBody || resp.ContentLength == 0 {
+	if resp.StatusCode >= 300 {
+		return nil, false, &mihomoControllerHTTPError{StatusCode: resp.StatusCode, Message: mihomoControllerErrorMessage(responseBody)}
+	}
+	if len(responseBody) == 0 {
 		return map[string]any{"ok": true}, true, nil
 	}
 	var raw any
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(&raw); err != nil {
+	if err := json.Unmarshal(responseBody, &raw); err != nil {
 		return map[string]any{"ok": true}, true, nil
 	}
 	return raw, true, nil

@@ -8,6 +8,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -25,6 +26,9 @@ import (
 const (
 	defaultMihomoProxyTestURL = "https://www.gstatic.com/generate_204"
 	defaultMihomoProxyTimeout = 5000
+	minMihomoProxyTimeout     = 1000
+	maxMihomoProxyTimeout     = 120000
+	mihomoProxyTimeoutMargin  = 500 * time.Millisecond
 )
 
 type mihomoMutationSnapshot map[string]*string
@@ -135,7 +139,36 @@ func mihomoDelayQuery(r *http.Request, withDefaults bool) string {
 			q.Set("timeout", strconv.Itoa(defaultMihomoProxyTimeout))
 		}
 	}
+	if raw := strings.TrimSpace(q.Get("timeout")); raw != "" {
+		q.Set("timeout", strconv.Itoa(normalizeMihomoProxyTimeout(raw)))
+	}
 	return q.Encode()
+}
+
+func normalizeMihomoProxyTimeout(raw string) int {
+	timeout, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil {
+		return defaultMihomoProxyTimeout
+	}
+	if timeout < minMihomoProxyTimeout {
+		return minMihomoProxyTimeout
+	}
+	if timeout > maxMihomoProxyTimeout {
+		return maxMihomoProxyTimeout
+	}
+	return timeout
+}
+
+func mihomoProxyTestControllerTimeout(raw string) time.Duration {
+	timeout := defaultMihomoProxyTimeout
+	if strings.TrimSpace(raw) != "" {
+		timeout = normalizeMihomoProxyTimeout(raw)
+	}
+	return time.Duration(timeout)*time.Millisecond + mihomoProxyTimeoutMargin
+}
+
+func mihomoRequestProxyTestControllerTimeout(r *http.Request) time.Duration {
+	return mihomoProxyTestControllerTimeout(r.URL.Query().Get("timeout"))
 }
 
 func mihomoAppendQuery(path, query string) string {
@@ -153,7 +186,7 @@ func (a *App) handleMihomoProxyGroupDelay(w http.ResponseWriter, r *http.Request
 	}
 	path := "/group/" + mihomoPathSegment(name) + "/delay"
 	path = mihomoAppendQuery(path, mihomoDelayQuery(r, true))
-	raw, ok, err := a.mihomoControllerJSON(http.MethodGet, path, nil)
+	raw, ok, err := a.mihomoControllerJSONWithTimeout(http.MethodGet, path, nil, mihomoRequestProxyTestControllerTimeout(r))
 	if !ok {
 		// A running controller that does not implement this endpoint is a
 		// supported Mihomo downgrade path; let the browser run scoped tests.
@@ -170,7 +203,7 @@ func (a *App) handleMihomoProxyGroupDelay(w http.ResponseWriter, r *http.Request
 			})
 			return
 		}
-		writeMihomoControllerError(w, err)
+		writeMihomoProxyTestError(w, err)
 		return
 	}
 	delays := mihomoDelayValues(raw)
@@ -202,9 +235,9 @@ func (a *App) handleMihomoProviderProxyDelay(w http.ResponseWriter, r *http.Requ
 	}
 	path := "/providers/proxies/" + mihomoPathSegment(provider) + "/" + mihomoPathSegment(proxy) + "/healthcheck"
 	path = mihomoAppendQuery(path, mihomoDelayQuery(r, false))
-	raw, ok, err := a.mihomoControllerJSON(http.MethodGet, path, nil)
+	raw, ok, err := a.mihomoControllerJSONWithTimeout(http.MethodGet, path, nil, mihomoRequestProxyTestControllerTimeout(r))
 	if !ok {
-		writeMihomoControllerError(w, err)
+		writeMihomoProxyTestError(w, err)
 		return
 	}
 	data := map[string]any{
@@ -228,9 +261,11 @@ func (a *App) writeMihomoProviderRuntimeAction(w http.ResponseWriter, r *http.Re
 	}
 	method := http.MethodPut
 	path := "/providers/proxies/" + mihomoPathSegment(name)
+	controllerTimeout := 1500 * time.Millisecond
 	if operation == "healthcheck" {
 		method = http.MethodGet
 		path += "/healthcheck"
+		controllerTimeout = mihomoProxyTestControllerTimeout("")
 		// A body is only a per-run override.  It never changes the persisted
 		// provider health-check policy.
 		if r.Body != nil {
@@ -242,15 +277,20 @@ func (a *App) writeMihomoProviderRuntimeAction(w http.ResponseWriter, r *http.Re
 					q.Set("url", value)
 				}
 				if value := strings.TrimSpace(fmt.Sprint(override["timeout"])); value != "" && value != "<nil>" {
-					q.Set("timeout", value)
+					q.Set("timeout", strconv.Itoa(normalizeMihomoProxyTimeout(value)))
+					controllerTimeout = mihomoProxyTestControllerTimeout(value)
 				}
 				path = mihomoAppendQuery(path, q.Encode())
 			}
 		}
 	}
-	raw, ok, err := a.mihomoControllerJSON(method, path, nil)
+	raw, ok, err := a.mihomoControllerJSONWithTimeout(method, path, nil, controllerTimeout)
 	if !ok {
-		writeMihomoControllerError(w, err)
+		if operation == "healthcheck" {
+			writeMihomoProxyTestError(w, err)
+		} else {
+			writeMihomoControllerError(w, err)
+		}
 		return
 	}
 	// Keep a small, stable operation marker while retaining every controller
@@ -333,6 +373,10 @@ func mihomoHTTPStatus(err error) int {
 	if err == nil {
 		return 0
 	}
+	var controllerErr *mihomoControllerHTTPError
+	if errors.As(err, &controllerErr) {
+		return controllerErr.StatusCode
+	}
 	const prefix = "mihomo controller http "
 	message := err.Error()
 	if !strings.HasPrefix(message, prefix) {
@@ -340,6 +384,25 @@ func mihomoHTTPStatus(err error) int {
 	}
 	status, _ := strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(message, prefix)))
 	return status
+}
+
+func writeMihomoProxyTestError(w http.ResponseWriter, err error) {
+	status := http.StatusBadGateway
+	code := "proxy_test_failed"
+	payload := map[string]any{
+		"success": false,
+		"error":   code,
+		"message": errString(err, "mihomo proxy test failed"),
+	}
+	var netErr interface{ Timeout() bool }
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		status = http.StatusGatewayTimeout
+		payload["error"] = "proxy_test_timeout"
+	}
+	if upstreamStatus := mihomoHTTPStatus(err); upstreamStatus != 0 {
+		payload["upstream_status"] = upstreamStatus
+	}
+	writeJSON(w, status, payload)
 }
 
 func writeMihomoControllerError(w http.ResponseWriter, err error) {

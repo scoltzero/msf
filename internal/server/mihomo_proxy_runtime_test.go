@@ -10,9 +10,85 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
+
+func TestMihomoProxyTestTimeoutPolicyMatchesWebSettings(t *testing.T) {
+	tests := []struct {
+		raw        string
+		wantMillis int
+	}{
+		{raw: "", wantMillis: 5500},
+		{raw: "invalid", wantMillis: 5500},
+		{raw: "100", wantMillis: 1500},
+		{raw: "2000", wantMillis: 2500},
+		{raw: "999999", wantMillis: 120500},
+	}
+	for _, test := range tests {
+		if got := mihomoProxyTestControllerTimeout(test.raw); got != time.Duration(test.wantMillis)*time.Millisecond {
+			t.Fatalf("timeout %q = %s, want %dms", test.raw, got, test.wantMillis)
+		}
+	}
+}
+
+func TestMihomoProxyDelayHonorsRequestedTimeoutBeyondControllerDefault(t *testing.T) {
+	app := newTestApp(t)
+	token := tokenForRole(t, app, "admin")
+	controller := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/proxies/slow-chain/delay" {
+			http.NotFound(w, r)
+			return
+		}
+		if got := r.URL.Query().Get("timeout"); got != "2000" {
+			t.Errorf("controller timeout query = %q, want 2000", got)
+		}
+		time.Sleep(1600 * time.Millisecond)
+		_ = json.NewEncoder(w).Encode(map[string]any{"delay": 1600})
+	}))
+	defer controller.Close()
+	app.setSetting("mihomo_controller_endpoint", controller.URL)
+
+	started := time.Now()
+	response := requestJSON(t, app, http.MethodGet, "/api/v1/mihomo/proxies/slow-chain/delay?url=https%3A%2F%2Fexample.com%2F204&timeout=2000", token, nil)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"delay":1600`) {
+		t.Fatalf("slow proxy test mismatch: status=%d body=%s", response.Code, response.Body.String())
+	}
+	if elapsed := time.Since(started); elapsed < 1500*time.Millisecond {
+		t.Fatalf("proxy test returned before the old controller deadline: %s", elapsed)
+	}
+}
+
+func TestMihomoProxyDelayPreservesControllerFailure(t *testing.T) {
+	app := newTestApp(t)
+	token := tokenForRole(t, app, "admin")
+	controller := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]any{"message": "CONNECT method not allowed by proxy"})
+	}))
+	defer controller.Close()
+	app.setSetting("mihomo_controller_endpoint", controller.URL)
+
+	response := requestJSON(t, app, http.MethodGet, "/api/v1/mihomo/proxies/http-chain/delay?timeout=5000", token, nil)
+	if response.Code != http.StatusBadGateway ||
+		!strings.Contains(response.Body.String(), `"error":"proxy_test_failed"`) ||
+		!strings.Contains(response.Body.String(), `"upstream_status":503`) ||
+		!strings.Contains(response.Body.String(), "CONNECT method not allowed by proxy") {
+		t.Fatalf("controller failure was not preserved: status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestMihomoProxyTestTimeoutHasDistinctResponse(t *testing.T) {
+	response := httptest.NewRecorder()
+	writeMihomoProxyTestError(response, context.DeadlineExceeded)
+	if response.Code != http.StatusGatewayTimeout ||
+		!strings.Contains(response.Body.String(), `"error":"proxy_test_timeout"`) ||
+		strings.Contains(response.Body.String(), "controller_unavailable") {
+		t.Fatalf("proxy timeout response mismatch: status=%d body=%s", response.Code, response.Body.String())
+	}
+}
 
 func installTestMihomoBinary(t *testing.T, app *App, body string) {
 	t.Helper()

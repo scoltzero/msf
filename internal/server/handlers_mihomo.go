@@ -456,12 +456,10 @@ func (a *App) handleMihomoProxySelect(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) handleMihomoProxyDelay(w http.ResponseWriter, r *http.Request) {
 	path := "/proxies/" + url.PathEscape(r.PathValue("name")) + "/delay"
-	if r.URL.RawQuery != "" {
-		path += "?" + r.URL.RawQuery
-	}
-	raw, ok, err := a.mihomoControllerJSON(http.MethodGet, path, nil)
+	path = mihomoAppendQuery(path, mihomoDelayQuery(r, false))
+	raw, ok, err := a.mihomoControllerJSONWithTimeout(http.MethodGet, path, nil, mihomoRequestProxyTestControllerTimeout(r))
 	if !ok {
-		writeMihomoControllerError(w, err)
+		writeMihomoProxyTestError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"success": true, "data": raw})
