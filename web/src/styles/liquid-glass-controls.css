@@ -65,6 +65,18 @@
   outline-offset: 2px;
 }
 
+.gary-toggle {
+  border-color: color-mix(in srgb, var(--gary-edge-dim) 78%, transparent);
+  background-color: color-mix(in srgb, var(--gary-glass-fill-regular) 84%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--gary-edge-soft) 58%, transparent);
+}
+
+.gary-toggle[aria-pressed="true"] {
+  border-color: var(--primary);
+  background-color: var(--primary);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 34%, transparent), 0 0 0 1px color-mix(in srgb, var(--primary) 16%, transparent);
+}
+
 .gary-toolbar {
   display: inline-flex;
   align-items: center;

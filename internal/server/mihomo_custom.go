@@ -359,18 +359,23 @@ func (a *App) applyMihomoUserConfig(ctx context.Context, rel string, restart boo
 	if err := a.ensureMihomoGeneratedBackup(); err != nil {
 		return nil, err
 	}
-	if old, err := a.readTextFile(mihomoActiveConfigRelPath); err == nil {
-		a.createConfigHistory("mihomo", mihomoActiveConfigRelPath, old, "backup before applying user Mihomo config", username)
-	}
-	if err := a.writeTextFile(mihomoActiveConfigRelPath, content); err != nil {
+	previousMode := a.mihomoConfigMode()
+	previousApplied := a.setting(mihomoAppliedUserConfigKey, "")
+	restarted, err := a.applyMihomoConfigMutationWithRestart(ctx, false, restart, func() error {
+		if old, readErr := a.readTextFile(mihomoActiveConfigRelPath); readErr == nil {
+			a.createConfigHistory("mihomo", mihomoActiveConfigRelPath, old, "backup before applying user Mihomo config", username)
+		}
+		if writeErr := a.writeTextFile(mihomoActiveConfigRelPath, content); writeErr != nil {
+			return writeErr
+		}
+		a.setMihomoConfigMode("custom")
+		a.setSetting(mihomoAppliedUserConfigKey, rel)
+		return nil
+	})
+	if err != nil {
+		a.setMihomoConfigMode(previousMode)
+		a.setSetting(mihomoAppliedUserConfigKey, previousApplied)
 		return nil, err
-	}
-	a.setMihomoConfigMode("custom")
-	a.setSetting(mihomoAppliedUserConfigKey, rel)
-	restarted := false
-	if restart {
-		_, _ = a.Services.Restart(ctx, "mihomo")
-		restarted = true
 	}
 	return map[string]any{
 		"path":       rel,
@@ -675,26 +680,27 @@ func mihomoConfigTopMap(content string) (map[string]any, error) {
 	return cfg, nil
 }
 
-func (a *App) validateMihomoActiveConfigWrite(content string) (mihomoConfigValidation, bool, string, error) {
+func (a *App) validateMihomoActiveConfigWrite(ctx context.Context, content string) (mihomoConfigValidation, bool, string, error) {
 	validation := a.validateMihomoConfigContent(content)
 	if !validation.Valid {
 		return validation, false, "", nil
 	}
-	if a.mihomoConfigMode() != "generated" {
-		return validation, true, "", nil
+	setCustom := a.mihomoConfigMode() != "generated"
+	if !setCustom {
+		oldContent, err := a.readTextFile(mihomoActiveConfigRelPath)
+		if err != nil {
+			return validation, false, "read_failed", err
+		}
+		allowed, err := mihomoConfigOnlyProxyProvidersChanged(oldContent, content)
+		if err != nil {
+			return validation, false, "bad_request", err
+		}
+		if !allowed {
+			return validation, false, "default_config_requires_user_config", fmt.Errorf("default Mihomo config only allows proxy-providers changes; save as a user config for other fields")
+		}
 	}
-	oldContent, err := a.readTextFile(mihomoActiveConfigRelPath)
-	if err != nil {
-		return validation, false, "read_failed", err
-	}
-	allowed, err := mihomoConfigOnlyProxyProvidersChanged(oldContent, content)
-	if err != nil {
-		return validation, false, "bad_request", err
-	}
-	if !allowed {
-		return validation, false, "default_config_requires_user_config", fmt.Errorf("default Mihomo config only allows proxy-providers changes; save as a user config for other fields")
-	}
-	return validation, false, "", nil
+	validation = a.validateMihomoCandidateContent(ctx, content)
+	return validation, setCustom, "", nil
 }
 
 func (a *App) mihomoCustomTemplateContent() string {

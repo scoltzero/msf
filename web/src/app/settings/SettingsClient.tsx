@@ -661,8 +661,7 @@ function Toggle({ checked, onChange, disabled = false }: { checked: boolean; onC
       disabled={disabled}
       aria-pressed={checked}
       className={cn(
-        "inline-flex h-6 w-11 shrink-0 items-center rounded-full border p-0.5 transition-colors",
-        checked ? "border-primary bg-primary/80" : "border-border bg-muted/70",
+        "gary-toggle inline-flex h-6 w-11 shrink-0 items-center rounded-full border p-0.5 transition-colors",
         disabled && "cursor-not-allowed opacity-50"
       )}
     >

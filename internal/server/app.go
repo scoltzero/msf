@@ -73,6 +73,7 @@ type App struct {
 	assistantCancels        map[string]assistantCancelEntry
 	smartResourceMu         sync.RWMutex
 	smartResourceJobs       map[string]smartResourceState
+	smartResourceCancels    map[string]smartResourceCancelEntry
 }
 
 type assistantCancelEntry struct {
@@ -117,6 +118,7 @@ func New(opts Options) (*App, error) {
 		requestProcessRestart: opts.RequestProcessRestart,
 		assistantCancels:      make(map[string]assistantCancelEntry),
 		smartResourceJobs:     make(map[string]smartResourceState),
+		smartResourceCancels:  make(map[string]smartResourceCancelEntry),
 	}
 	if request, ok, readErr := readFactoryResetRequest(opts.DataDir); readErr == nil && ok {
 		app.operations.resetID = request.ResetID

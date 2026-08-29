@@ -248,6 +248,7 @@ POST /api/v1/mihomo/proxy-providers/{name}/update
 POST /api/v1/mihomo/restart
 POST /api/v1/mihomo/rule-providers
 POST /api/v1/mihomo/rule-providers/{name}/update
+POST /api/v1/mihomo/smart-resources/cancel
 POST /api/v1/mihomo/smart-resources/download
 POST /api/v1/mihomo/start
 POST /api/v1/mihomo/stop

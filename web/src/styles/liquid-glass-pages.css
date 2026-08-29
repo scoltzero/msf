@@ -57,8 +57,8 @@
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 16%, transparent) !important;
 }
 
-.gary-page-enter :where(button[class*="border"]):not([class*="destructive"]),
-.gary-public-page :where(button[class*="border"]):not([class*="destructive"]) {
+.gary-page-enter :where(button[class*="border"]):not([class*="destructive"]):not(.gary-toggle),
+.gary-public-page :where(button[class*="border"]):not([class*="destructive"]):not(.gary-toggle) {
   border-color: color-mix(in srgb, var(--gary-edge-dim) 78%, transparent) !important;
   background-color: color-mix(in srgb, var(--gary-glass-fill-regular) 84%, transparent);
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--gary-edge-soft) 58%, transparent);

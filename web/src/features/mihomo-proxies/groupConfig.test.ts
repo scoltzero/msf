@@ -61,18 +61,15 @@ describe("smart proxy group structured editing", () => {
     const row = buildProxyGroupRow({
       name: "Smart", type: "smart", icon: "smart.svg", proxies: "A\nB",
       url: "", interval: 300, lazy: false, tolerance: 50, strategy: "consistent-hashing",
-      policyPriority: "url-test", uselightgbm: true, collectdata: true, sampleRate: 0.3, preferAsn: true,
-      advanced: JSON.stringify({ "policy-priority": "url-test", uselightgbm: true, collectdata: true, "sample-rate": 0.3, "prefer-asn": true }),
+      policyPriority: "HK:1.5", uselightgbm: true, collectdata: true, sampleRate: 0.3, preferAsn: true,
+      advanced: JSON.stringify({ "policy-priority": "HK:1.5", uselightgbm: true, collectdata: true, "sample-rate": 0.3, "prefer-asn": true, interval: 45, lazy: true, strategy: "round-robin" }),
     });
     expect(row).toMatchObject({
       name: "Smart", type: "smart", icon: "smart.svg", proxies: ["A", "B"],
-      "policy-priority": "url-test", uselightgbm: true, collectdata: true, "sample-rate": 0.3, "prefer-asn": true,
+      "policy-priority": "HK:1.5", uselightgbm: true, collectdata: true, "sample-rate": 0.3, "prefer-asn": true,
+      tolerance: 50, interval: 45, lazy: true, strategy: "round-robin",
     });
-    expect(row).not.toHaveProperty("tolerance");
-    expect(row).not.toHaveProperty("interval");
     expect(row).not.toHaveProperty("url");
-    expect(row).not.toHaveProperty("lazy");
-    expect(row).not.toHaveProperty("strategy");
   });
 
   it("does not erase unrelated advanced fields", () => {
@@ -90,15 +87,21 @@ describe("smart proxy group structured editing", () => {
       name: "Smart", type: "smart", icon: "", proxies: "",
       url: "", interval: 300, lazy: false, tolerance: 50, strategy: "consistent-hashing",
       policyPriority: "", uselightgbm: false, collectdata: false, sampleRate: 0, preferAsn: false,
-      advanced: JSON.stringify({ url: "https://example.test", timeout: 5000, "max-failed-times": 3, "include-all-providers": true, "policy-priority": "fallback", collectdata: true }),
+      advanced: JSON.stringify({ url: "https://example.test", timeout: 5000, "max-failed-times": 3, "include-all-providers": true, "policy-priority": "fallback", collectdata: true, interval: 60, lazy: true, strategy: "sticky", tolerance: 30 }),
     });
     // Unknown/unsupported top-level fields must survive a smart edit untouched.
-    expect(row).toMatchObject({ url: "https://example.test", timeout: 5000, "max-failed-times": 3, "include-all-providers": true });
+    expect(row).toMatchObject({ url: "https://example.test", timeout: 5000, "max-failed-times": 3, "include-all-providers": true, interval: 60, lazy: true, strategy: "sticky", tolerance: 50 });
     // Smart fields that the editor owns are re-emitted from the draft, not stale advanced.
     expect(row["policy-priority"]).toBeUndefined();
     expect(row.collectdata).toBe(false);
+  });
+
+  it("keeps an absent smart tolerance absent on an untouched draft", () => {
+    const draft = proxyGroupDraft({ name: "Smart", type: "smart", interval: 30, lazy: true });
+    expect(draft.tolerance).toBe(0);
+    const row = buildProxyGroupRow(draft);
     expect(row).not.toHaveProperty("tolerance");
-    expect(row).not.toHaveProperty("interval");
+    expect(row).toMatchObject({ interval: 30, lazy: true });
   });
 
   it("omits sample-rate unless it is a valid 0..1 value", () => {

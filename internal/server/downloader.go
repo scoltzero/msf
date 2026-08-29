@@ -444,7 +444,7 @@ func (a *App) downloadFile(rawURL, dest string, emit func(DownloadEvent)) error 
 }
 
 func (a *App) downloadFileContext(ctx context.Context, rawURL, dest string, emit func(DownloadEvent)) error {
-	return a.downloadResolvedURLContext(ctx, a.rewriteDownloadURL(rawURL), dest, emit)
+	return a.downloadResolvedURLContext(ctx, a.githubDownloadRouteURL(rawURL), dest, emit)
 }
 
 func (a *App) downloadResolvedURLContext(ctx context.Context, finalURL, dest string, emit func(DownloadEvent)) error {
@@ -507,7 +507,7 @@ func (a *App) downloadVerifiedFile(rawURL, expectedDigest, dest string, emit fun
 }
 
 func (a *App) downloadVerifiedFileContext(ctx context.Context, rawURL, expectedDigest, dest string, emit func(DownloadEvent)) (string, error) {
-	return a.downloadVerifiedResolvedURLContext(ctx, a.rewriteDownloadURL(rawURL), expectedDigest, dest, emit)
+	return a.downloadVerifiedResolvedURLContext(ctx, a.githubDownloadRouteURL(rawURL), expectedDigest, dest, emit)
 }
 
 func (a *App) downloadVerifiedResolvedURLContext(ctx context.Context, finalURL, expectedDigest, dest string, emit func(DownloadEvent)) (string, error) {
@@ -526,10 +526,7 @@ func (a *App) downloadVerifiedResolvedURLContext(ctx context.Context, finalURL, 
 }
 
 func (a *App) mihomoCoreSwitchDownloadURL(rawURL string) string {
-	if rewritten := a.rewriteDownloadURL(rawURL); rewritten != rawURL {
-		return rewritten
-	}
-	return defaultMihomoCoreSwitchAccelerator + rawURL
+	return a.githubDownloadRouteURL(rawURL)
 }
 
 func verifySHA256File(path, expectedDigest string) (string, error) {
@@ -620,6 +617,28 @@ func (a *App) downloadProxyURL() *url.URL {
 		return nil
 	}
 	return u
+}
+
+func (a *App) githubDownloadRouteURL(raw string) string {
+	if rewritten := a.rewriteDownloadURL(raw); rewritten != raw {
+		return rewritten
+	}
+	if !isGitHubDownloadURL(raw) {
+		return raw
+	}
+	if a.downloadProxyURL() != nil || a.runningMihomoDownloadProxyURL() != nil {
+		return raw
+	}
+	return defaultMihomoCoreSwitchAccelerator + raw
+}
+
+func isGitHubDownloadURL(raw string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(parsed.Hostname())
+	return host == "github.com" || host == "api.github.com" || host == "raw.githubusercontent.com" || strings.HasSuffix(host, ".githubusercontent.com")
 }
 
 func (a *App) rewriteDownloadURL(raw string) string {

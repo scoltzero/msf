@@ -41,7 +41,7 @@ const STANDARD_OWNED_KEYS = ["name", "type", "icon", "proxies", "url", "interval
 /** For `smart` groups the editor does not render url / timeout / max-failed-times
  * safely, so those top-level fields must survive as unknown advanced JSON rather
  * than being stripped. The Smart fields themselves are owned and re-emitted. */
-const SMART_OWNED_KEYS = ["name", "type", "icon", "proxies", "interval", "lazy", "tolerance", "strategy", ...SMART_GROUP_FIELDS];
+const SMART_OWNED_KEYS = ["name", "type", "icon", "proxies", "tolerance", ...SMART_GROUP_FIELDS];
 
 export function proxyGroupRows(payload: unknown): Record<string, unknown>[] {
   const root = record(payload);
@@ -54,9 +54,10 @@ export function proxyGroupRows(payload: unknown): Record<string, unknown>[] {
 }
 
 export function proxyGroupDraft(row: Record<string, unknown>): ProxyGroupDraftInput {
+  const type = String(row.type || "select");
   return {
     name: String(row.name || ""),
-    type: String(row.type || "select"),
+    type,
     icon: String(row.icon || ""),
     // Only configured members belong here. Controller `all` entries may contain
     // provider nodes that cannot be referenced directly in static YAML.
@@ -64,7 +65,7 @@ export function proxyGroupDraft(row: Record<string, unknown>): ProxyGroupDraftIn
     url: String(row.url || ""),
     interval: Number(row.interval || 300),
     lazy: Boolean(row.lazy),
-    tolerance: Number(row.tolerance || 50),
+    tolerance: row.tolerance == null ? (type === "smart" ? 0 : 50) : Number(row.tolerance),
     strategy: String(row.strategy || "consistent-hashing"),
     policyPriority: String(row["policy-priority"] || ""),
     uselightgbm: Boolean(row.uselightgbm),
@@ -114,6 +115,7 @@ export function buildProxyGroupRow(draft: ProxyGroupDraftInput): Record<string, 
       next["sample-rate"] = draft.sampleRate;
     }
     next["prefer-asn"] = Boolean(draft.preferAsn);
+    if (Number.isFinite(draft.tolerance) && draft.tolerance > 0) next.tolerance = draft.tolerance;
   }
   return next;
 }

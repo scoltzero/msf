@@ -72,6 +72,10 @@ func (a *App) restoreMihomoMutationSnapshot(snapshot mihomoMutationSnapshot) err
 }
 
 func (a *App) applyMihomoConfigMutation(ctx context.Context, includeManual bool, mutate func() error) (bool, error) {
+	return a.applyMihomoConfigMutationWithRestart(ctx, includeManual, true, mutate)
+}
+
+func (a *App) applyMihomoConfigMutationWithRestart(ctx context.Context, includeManual, restart bool, mutate func() error) (bool, error) {
 	snapshot, err := a.captureMihomoMutationSnapshot(includeManual)
 	if err != nil {
 		return false, fmt.Errorf("create rollback snapshot: %w", err)
@@ -81,6 +85,9 @@ func (a *App) applyMihomoConfigMutation(ctx context.Context, includeManual bool,
 			return false, fmt.Errorf("write failed: %v; rollback failed: %w", err, rollbackErr)
 		}
 		return false, err
+	}
+	if !restart {
+		return false, nil
 	}
 	if !a.Services.Status("mihomo").Installed {
 		return false, nil
@@ -694,6 +701,9 @@ func (a *App) validateMihomoCandidateContent(ctx context.Context, content string
 		return mihomoConfigValidation{Valid: false, Error: err.Error(), Warnings: validation.Warnings}
 	}
 	if err := validateMihomoCoreConfigCompatibility(a.selectedMihomoCoreType(), cfg); err != nil {
+		return mihomoConfigValidation{Valid: false, Error: err.Error(), Warnings: validation.Warnings}
+	}
+	if err := validateMihomoSmartConfigSemantics(a.selectedMihomoCoreType(), cfg); err != nil {
 		return mihomoConfigValidation{Valid: false, Error: err.Error(), Warnings: validation.Warnings}
 	}
 	if missing := a.missingMihomoSmartResources(cfg); len(missing) > 0 {

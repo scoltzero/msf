@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -83,6 +84,7 @@ func (a *App) registerMihomoRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/mihomo/proxy-config/validate", a.handleMihomoProxyConfigValidate)
 	mux.HandleFunc("GET /api/v1/mihomo/smart-resources", a.handleMihomoSmartResources)
 	mux.HandleFunc("POST /api/v1/mihomo/smart-resources/download", a.handleMihomoSmartResourceDownload)
+	mux.HandleFunc("POST /api/v1/mihomo/smart-resources/cancel", a.handleMihomoSmartResourceCancel)
 	mux.HandleFunc("GET /api/v1/mihomo/rule-providers", a.handleMihomoRuleProviders)
 	mux.HandleFunc("PUT /api/v1/mihomo/rule-providers", a.handleMihomoRuleProvidersPut)
 	mux.HandleFunc("POST /api/v1/mihomo/rule-providers", a.handleMihomoRuleProvidersPut)
@@ -214,11 +216,11 @@ func (a *App) handleMihomoConfigPut(w http.ResponseWriter, r *http.Request) {
 		req.Path = filepath.ToSlash(filepath.Join("configs/mihomo", req.Path))
 	}
 	validation := mihomoConfigValidation{Valid: true}
+	setCustom := false
 	if req.Path == mihomoActiveConfigRelPath {
-		setCustom := false
 		errCode := ""
 		var err error
-		validation, setCustom, errCode, err = a.validateMihomoActiveConfigWrite(req.Content)
+		validation, setCustom, errCode, err = a.validateMihomoActiveConfigWrite(r.Context(), req.Content)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, errCode, err.Error())
 			return
@@ -231,9 +233,13 @@ func (a *App) handleMihomoConfigPut(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, "backup_failed", err.Error())
 			return
 		}
-		if setCustom {
-			a.setMihomoConfigMode("custom")
+		restarted, err := a.applyMihomoActiveConfigWrite(r.Context(), req.Content, currentUsername(r), req.Restart, setCustom)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "apply_failed", err.Error())
+			return
 		}
+		writeJSON(w, http.StatusOK, map[string]any{"success": true, "restart_required": !req.Restart, "restarted": restarted, "data": map[string]any{"restart_required": !req.Restart, "restarted": restarted, "validation": validation, "mode": a.mihomoConfigModePayload()}})
+		return
 	}
 	if old, err := a.readTextFile(req.Path); err == nil {
 		a.createConfigHistory("mihomo", req.Path, old, "auto backup before Mihomo save", currentUsername(r))
@@ -242,16 +248,28 @@ func (a *App) handleMihomoConfigPut(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "write_failed", err.Error())
 		return
 	}
-	if req.Path == mihomoActiveConfigRelPath {
-		if err := a.syncAppliedMihomoUserConfigAs(req.Content, currentUsername(r)); err != nil {
-			writeError(w, http.StatusBadRequest, "write_failed", err.Error())
-			return
-		}
-	}
 	if req.Restart {
 		_, _ = a.Services.Restart(r.Context(), "mihomo")
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"success": true, "restart_required": !req.Restart, "data": map[string]any{"restart_required": !req.Restart, "validation": validation, "mode": a.mihomoConfigModePayload()}})
+}
+
+func (a *App) applyMihomoActiveConfigWrite(ctx context.Context, content, username string, restart, setCustom bool) (bool, error) {
+	return a.applyMihomoConfigMutationWithRestart(ctx, false, restart, func() error {
+		if old, err := a.readTextFile(mihomoActiveConfigRelPath); err == nil {
+			a.createConfigHistory("mihomo", mihomoActiveConfigRelPath, old, "auto backup before Mihomo save", username)
+		}
+		if err := a.writeTextFile(mihomoActiveConfigRelPath, content); err != nil {
+			return err
+		}
+		if err := a.syncAppliedMihomoUserConfigAs(content, username); err != nil {
+			return err
+		}
+		if setCustom {
+			a.setMihomoConfigMode("custom")
+		}
+		return nil
+	})
 }
 
 func (a *App) handleMihomoConfigSwitch(w http.ResponseWriter, r *http.Request) {
@@ -299,11 +317,11 @@ func (a *App) handleMihomoConfigPathPut(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	validation := mihomoConfigValidation{Valid: true}
+	setCustom := false
 	if rel == mihomoActiveConfigRelPath {
-		setCustom := false
 		errCode := ""
 		var err error
-		validation, setCustom, errCode, err = a.validateMihomoActiveConfigWrite(req.Content)
+		validation, setCustom, errCode, err = a.validateMihomoActiveConfigWrite(r.Context(), req.Content)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, errCode, err.Error())
 			return
@@ -316,9 +334,13 @@ func (a *App) handleMihomoConfigPathPut(w http.ResponseWriter, r *http.Request) 
 			writeError(w, http.StatusInternalServerError, "backup_failed", err.Error())
 			return
 		}
-		if setCustom {
-			a.setMihomoConfigMode("custom")
+		restarted, err := a.applyMihomoActiveConfigWrite(r.Context(), req.Content, currentUsername(r), req.Restart, setCustom)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "apply_failed", err.Error())
+			return
 		}
+		writeJSON(w, http.StatusOK, map[string]any{"success": true, "path": rel, "restart_required": !req.Restart, "restarted": restarted, "data": map[string]any{"path": rel, "restart_required": !req.Restart, "restarted": restarted, "validation": validation, "mode": a.mihomoConfigModePayload()}})
+		return
 	}
 	if old, err := a.readTextFile(rel); err == nil {
 		a.createConfigHistory("mihomo", rel, old, "auto backup before Mihomo save", currentUsername(r))
@@ -326,12 +348,6 @@ func (a *App) handleMihomoConfigPathPut(w http.ResponseWriter, r *http.Request) 
 	if err := a.writeTextFile(rel, req.Content); err != nil {
 		writeError(w, http.StatusBadRequest, "write_failed", err.Error())
 		return
-	}
-	if rel == mihomoActiveConfigRelPath {
-		if err := a.syncAppliedMihomoUserConfigAs(req.Content, currentUsername(r)); err != nil {
-			writeError(w, http.StatusBadRequest, "write_failed", err.Error())
-			return
-		}
 	}
 	if req.Restart {
 		_, _ = a.Services.Restart(r.Context(), "mihomo")

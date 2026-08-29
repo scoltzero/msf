@@ -236,6 +236,65 @@ func TestMihomoCoreTypeDefaultsPreserveSmart(t *testing.T) {
 	}
 }
 
+func TestCurrentMihomoBinaryPathSupportsLegacyLayouts(t *testing.T) {
+	app := newTestApp(t)
+	root := filepath.Join(app.DataDir, "data", "binaries", "mihomo")
+	mainPath := filepath.Join(root, "mihomo")
+	latestPath := filepath.Join(root, "latest", "mihomo")
+	flatLegacyPath := filepath.Join(root, "mihomo-linux-amd64")
+	if got := app.currentMihomoBinaryPath(); got != mainPath {
+		t.Fatalf("missing binary fallback = %q, want %q", got, mainPath)
+	}
+	if err := os.MkdirAll(filepath.Dir(flatLegacyPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(flatLegacyPath, fakeMihomoScript(false), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if got := app.currentMihomoBinaryPath(); got != flatLegacyPath {
+		t.Fatalf("flat legacy binary = %q, want %q", got, flatLegacyPath)
+	}
+	if err := os.MkdirAll(filepath.Dir(latestPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(latestPath, fakeMihomoScript(false), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if got := app.currentMihomoBinaryPath(); got != latestPath {
+		t.Fatalf("latest legacy binary = %q, want %q", got, latestPath)
+	}
+	if err := os.WriteFile(mainPath, fakeMihomoScript(false), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if got := app.currentMihomoBinaryPath(); got != mainPath {
+		t.Fatalf("main binary did not win precedence: %q", got)
+	}
+}
+
+func TestMihomoCoreSwitchCachesLegacyCurrentBinary(t *testing.T) {
+	app := newTestApp(t)
+	insertSetupRow(t, app, "smart", false, "")
+	writeMihomoActiveConfig(t, app)
+	latestPath := filepath.Join(app.DataDir, "data", "binaries", "mihomo", "latest", "mihomo")
+	if err := os.MkdirAll(filepath.Dir(latestPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(latestPath, fakeMihomoScript(false), 0755); err != nil {
+		t.Fatal(err)
+	}
+	metaSource := writeCandidateScript(t, app, false)
+	if _, err := app.cacheMihomoCoreCandidate("meta", mihomoCoreCandidate{Binary: metaSource}); err != nil {
+		t.Fatal(err)
+	}
+	res := requestJSON(t, app, http.MethodPost, "/api/v1/component-updates/mihomo/switch", tokenForRole(t, app, "admin"), map[string]any{"core_type": "meta"})
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), `"success":true`) || !strings.Contains(res.Body.String(), `"used_cached_core":true`) {
+		t.Fatalf("legacy-layout core switch failed: status=%d body=%s", res.Code, res.Body.String())
+	}
+	if !fileExists(app.mihomoCoreCachePath("smart")) {
+		t.Fatal("legacy current Smart binary was not retained in cache")
+	}
+}
+
 func TestComponentDownloadUsesRunningMihomoWhenNoExplicitProxy(t *testing.T) {
 	app := newTestApp(t)
 	writeInstalledMihomoBinary(t, app, "test-mihomo")
@@ -260,6 +319,10 @@ func TestComponentDownloadUsesRunningMihomoWhenNoExplicitProxy(t *testing.T) {
 	}
 	if proxyURL == nil || proxyURL.String() != "http://127.0.0.1:17892" {
 		t.Fatalf("download proxy = %v, want local Mihomo mixed port", proxyURL)
+	}
+	const official = "https://github.com/vernesong/mihomo/releases/download/Prerelease-Alpha/test.gz"
+	if got := app.githubDownloadRouteURL(official); got != official {
+		t.Fatalf("running Mihomo route = %q, want official GitHub URL", got)
 	}
 }
 
@@ -304,6 +367,23 @@ func TestMihomoCoreSwitchDownloadURLUsesVerifiedAcceleratorPath(t *testing.T) {
 		insertSetupRow(t, app, "meta", false, "https://mirror.example")
 		if got := app.mihomoCoreSwitchDownloadURL(raw); got != "https://mirror.example/"+raw {
 			t.Fatalf("configured switch download URL = %q", got)
+		}
+	})
+	t.Run("configured HTTP proxy keeps official URL", func(t *testing.T) {
+		app := newTestApp(t)
+		insertSetupRow(t, app, "meta", false, "")
+		if _, err := app.DB.Exec(`update system_setups set github_proxy_enabled=true,github_http_proxy='http://127.0.0.1:18080'`); err != nil {
+			t.Fatal(err)
+		}
+		if got := app.mihomoCoreSwitchDownloadURL(raw); got != raw {
+			t.Fatalf("proxied switch download URL = %q, want official URL", got)
+		}
+	})
+	t.Run("non GitHub URL is untouched", func(t *testing.T) {
+		app := newTestApp(t)
+		const other = "https://downloads.example/file.gz"
+		if got := app.githubDownloadRouteURL(other); got != other {
+			t.Fatalf("non-GitHub URL = %q", got)
 		}
 	})
 }

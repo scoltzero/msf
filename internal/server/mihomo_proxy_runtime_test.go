@@ -206,6 +206,78 @@ func TestMihomoCandidateValidationUsesCoreAndReturnsStdout(t *testing.T) {
 	}
 }
 
+func TestMihomoActiveConfigWritesUseCandidateCompatibility(t *testing.T) {
+	for _, endpoint := range []string{"/api/v1/mihomo/config", "/api/v1/mihomo/config/config.yaml"} {
+		t.Run(endpoint, func(t *testing.T) {
+			app := newTestApp(t)
+			token := tokenForRole(t, app, "admin")
+			original := testMihomoConfigYAML("Original")
+			if err := app.writeTextFile(mihomoActiveConfigRelPath, original); err != nil {
+				t.Fatal(err)
+			}
+			app.setMihomoConfigMode("custom")
+			smart := strings.Replace(testMihomoConfigYAML("Smart"), "type: select", "type: smart", 1)
+			body := map[string]any{"content": smart, "restart": false}
+			if endpoint == "/api/v1/mihomo/config" {
+				body["path"] = mihomoActiveConfigRelPath
+			}
+			res := requestJSON(t, app, http.MethodPut, endpoint, token, body)
+			if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), `"success":false`) || !strings.Contains(res.Body.String(), "Meta 核心配置不支持 Smart") {
+				t.Fatalf("active config compatibility response: status=%d body=%s", res.Code, res.Body.String())
+			}
+			after, err := app.readTextFile(mihomoActiveConfigRelPath)
+			if err != nil || after != original {
+				t.Fatalf("rejected active config changed file: err=%v", err)
+			}
+		})
+	}
+}
+
+func TestMihomoConfigMutationRestartFailureRestoresPreviousFiles(t *testing.T) {
+	app := newTestApp(t)
+	original := testMihomoConfigYAML("Original")
+	if err := app.writeTextFile(mihomoActiveConfigRelPath, original); err != nil {
+		t.Fatal(err)
+	}
+	installTestMihomoBinary(t, app, "echo restart-failed >&2\nexit 1\n")
+	_, err := app.applyMihomoConfigMutationWithRestart(context.Background(), false, true, func() error {
+		return app.writeTextFile(mihomoActiveConfigRelPath, testMihomoConfigYAML("Broken"))
+	})
+	if err == nil || !strings.Contains(err.Error(), "old configuration restored") {
+		t.Fatalf("restart failure error = %v", err)
+	}
+	after, readErr := app.readTextFile(mihomoActiveConfigRelPath)
+	if readErr != nil || after != original {
+		t.Fatalf("restart failure did not restore active config: err=%v", readErr)
+	}
+}
+
+func TestMihomoUserConfigApplyRestartFailureRestoresAuthority(t *testing.T) {
+	app := newTestApp(t)
+	original := testMihomoConfigYAML("Original")
+	custom := testMihomoConfigYAML("Custom")
+	if err := app.writeTextFile(mihomoActiveConfigRelPath, original); err != nil {
+		t.Fatal(err)
+	}
+	userRel := "configs/mihomo/user_configs/rollback.yaml"
+	if err := app.writeTextFile(userRel, custom); err != nil {
+		t.Fatal(err)
+	}
+	app.setMihomoConfigMode("generated")
+	app.setSetting(mihomoAppliedUserConfigKey, "")
+	installTestMihomoBinary(t, app, "if [ \"$1\" = \"-t\" ]; then exit 0; fi\necho restart-failed >&2\nexit 1\n")
+	if _, err := app.applyMihomoUserConfig(context.Background(), userRel, true, "test"); err == nil {
+		t.Fatal("user config apply should fail when Mihomo restart fails")
+	}
+	active, err := app.readTextFile(mihomoActiveConfigRelPath)
+	if err != nil || active != original {
+		t.Fatalf("failed user apply did not restore active config: err=%v", err)
+	}
+	if app.mihomoConfigMode() != "generated" || app.setting(mihomoAppliedUserConfigKey, "") != "" {
+		t.Fatalf("failed user apply did not restore authority: mode=%s applied=%q", app.mihomoConfigMode(), app.setting(mihomoAppliedUserConfigKey, ""))
+	}
+}
+
 func TestMihomoProxyGroupWriteHonoursConfigAuthority(t *testing.T) {
 	app := newTestApp(t)
 	token := tokenForRole(t, app, "admin")

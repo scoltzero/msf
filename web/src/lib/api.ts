@@ -24,6 +24,7 @@ export class ApiError extends Error {
 
 type ApiOptions = RequestInit & {
   skipAuth?: boolean;
+  timeoutMs?: number;
 };
 
 export function getToken() {
@@ -67,16 +68,47 @@ function parsePayloadMessage(payload: unknown, fallback: string) {
 }
 
 export async function api<T = any>(path: string, options: ApiOptions = {}): Promise<T> {
-  const headers = new Headers(options.headers);
-  if (options.body && !(options.body instanceof FormData) && !headers.has("Content-Type")) {
+  const { skipAuth, timeoutMs, ...requestOptions } = options;
+  const headers = new Headers(requestOptions.headers);
+  if (requestOptions.body && !(requestOptions.body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
   const token = getToken();
-  if (token && !options.skipAuth && !headers.has("Authorization")) {
+  if (token && !skipAuth && !headers.has("Authorization")) {
     headers.set("Authorization", `Bearer ${token}`);
   }
 
-  const response = await fetch(path, { ...options, headers });
+  let timeoutID: ReturnType<typeof setTimeout> | undefined;
+  let timedOut = false;
+  let detachAbort: (() => void) | undefined;
+  let signal = requestOptions.signal;
+  if (timeoutMs && timeoutMs > 0) {
+    const controller = new AbortController();
+    signal = controller.signal;
+    if (requestOptions.signal) {
+      const relayAbort = () => controller.abort(requestOptions.signal?.reason);
+      if (requestOptions.signal.aborted) relayAbort();
+      else {
+        requestOptions.signal.addEventListener("abort", relayAbort, { once: true });
+        detachAbort = () => requestOptions.signal?.removeEventListener("abort", relayAbort);
+      }
+    }
+    timeoutID = setTimeout(() => {
+      timedOut = true;
+      controller.abort(new DOMException("Request timed out", "TimeoutError"));
+    }, timeoutMs);
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(path, { ...requestOptions, headers, signal });
+  } catch (error) {
+    if (timedOut) throw new Error(`请求超时（${Math.ceil(Number(timeoutMs) / 1000)} 秒）`);
+    throw error;
+  } finally {
+    if (timeoutID) clearTimeout(timeoutID);
+    detachAbort?.();
+  }
   const contentType = response.headers.get("content-type") || "";
   const payload = contentType.includes("application/json")
     ? await response.json().catch(() => null)

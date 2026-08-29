@@ -308,11 +308,7 @@ func (sm *ServiceManager) spec(name string) (serviceSpec, error) {
 	root := sm.app.DataDir
 	switch name {
 	case "mihomo", "proxy":
-		bin := firstExisting(
-			filepath.Join(root, "data/binaries/mihomo/mihomo"),
-			filepath.Join(root, "data/binaries/mihomo/latest/mihomo"),
-			filepath.Join(root, "data/binaries/mihomo/mihomo-linux-amd64"),
-		)
+		bin := sm.app.currentMihomoBinaryPath()
 		cfg := filepath.Join(root, "configs/mihomo/config.yaml")
 		return serviceSpec{
 			DisplayName: "Mihomo",
@@ -343,6 +339,15 @@ func (sm *ServiceManager) spec(name string) (serviceSpec, error) {
 	default:
 		return serviceSpec{}, fmt.Errorf("unknown service %s", name)
 	}
+}
+
+func (a *App) currentMihomoBinaryPath() string {
+	root := filepath.Join(a.DataDir, "data", "binaries", "mihomo")
+	return firstExisting(
+		filepath.Join(root, "mihomo"),
+		filepath.Join(root, "latest", "mihomo"),
+		filepath.Join(root, "mihomo-linux-amd64"),
+	)
 }
 
 func firstExisting(paths ...string) string {

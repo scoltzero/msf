@@ -1368,20 +1368,14 @@ func (a *App) componentCurrentVersion(component string) string {
 	if target == "" {
 		return "unknown"
 	}
+	if component == "mihomo" {
+		target = a.currentMihomoBinaryPath()
+	}
 	if _, err := os.Stat(target); err == nil {
 		if version := componentBinaryVersion(component, target); version != "" {
 			return version
 		}
 		return "installed"
-	}
-	if component == "mihomo" {
-		legacyTarget := filepath.Join(a.DataDir, "data/binaries/mihomo/latest/mihomo")
-		if _, err := os.Stat(legacyTarget); err == nil {
-			if version := componentBinaryVersion(component, legacyTarget); version != "" {
-				return version
-			}
-			return "installed"
-		}
 	}
 	return "not-installed"
 }
@@ -1430,14 +1424,22 @@ type githubRelease struct {
 }
 
 func (a *App) fetchLatestRelease(owner, repo string) (githubRelease, error) {
+	return a.fetchLatestReleaseContext(context.Background(), owner, repo)
+}
+
+func (a *App) fetchLatestReleaseContext(ctx context.Context, owner, repo string) (githubRelease, error) {
 	var release githubRelease
-	err := a.fetchGitHubJSON(fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", owner, repo), &release)
+	err := a.fetchGitHubJSONContext(ctx, fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", owner, repo), &release)
 	return release, err
 }
 
 func (a *App) fetchReleaseByTag(owner, repo, tag string) (githubRelease, error) {
+	return a.fetchReleaseByTagContext(context.Background(), owner, repo, tag)
+}
+
+func (a *App) fetchReleaseByTagContext(ctx context.Context, owner, repo, tag string) (githubRelease, error) {
 	var release githubRelease
-	err := a.fetchGitHubJSON(fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/tags/%s", owner, repo, url.PathEscape(tag)), &release)
+	err := a.fetchGitHubJSONContext(ctx, fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/tags/%s", owner, repo, url.PathEscape(tag)), &release)
 	return release, err
 }
 
@@ -1448,7 +1450,11 @@ func (a *App) fetchReleases(owner, repo string) ([]githubRelease, error) {
 }
 
 func (a *App) fetchGitHubJSON(rawURL string, dst any) error {
-	req, err := http.NewRequest(http.MethodGet, a.rewriteDownloadURL(rawURL), nil)
+	return a.fetchGitHubJSONContext(context.Background(), rawURL, dst)
+}
+
+func (a *App) fetchGitHubJSONContext(ctx context.Context, rawURL string, dst any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, a.githubDownloadRouteURL(rawURL), nil)
 	if err != nil {
 		return err
 	}
@@ -1761,7 +1767,7 @@ func (a *App) handleMihomoCoreSwitch(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	a.setMihomoCoreSwitchState(target, "switching", 5, "")
 	if _, cacheErr := a.cacheMihomoCoreCandidate(current, mihomoCoreCandidate{
-		Binary: a.componentTarget("mihomo"), Version: a.componentCurrentVersion("mihomo"),
+		Binary: a.currentMihomoBinaryPath(), Version: a.componentCurrentVersion("mihomo"),
 		VerificationSource: mihomoCoreCacheVerificationSource,
 	}); cacheErr != nil {
 		a.setMihomoCoreSwitchState(target, "failed", 0, cacheErr.Error())

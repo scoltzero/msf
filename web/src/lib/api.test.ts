@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { clearSession, REFRESH_TOKEN_KEY, TOKEN_KEY } from "./api";
+import { api, clearSession, REFRESH_TOKEN_KEY, TOKEN_KEY } from "./api";
 
 class MemoryStorage implements Storage {
   private readonly values = new Map<string, string>();
@@ -36,6 +36,23 @@ afterEach(() => {
   Object.defineProperty(globalThis, "window", {
     configurable: true,
     value: originalWindow,
+  });
+  vi.unstubAllGlobals();
+});
+
+describe("api timeout", () => {
+  it("aborts a stalled request when timeoutMs expires", async () => {
+    const localStorage = new MemoryStorage();
+    const sessionStorage = new MemoryStorage();
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: { localStorage, sessionStorage },
+    });
+    vi.stubGlobal("fetch", (_path: string, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true });
+    }));
+
+    await expect(api("/slow", { timeoutMs: 5 })).rejects.toThrow("请求超时");
   });
 });
 

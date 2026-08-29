@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle2, Loader2, RotateCw } from "lucide-react";
 import { GlassField } from "@/components/liquid-glass/GlassField";
 import { api, apiData, formatBytes } from "@/lib/api";
@@ -53,14 +53,21 @@ export interface SmartResourceView {
   verified?: boolean;
 }
 
-function smartResourceMap(payload: unknown): Partial<Record<SmartResourceView["key"], SmartResourceView>> {
+interface SmartResourcePayload {
+  resources: Partial<Record<SmartResourceView["key"], SmartResourceView>>;
+  coreType: "meta" | "smart";
+  coreCompatible: boolean;
+}
+
+function smartResourcePayload(payload: unknown): SmartResourcePayload {
   const data = apiData<Record<string, unknown>>(payload, {});
   const resources = data && typeof data === "object" && data.resources && typeof data.resources === "object"
     ? data.resources as Record<string, SmartResourceView>
     : {};
   return {
-    lightgbm: resources.lightgbm,
-    asn: resources.asn,
+    resources: { lightgbm: resources.lightgbm, asn: resources.asn },
+    coreType: data.core_type === "smart" ? "smart" : "meta",
+    coreCompatible: data.core_compatible === true,
   };
 }
 
@@ -70,51 +77,83 @@ export function ProxyGroupEditorDialog({ open, readOnly = false, loading = false
   const [busy, setBusy] = useState<"save" | "validate" | null>(null);
   const [message, setMessage] = useState("");
   const [smartResources, setSmartResources] = useState<Partial<Record<SmartResourceView["key"], SmartResourceView>>>({});
+  const [smartCoreType, setSmartCoreType] = useState<"meta" | "smart" | null>(null);
+  const [resourcePollNonce, setResourcePollNonce] = useState(0);
+  const cancelledResourcesRef = useRef(new Set<SmartResourceView["key"]>());
   useEffect(() => {
     if (open) {
       const next = { ...EMPTY, ...(value || {}) };
       setDraft(next);
       setInitial(next);
       setMessage("");
+      cancelledResourcesRef.current.clear();
     }
   }, [open, value]);
   const dirty = useMemo(() => JSON.stringify(draft) !== JSON.stringify(initial), [draft, initial]);
   const patch = <K extends keyof ProxyGroupDraftView>(key: K, value: ProxyGroupDraftView[K]) => setDraft((current) => ({ ...current, [key]: value }));
+  const setGroupType = (type: string) => setDraft((current) => ({
+    ...current,
+    type,
+    tolerance: type === "smart" && current.type !== "smart" ? 0 : current.tolerance,
+  }));
   const refreshSmartResources = useCallback(async () => {
-    const payload = await api("/api/v1/mihomo/smart-resources");
-    setSmartResources(smartResourceMap(payload));
+    const payload = await api("/api/v1/mihomo/smart-resources", { timeoutMs: 10000 });
+    const next = smartResourcePayload(payload);
+    setSmartResources(next.resources);
+    setSmartCoreType(next.coreType);
+    return next;
   }, []);
   useEffect(() => {
-    if (!open || draft.type !== "smart") return;
+    if (!open) return;
     let active = true;
+    let timer: number | undefined;
     const refresh = async () => {
       try {
-        const payload = await api("/api/v1/mihomo/smart-resources");
-        const next = smartResourceMap(payload);
-        if (active) setSmartResources(next);
+        const payload = await api("/api/v1/mihomo/smart-resources", { timeoutMs: 10000 });
+        const next = smartResourcePayload(payload);
+        if (!active) return;
+        setSmartResources(next.resources);
+        setSmartCoreType(next.coreType);
         const pending: SmartResourceView["key"][] = [];
-        if (draft.uselightgbm && next.lightgbm?.status === "idle") pending.push("lightgbm");
-        if (draft.preferAsn && next.asn?.status === "idle") pending.push("asn");
+        if (draft.type === "smart" && next.coreCompatible) {
+          if (draft.uselightgbm && next.resources.lightgbm?.status === "idle" && !cancelledResourcesRef.current.has("lightgbm")) pending.push("lightgbm");
+          if (draft.preferAsn && next.resources.asn?.status === "idle" && !cancelledResourcesRef.current.has("asn")) pending.push("asn");
+        }
         if (pending.length > 0) {
           await api("/api/v1/mihomo/smart-resources/download", {
             method: "POST",
             body: JSON.stringify({ resources: pending }),
+            timeoutMs: 10000,
           });
         }
+        const selected = [
+          draft.uselightgbm ? next.resources.lightgbm : undefined,
+          draft.preferAsn ? next.resources.asn : undefined,
+        ];
+        if (active && draft.type === "smart" && next.coreCompatible && (pending.length > 0 || selected.some((resource) => resource?.status === "downloading"))) {
+          timer = window.setTimeout(() => void refresh(), 2000);
+        }
       } catch (error) {
-        if (active) setMessage(error instanceof Error ? error.message : "读取 Smart 资源状态失败");
+        if (active) {
+          setMessage(error instanceof Error ? error.message : "读取 Smart 资源状态失败");
+          if (draft.type === "smart") timer = window.setTimeout(() => void refresh(), 3000);
+        }
       }
     };
     void refresh();
-    const timer = window.setInterval(() => void refresh(), 1000);
     return () => {
       active = false;
-      window.clearInterval(timer);
+      if (timer) window.clearTimeout(timer);
     };
-  }, [draft.preferAsn, draft.type, draft.uselightgbm, open]);
+  }, [draft.preferAsn, draft.type, draft.uselightgbm, open, resourcePollNonce]);
 
   const startSmartResourceDownload = async (key: SmartResourceView["key"]) => {
+    if (smartCoreType !== "smart") {
+      setMessage("当前为官方 Meta 核心，请先切换到 Smart 实验版再下载资源");
+      return;
+    }
     if (smartResources[key]?.status === "ready" || smartResources[key]?.status === "downloading") return;
+    cancelledResourcesRef.current.delete(key);
     setSmartResources((current) => ({
       ...current,
       [key]: {
@@ -133,8 +172,10 @@ export function ProxyGroupEditorDialog({ open, readOnly = false, loading = false
       await api("/api/v1/mihomo/smart-resources/download", {
         method: "POST",
         body: JSON.stringify({ resource: key }),
+        timeoutMs: 10000,
       });
       await refreshSmartResources();
+      setResourcePollNonce((current) => current + 1);
     } catch (error) {
       setSmartResources((current) => ({
         ...current,
@@ -144,6 +185,19 @@ export function ProxyGroupEditorDialog({ open, readOnly = false, loading = false
           error: error instanceof Error ? error.message : "下载启动失败",
         },
       }));
+    }
+  };
+  const cancelSmartResourceDownload = async (key: SmartResourceView["key"]) => {
+    cancelledResourcesRef.current.add(key);
+    try {
+      await api("/api/v1/mihomo/smart-resources/cancel", {
+        method: "POST",
+        body: JSON.stringify({ resource: key }),
+        timeoutMs: 10000,
+      });
+      await refreshSmartResources();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "取消下载失败");
     }
   };
   const validate = async () => {
@@ -175,6 +229,7 @@ export function ProxyGroupEditorDialog({ open, readOnly = false, loading = false
   const healthChecked = ["url-test", "fallback", "load-balance"].includes(draft.type);
   const isSmart = draft.type === "smart";
   const resourceBlocked = isSmart && (
+    smartCoreType !== "smart" ||
     (draft.uselightgbm && smartResources.lightgbm?.status !== "ready")
     || (draft.preferAsn && smartResources.asn?.status !== "ready")
   );
@@ -196,9 +251,14 @@ export function ProxyGroupEditorDialog({ open, readOnly = false, loading = false
                 : resource.message || "等待下载"}
           </span>
           <a href={resource.source_url} target="_blank" rel="noreferrer" className="shrink-0 text-primary hover:underline">官方来源</a>
-          {resource.status === "failed" ? (
+          {resource.status === "downloading" ? (
+            <button type="button" onClick={() => void cancelSmartResourceDownload(key)} className="shrink-0 text-muted-foreground hover:text-foreground hover:underline">
+              取消下载
+            </button>
+          ) : null}
+          {resource.status === "failed" || resource.status === "idle" ? (
             <button type="button" onClick={() => void startSmartResourceDownload(key)} className="inline-flex shrink-0 items-center gap-1 text-primary hover:underline">
-              <RotateCw className="h-3 w-3" />重试
+              <RotateCw className="h-3 w-3" />{resource.status === "failed" ? "重试" : "重新下载"}
             </button>
           ) : null}
         </div>
@@ -233,14 +293,19 @@ export function ProxyGroupEditorDialog({ open, readOnly = false, loading = false
           </label>
           <label className="text-xs text-muted-foreground">
             类型
-            <select disabled={disabled} value={draft.type} onChange={(event) => patch("type", event.target.value)} className="mt-1 h-9 w-full rounded-xl bg-background/55 px-3 text-xs text-foreground outline-none">
+            <select disabled={disabled} value={draft.type} onChange={(event) => setGroupType(event.target.value)} className="mt-1 h-9 w-full rounded-xl bg-background/55 px-3 text-xs text-foreground outline-none">
               <option value="select">select</option>
               <option value="url-test">url-test</option>
               <option value="fallback">fallback</option>
               <option value="load-balance">load-balance</option>
               <option value="relay">relay</option>
-              <option value="smart">smart</option>
+              <option value="smart" disabled={smartCoreType !== "smart"}>{smartCoreType === "smart" ? "smart" : "smart（需先切换核心）"}</option>
             </select>
+            {smartCoreType === "meta" ? (
+              <span className="mt-1 block text-[11px] leading-4 text-amber-700 dark:text-amber-300">
+                当前为官方 Meta 核心，Smart 分组需先前往 <a href="/settings?tab=update" className="font-medium text-primary hover:underline">设置 → 组件更新 → 核心切换</a>。
+              </span>
+            ) : null}
           </label>
           <label className="text-xs text-muted-foreground sm:col-span-2">
             策略组图标 URL（可选）
@@ -287,7 +352,12 @@ export function ProxyGroupEditorDialog({ open, readOnly = false, loading = false
               </label>
               <label className="text-xs text-muted-foreground">
                 采样率（0~1）
-                <GlassField disabled={disabled} type="number" min={0} max={1} step={0.01} value={draft.sampleRate} onChange={(event) => patch("sampleRate", Number(event.target.value) || 0)} className="mt-1 h-9 w-full" />
+                <GlassField disabled={disabled} type="number" min={0} max={1} step={0.01} value={draft.sampleRate || ""} onChange={(event) => patch("sampleRate", event.target.value === "" ? 0 : Number(event.target.value))} placeholder="自动（默认 1.0）" className="mt-1 h-9 w-full" />
+                <span className="mt-1 block text-[11px] leading-4 text-muted-foreground">留空时使用 Smart 默认值 1.0，即全量采样；填写大于 0 且不超过 1 的值可降低采样比例。</span>
+              </label>
+              <label className="text-xs text-muted-foreground">
+                容差（ms）
+                <GlassField disabled={disabled} type="number" min={0} value={draft.tolerance} onChange={(event) => patch("tolerance", Number(event.target.value) || 0)} className="mt-1 h-9 w-full" />
               </label>
               <div className="text-xs">
                 <label className="flex items-center gap-2">
