@@ -43,7 +43,7 @@ const loginWavePalettes = {
   },
 } as const;
 
-const LOGIN_ANNOUNCEMENT_ID = "2026-08-mihomo-config-ai-agent";
+const LOGIN_ANNOUNCEMENT_ID = "2026-08-v0.6.2-smart-core";
 const LOGIN_ANNOUNCEMENT_HIDDEN_KEY = `msf-login-announcement:${LOGIN_ANNOUNCEMENT_ID}:hidden`;
 const LOGIN_ANNOUNCEMENT_SESSION_KEY = `msf-login-announcement:${LOGIN_ANNOUNCEMENT_ID}:session`;
 
@@ -199,18 +199,18 @@ export default function LoginPage() {
             <span className="msf-login-announcement-icon" aria-hidden="true"><Megaphone /></span>
             <div>
               <p>本次更新</p>
-              <h2 id="login-announcement-title">新增功能与开发者的话</h2>
+              <h2 id="login-announcement-title">v0.6.2：Mihomo Smart 核心</h2>
             </div>
           </div>
 
           <ol className="msf-login-announcement-features">
             <li>
-              <strong>全新的 Mihomo 配置</strong>
-              <span>前往 <code>/mihomo/config</code>，通过“重置恢复”获取最新配置，同时保留现有节点信息。</span>
+              <strong>Meta / Smart 双核心</strong>
+              <span>现在可选择官方稳定版或 Smart Alpha 核心，并编辑 <code>smart</code> 代理分组；两种核心都会保留，切换回来无需重复下载。</span>
             </li>
             <li>
-              <strong>AI Agent 初版</strong>
-              <span>首版支持 OpenAI Responses，可自定义 Skill，具备 MSF 内读写能力；仅管理员可见。</span>
+              <strong>资源与配置更可靠</strong>
+              <span>LightGBM 与 ASN 数据支持进度和取消；切换核心会先回到默认配置并保留用户配置。Smart 属于实验性 Alpha 功能，使用前建议备份配置。</span>
             </li>
           </ol>
 

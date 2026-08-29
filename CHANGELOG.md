@@ -2,6 +2,32 @@
 
 ## 未发布
 
+## v0.6.2 - 2026-08-29
+
+### 中文
+
+#### Mihomo Smart 核心与配置流程完善
+
+- 新增 Meta（官方稳定版）与 Smart（Alpha 核心）选择和切换，初始化页、配置管理、代理分组编辑与组件更新均可识别当前核心。
+- Smart 核心支持 `smart` 代理分组编辑，并提供 LightGBM 模型与 ASN 数据的下载进度、取消和状态检查；Meta 核心会拒绝 Smart 专属字段和资源操作。
+- 切换核心时先回到默认配置，保留用户配置以及已经下载的另一种核心，后续可直接切换回来；同时补全活动配置校验、启动失败回滚和旧版 Mihomo 二进制路径兼容。
+- 修复默认配置修改后无法弹出“保存为用户配置”、Smart 字段保存后丢失、采样率默认值显示异常及设置页已开启拨钮颜色丢失等问题。
+- 统一 GitHub 资源下载路径，改进 Smart 资源下载的超时、取消、轮询和摘要校验，减少重复读取与并发请求。
+- 代理测速超时现在与前端设置同步，HTTP 链式代理不再被固定的 1500ms 前端等待提前判定为失败。
+- 登录页更新公告升级为 v0.6.2 内容，并继续保留“本次关闭”和“不再显示”两种操作。
+
+### English
+
+#### Mihomo Smart core and configuration workflow improvements
+
+- Added Meta (official stable) and Smart (alpha) core selection and switching across setup, configuration management, proxy-group editing, and component updates.
+- Added Smart proxy-group editing plus progress, cancellation, and state checks for LightGBM model and ASN data downloads. Meta rejects Smart-only fields and resource operations.
+- Core switching now returns to the default configuration while preserving user configurations and both downloaded core binaries, allowing an immediate switch back later. Active-config validation, startup rollback, and legacy Mihomo binary-path compatibility were also added.
+- Fixed saving default-config changes as a user configuration, Smart-field round trips, the sample-rate default display, and missing enabled colors on Settings toggles.
+- Unified GitHub resource download routing and improved Smart download timeouts, cancellation, polling, and digest validation while reducing repeated reads and overlapping requests.
+- Synchronized proxy-test waiting with the configured timeout so HTTP chained proxies are no longer marked failed by a fixed 1500 ms frontend cutoff.
+- Refreshed the login announcement for v0.6.2 while retaining separate session-close and permanent-dismiss actions.
+
 ## v0.6.1 - 2026-08-25
 
 ### 中文

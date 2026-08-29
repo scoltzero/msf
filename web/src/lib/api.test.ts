@@ -65,8 +65,8 @@ describe("clearSession", () => {
       value: { localStorage, sessionStorage },
     });
 
-    const hiddenKey = "msf-login-announcement:2026-08-mihomo-config-ai-agent:hidden";
-    const sessionKey = "msf-login-announcement:2026-08-mihomo-config-ai-agent:session";
+    const hiddenKey = "msf-login-announcement:2026-08-v0.6.2-smart-core:hidden";
+    const sessionKey = "msf-login-announcement:2026-08-v0.6.2-smart-core:session";
     localStorage.setItem(TOKEN_KEY, "access-token");
     localStorage.setItem(REFRESH_TOKEN_KEY, "refresh-token");
     localStorage.setItem(hiddenKey, "1");
