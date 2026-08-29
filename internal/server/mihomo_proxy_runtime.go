@@ -693,6 +693,20 @@ func (a *App) validateMihomoCandidateContent(ctx context.Context, content string
 	if err := validateMihomoCandidateStructure(cfg); err != nil {
 		return mihomoConfigValidation{Valid: false, Error: err.Error(), Warnings: validation.Warnings}
 	}
+	if err := validateMihomoCoreConfigCompatibility(a.selectedMihomoCoreType(), cfg); err != nil {
+		return mihomoConfigValidation{Valid: false, Error: err.Error(), Warnings: validation.Warnings}
+	}
+	if missing := a.missingMihomoSmartResources(cfg); len(missing) > 0 {
+		labels := make([]string, 0, len(missing))
+		for _, resource := range missing {
+			labels = append(labels, resource.Label)
+		}
+		return mihomoConfigValidation{
+			Valid:    false,
+			Error:    "Smart 所需资源尚未下载完成：" + strings.Join(labels, "、") + "；请在代理组编辑器等待下载和 SHA-256 校验完成后再保存",
+			Warnings: validation.Warnings,
+		}
+	}
 	if err := a.testMihomoCandidateWithCore(ctx, content); err != nil {
 		return mihomoConfigValidation{Valid: false, Error: err.Error(), Warnings: validation.Warnings}
 	}

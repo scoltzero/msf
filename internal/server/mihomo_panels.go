@@ -816,7 +816,7 @@ func normalizeMihomoProxies(raw map[string]any, groupOrder map[string]int) (map[
 	byName := map[string]any{}
 	var groups []map[string]any
 	var proxies []map[string]any
-	groupTypes := map[string]bool{"Selector": true, "URLTest": true, "Fallback": true, "LoadBalance": true, "Relay": true}
+	groupTypes := map[string]bool{"Selector": true, "URLTest": true, "Fallback": true, "LoadBalance": true, "Relay": true, "Smart": true}
 	for name, value := range proxyMap {
 		item, ok := value.(map[string]any)
 		if !ok {

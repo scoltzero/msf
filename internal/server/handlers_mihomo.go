@@ -81,6 +81,8 @@ func (a *App) registerMihomoRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/mihomo/manual-proxies", a.handleMihomoManualProxiesGet)
 	mux.HandleFunc("PUT /api/v1/mihomo/manual-proxies", a.handleMihomoManualProxiesPut)
 	mux.HandleFunc("POST /api/v1/mihomo/proxy-config/validate", a.handleMihomoProxyConfigValidate)
+	mux.HandleFunc("GET /api/v1/mihomo/smart-resources", a.handleMihomoSmartResources)
+	mux.HandleFunc("POST /api/v1/mihomo/smart-resources/download", a.handleMihomoSmartResourceDownload)
 	mux.HandleFunc("GET /api/v1/mihomo/rule-providers", a.handleMihomoRuleProviders)
 	mux.HandleFunc("PUT /api/v1/mihomo/rule-providers", a.handleMihomoRuleProvidersPut)
 	mux.HandleFunc("POST /api/v1/mihomo/rule-providers", a.handleMihomoRuleProvidersPut)

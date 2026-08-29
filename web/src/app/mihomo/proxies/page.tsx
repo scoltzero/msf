@@ -130,7 +130,7 @@ export default function MihomoProxiesPage() {
 
   const collapseAll = () => setAllCollapsed(currentDisclosureKind, currentDisclosureKeys);
   const openGroupManager = () => setGroupManagerOpen(true);
-  const createGroup = () => { setGroupManagerOpen(false); setEditorKey(""); setGroupDraft({ name: "", type: "select", icon: "", proxies: "", url: "", interval: 300, lazy: false, tolerance: 50, strategy: "consistent-hashing", advanced: "{}" }); setEditor("group"); };
+  const createGroup = () => { setGroupManagerOpen(false); setEditorKey(""); setGroupDraft({ name: "", type: "select", icon: "", proxies: "", url: "", interval: 300, lazy: false, tolerance: 50, strategy: "consistent-hashing", policyPriority: "", uselightgbm: false, collectdata: false, sampleRate: 0, preferAsn: false, advanced: "{}" }); setEditor("group"); };
   const createProvider = () => { setProviderManagerOpen(false); setEditorKey(""); setProviderDraft(undefined); setEditor("provider"); };
   const moveGroup = (fromKey: string, toKey: string) => { const order = mergeStableOrder(settings.groupOrder.length ? settings.groupOrder : store.groupKeys, settings.groupOrder, store.groupKeys); const from = order.indexOf(fromKey); const to = order.indexOf(toKey); if (from < 0 || to < 0) return; order.splice(from, 1); order.splice(to, 0, fromKey); setSettings((current) => ({ ...current, groupOrder: order })); };
   const toggleUserHiddenGroup = (group: ProxyGroupView) => setSettings((current) => ({ ...current, hiddenGroups: current.hiddenGroups.includes(group.name) ? current.hiddenGroups.filter((name) => name !== group.name) : [...current.hiddenGroups, group.name] }));
@@ -144,7 +144,7 @@ export default function MihomoProxiesPage() {
   const openProviderManager = () => setProviderManagerOpen(true);
   const openGroup = (group: ProxyGroupView) => {
     setEditorKey(group.key);
-    setGroupDraft({ name: group.name, type: group.type, icon: group.icon || "", proxies: "", url: "", interval: 300, lazy: false, tolerance: 50, strategy: "consistent-hashing", advanced: "{}" });
+    setGroupDraft({ name: group.name, type: group.type, icon: group.icon || "", proxies: "", url: "", interval: 300, lazy: false, tolerance: 50, strategy: "consistent-hashing", policyPriority: "", uselightgbm: false, collectdata: false, sampleRate: 0, preferAsn: false, advanced: "{}" });
     setGroupConfigLoading(true);
     setEditor("group");
     void api("/api/v1/mihomo/proxy-groups-config").then((payload) => {

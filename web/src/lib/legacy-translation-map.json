@@ -1607,5 +1607,14 @@
   "总下载": "Total Download",
   "时长": "Duration",
   "请选择": "Please select",
-  "确认操作": "Confirm Operation"
+  "确认操作": "Confirm Operation",
+  "官方 Meta（推荐）": "Official Meta (Recommended)",
+  "Smart 实验版": "Smart Experimental",
+  "核心分支 / 来源": "Core Branch / Source",
+  "官方稳定版": "Official Stable",
+  "实验版": "Experimental",
+  "稳定版": "Stable",
+  "当前": "Current",
+  "第三方预发布，仅供 Smart 分组": "Third-party pre-release, for Smart groups only",
+  "官方稳定版，默认推荐": "Official stable, recommended by default"
 }

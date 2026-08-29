@@ -82,6 +82,7 @@ GET /api/v1/mihomo/rules-config
 GET /api/v1/mihomo/stats
 GET /api/v1/mihomo/status
 GET /api/v1/mihomo/summary
+GET /api/v1/mihomo/smart-resources
 GET /api/v1/mihomo/traffic
 GET /api/v1/mihomo/ui
 GET /api/v1/mihomo/ui/config
@@ -216,6 +217,7 @@ POST /api/v1/auth/refresh
 POST /api/v1/component-updates/{component}/check
 POST /api/v1/component-updates/{component}/update
 POST /api/v1/component-updates/{component}/upload
+POST /api/v1/component-updates/mihomo/switch
 POST /api/v1/config/backup
 POST /api/v1/config/copy
 POST /api/v1/config/directory
@@ -246,6 +248,7 @@ POST /api/v1/mihomo/proxy-providers/{name}/update
 POST /api/v1/mihomo/restart
 POST /api/v1/mihomo/rule-providers
 POST /api/v1/mihomo/rule-providers/{name}/update
+POST /api/v1/mihomo/smart-resources/download
 POST /api/v1/mihomo/start
 POST /api/v1/mihomo/stop
 POST /api/v1/mihomo/ui

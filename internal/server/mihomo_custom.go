@@ -306,6 +306,12 @@ func (a *App) saveMihomoUserConfig(name, content string, overwrite bool, usernam
 	if err != nil {
 		return nil, validation, err
 	}
+	if a.isAppliedMihomoUserConfigRel(rel) {
+		validation = a.validateMihomoCandidateContent(context.Background(), content)
+		if !validation.Valid {
+			return nil, validation, nil
+		}
+	}
 	path, err := a.safePath(rel)
 	if err != nil {
 		return nil, validation, err
@@ -340,7 +346,7 @@ func (a *App) applyMihomoUserConfig(ctx context.Context, rel string, restart boo
 	if err != nil {
 		return nil, err
 	}
-	validation := a.validateMihomoConfigContent(content)
+	validation := a.validateMihomoCandidateContent(ctx, content)
 	if !validation.Valid {
 		return nil, fmt.Errorf("%s", validation.Error)
 	}
@@ -469,6 +475,9 @@ func (a *App) isAppliedMihomoUserConfigRel(rel string) bool {
 func (a *App) syncMihomoActiveConfigFromAppliedUserConfig(rel, content, username string) error {
 	if !a.isAppliedMihomoUserConfigRel(rel) {
 		return nil
+	}
+	if validation := a.validateMihomoCandidateContent(context.Background(), content); !validation.Valid {
+		return fmt.Errorf("active user config is incompatible with the selected Mihomo core: %s", validation.Error)
 	}
 	if err := a.ensureMihomoGeneratedBackup(); err != nil {
 		return err

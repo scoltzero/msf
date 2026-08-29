@@ -135,7 +135,7 @@ interface SetupPreflight {
   errors?: string[];
 }
 
-const defaultForm = {
+export const defaultForm = {
   username: "",
   password: "",
   confirmPassword: "",
@@ -166,7 +166,23 @@ const defaultForm = {
   github_accelerator_url: "",
 };
 
-type SetupForm = typeof defaultForm;
+export type SetupForm = typeof defaultForm;
+
+export type MihomoCoreType = "meta" | "smart";
+
+/** Normalize a setup config value to a supported Mihomo core type. */
+export function normalizeSetupMihomoCore(value: unknown): MihomoCoreType {
+  return String(value ?? "").toLowerCase() === "smart" ? "smart" : "meta";
+}
+
+/** Build the POST /api/v1/setup/initialize payload from the current form. */
+export function setupInitializePayload(form: SetupForm, subscriptionText: string, manualProxyText: string) {
+  return {
+    ...form,
+    subscription_urls: subscriptionText,
+    mihomo_proxies: manualProxyText,
+  };
+}
 
 type SetupDownloadStatus = "pending" | "running" | "completed" | "failed" | "skipped";
 type SetupDownloadIntroStage = 0 | 1 | 2;
@@ -1270,11 +1286,7 @@ export function SetupPage() {
       }
       const payload = await api<any>("/api/v1/setup/initialize", {
         method: "POST",
-        body: JSON.stringify({
-          ...form,
-          subscription_urls: subscriptionText,
-          mihomo_proxies: manualProxyText,
-        }),
+        body: JSON.stringify(setupInitializePayload(form, subscriptionText, manualProxyText)),
         skipAuth: true,
       });
       setBusy(false);
@@ -1780,11 +1792,8 @@ export function SetupPage() {
                       </span>
                       <Circle className="h-4 w-4 text-muted-foreground" />
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => update("proxyCore", "mihomo")}
+                    <div
                       data-setup-field="proxyCore"
-                      aria-pressed={form.proxyCore === "mihomo"}
                       className="flex min-h-[108px] items-start gap-3 rounded-[16px] border border-primary/40 bg-primary/10 px-4 py-3 text-left shadow-[inset_0_1px_0_var(--gary-edge-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
                     >
                       <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
@@ -1795,13 +1804,41 @@ export function SetupPage() {
                         <span className="mt-1 block text-xs text-muted-foreground">通用代理平台，支持多种协议</span>
                           <span className="mt-3 block border-t border-border pt-3">
                             <span className="mb-2 block text-xs text-muted-foreground">Mihomo Core</span>
-                            <span className="inline-flex rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground">
-                              Meta（官方稳定版）
+                            <span className="flex flex-wrap items-center gap-2">
+                              <button
+                                type="button"
+                                aria-pressed={form.mihomo_core_type === "meta"}
+                                onClick={() => update("mihomo_core_type", "meta")}
+                                className={cn(
+                                  "msf-core-choice inline-flex h-8 cursor-pointer items-center whitespace-nowrap rounded-lg border px-2.5 text-[11px] font-semibold shadow-sm transition-[background-color,border-color,color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 sm:text-xs",
+                                  form.mihomo_core_type === "meta"
+                                    ? "border-[#007aff] bg-[#007aff] text-white shadow-[0_2px_8px_rgba(0,122,255,0.28)] dark:border-[#2e8dff] dark:bg-[#2e8dff]"
+                                    : "border-black/15 bg-white text-[#1d1d1f] hover:border-[#007aff]/45 dark:border-white/15 dark:bg-[#1c1c1e] dark:text-white"
+                                )}
+                              >
+                                {form.mihomo_core_type === "meta" ? <Check className="mr-1 h-3 w-3" /> : null}
+                                Meta（官方稳定版）
+                              </button>
+                              <button
+                                type="button"
+                                aria-pressed={form.mihomo_core_type === "smart"}
+                                title="第三方预发布核心；切回官方 Meta 前需先移除活动配置中的 Smart 分组"
+                                onClick={() => update("mihomo_core_type", "smart")}
+                                className={cn(
+                                  "msf-core-choice inline-flex h-8 cursor-pointer items-center whitespace-nowrap rounded-lg border px-2.5 text-[11px] font-semibold shadow-sm transition-[background-color,border-color,color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 sm:text-xs",
+                                  form.mihomo_core_type === "smart"
+                                    ? "border-[#007aff] bg-[#007aff] text-white shadow-[0_2px_8px_rgba(0,122,255,0.28)] dark:border-[#2e8dff] dark:bg-[#2e8dff]"
+                                    : "border-black/15 bg-white text-[#1d1d1f] hover:border-[#007aff]/45 dark:border-white/15 dark:bg-[#1c1c1e] dark:text-white"
+                                )}
+                              >
+                                {form.mihomo_core_type === "smart" ? <Check className="mr-1 h-3 w-3" /> : null}
+                                smart（alpha核心）
+                              </button>
                             </span>
                           </span>
                       </span>
                       <Circle className="h-4 w-4 fill-primary text-primary" />
-                    </button>
+                    </div>
                   </div>
                 </div>
                 <div className="rounded-lg border border-border bg-card p-3">

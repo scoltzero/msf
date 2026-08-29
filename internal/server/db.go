@@ -383,7 +383,9 @@ func (a *App) repairAssistantSessionTitles() error {
 }
 
 func (a *App) normalizePersistedRows() error {
-	if _, err := a.DB.Exec(`update system_setups set mihomo_core_type='meta', updated_at=? where lower(trim(coalesce(mihomo_core_type,''))) != 'meta'`, time.Now()); err != nil {
+	// Preserve a validated Smart core selection while normalizing
+	// invalid/empty/legacy (e.g. alpha) values back to stable Meta.
+	if _, err := a.DB.Exec(`update system_setups set mihomo_core_type='meta', updated_at=? where lower(trim(coalesce(mihomo_core_type,''))) not in ('meta','smart')`, time.Now()); err != nil {
 		return err
 	}
 	if _, err := a.DB.Exec(`update assistant_sessions set runtime='eino',runtime_version='v0.9.15',execution_mode=case when execution_mode in ('read_only','confirm_writes','full_auto') then execution_mode else 'confirm_writes' end,status=case when status in ('idle','running','awaiting_approval','stopped','error') then status else 'idle' end,active_run_id=null where runtime is null or runtime!='eino' or runtime_version is null or runtime_version!='v0.9.15' or execution_mode not in ('read_only','confirm_writes','full_auto') or status not in ('idle','running','awaiting_approval','stopped','error')`); err != nil {

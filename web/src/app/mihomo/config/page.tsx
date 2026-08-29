@@ -25,7 +25,7 @@ import { WorkbenchHeader } from "@/components/layout/WorkbenchHeader";
 import { ModalViewport } from "@/components/liquid-glass/ModalViewport";
 import { useToaster, ToastStack } from "@/components/Toaster";
 import { YamlEditor } from "@/components/mihomo/YamlEditor";
-import { ApiError, api, apiList, formatBytes, formatPercent } from "@/lib/api";
+import { api, apiList, formatBytes, formatPercent } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const DEFAULT_PATH = "configs/mihomo/config.yaml";
@@ -75,6 +75,12 @@ interface ConfigValidation {
   warnings?: string[];
 }
 
+interface SaveDialogState {
+  applyAfterSave: boolean;
+  name: string;
+  error: string;
+}
+
 function configPathFor(file: ConfigFile | string) {
   if (typeof file === "string") {
     return file.startsWith("configs/mihomo/") ? file : `${USER_CONFIG_DIR}/${file}`;
@@ -95,13 +101,19 @@ function isReservedConfigName(name: string) {
   return ["config.yaml", "phone_config.yaml", "msf_generated.backup.yaml", "config.yaml.backup"].includes(name.trim().toLowerCase());
 }
 
-function normalizeClientConfigName(name: string) {
+export function normalizeClientConfigName(name: string) {
   let next = name.trim();
   if (!next) return "";
   if (next.includes("/") || next.includes("\\") || next.includes("..")) return "";
   if (!/\.(ya?ml)$/i.test(next)) next += ".yaml";
   if (isReservedConfigName(next)) return "";
   return next;
+}
+
+export function defaultConfigRequiresUserSave(value: unknown) {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as { code?: unknown; error?: unknown };
+  return candidate.code === "default_config_requires_user_config" || candidate.error === "default_config_requires_user_config";
 }
 
 function isRunning(status: ServiceStatus | null) {
@@ -168,6 +180,7 @@ export default function MihomoConfigPage() {
   const [modeInfo, setModeInfo] = useState<ConfigModeInfo>({});
   const [warnings, setWarnings] = useState<string[]>([]);
   const [suggestedName, setSuggestedName] = useState("user_config_0.yaml");
+  const [saveDialog, setSaveDialog] = useState<SaveDialogState | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const running = isRunning(status);
@@ -258,23 +271,6 @@ export default function MihomoConfigPage() {
     void reloadAll();
   }, [reloadAll]);
 
-  const promptConfigName = useCallback(() => {
-    const currentName = isUserConfigPath(path) ? fileName(path) : "";
-    const initial = currentName || suggestedName || "user_config_0.yaml";
-    const raw = window.prompt("请输入用户配置名称", initial);
-    if (raw === null) return "";
-    const name = normalizeClientConfigName(raw);
-    if (!name) {
-      showToast("配置名称无效，请使用普通文件名并以 .yaml 或 .yml 结尾");
-      return "";
-    }
-    const exists = files.some((file) => fileName(configPathFor(file)).toLowerCase() === name.toLowerCase());
-    if (exists && !window.confirm(`用户配置 ${name} 已存在，是否覆盖？`)) {
-      return "";
-    }
-    return name;
-  }, [files, path, showToast, suggestedName]);
-
   const applyUserConfigPath = useCallback(async (targetPath: string) => {
     const payload = await api<any>("/api/v1/mihomo/user-configs/apply", {
       method: "POST",
@@ -288,9 +284,16 @@ export default function MihomoConfigPage() {
     showToast((validation?.warnings || []).length > 0 ? "配置已应用并重启，但存在关键字段告警" : "配置已应用并重启 Mihomo");
   }, [loadConfig, loadFiles, loadMode, loadStatus, showToast]);
 
-  const saveUserConfig = useCallback(async (applyAfterSave = false) => {
-    const name = promptConfigName();
-    if (!name) return;
+  const requestUserConfigSave = useCallback((applyAfterSave = false) => {
+    const currentName = isUserConfigPath(path) ? fileName(path) : "";
+    setSaveDialog({
+      applyAfterSave,
+      name: currentName || suggestedName || "user_config_0.yaml",
+      error: "",
+    });
+  }, [path, suggestedName]);
+
+  const saveUserConfig = useCallback(async (name: string, applyAfterSave = false) => {
     setSaving(true);
     try {
       const payload = await api<any>("/api/v1/mihomo/user-configs", {
@@ -319,7 +322,23 @@ export default function MihomoConfigPage() {
     } finally {
       setSaving(false);
     }
-  }, [applyUserConfigPath, content, loadFiles, loadMode, promptConfigName, showToast]);
+  }, [applyUserConfigPath, content, loadFiles, loadMode, showToast]);
+
+  const confirmUserConfigSave = useCallback(async () => {
+    if (!saveDialog) return;
+    const name = normalizeClientConfigName(saveDialog.name);
+    if (!name) {
+      setSaveDialog((current) => current ? { ...current, error: "配置名称无效，请使用普通文件名并以 .yaml 或 .yml 结尾" } : null);
+      return;
+    }
+    const exists = files.some((file) => fileName(configPathFor(file)).toLowerCase() === name.toLowerCase());
+    if (exists && !window.confirm(`用户配置 ${name} 已存在，是否覆盖？`)) {
+      return;
+    }
+    const applyAfterSave = saveDialog.applyAfterSave;
+    setSaveDialog(null);
+    await saveUserConfig(name, applyAfterSave);
+  }, [files, saveDialog, saveUserConfig]);
 
   const saveDefaultConfig = useCallback(async (applyAfterSave = false) => {
     setSaving(true);
@@ -329,6 +348,11 @@ export default function MihomoConfigPage() {
         body: JSON.stringify({ path: DEFAULT_PATH, content, restart: applyAfterSave }),
       });
       if (payload.success === false) {
+        if (defaultConfigRequiresUserSave(payload)) {
+          showToast("默认配置只允许修改节点供应商，请保存为用户配置");
+          requestUserConfigSave(applyAfterSave);
+          return;
+        }
         showToast(payload.error || "配置保存失败");
         return;
       }
@@ -341,24 +365,24 @@ export default function MihomoConfigPage() {
       await Promise.all([loadFiles(), loadStatus(), loadMode()]);
       showToast(applyAfterSave ? "默认配置已保存并重启 Mihomo" : "默认配置已保存");
     } catch (err) {
-      if (err instanceof ApiError && err.code === "default_config_requires_user_config") {
+      if (defaultConfigRequiresUserSave(err)) {
         showToast("默认配置只允许修改节点供应商，请保存为用户配置");
-        await saveUserConfig(applyAfterSave);
+        requestUserConfigSave(applyAfterSave);
         return;
       }
       showToast(err instanceof Error ? err.message : String(err));
     } finally {
       setSaving(false);
     }
-  }, [content, loadFiles, loadMode, loadStatus, saveUserConfig, showToast]);
+  }, [content, loadFiles, loadMode, loadStatus, requestUserConfigSave, showToast]);
 
   const save = useCallback(async (applyAfterSave = false) => {
     if (path === DEFAULT_PATH) {
       await saveDefaultConfig(applyAfterSave);
       return;
     }
-    await saveUserConfig(applyAfterSave);
-  }, [path, saveDefaultConfig, saveUserConfig]);
+    requestUserConfigSave(applyAfterSave);
+  }, [path, requestUserConfigSave, saveDefaultConfig]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -761,6 +785,66 @@ export default function MihomoConfigPage() {
               </button>
             </div>
           </div>
+        </ModalViewport>
+      )}
+
+      {saveDialog && (
+        <ModalViewport onClose={() => setSaveDialog(null)}>
+          <form
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="mihomo-save-user-config-title"
+            className="relative w-full max-w-md overflow-hidden rounded-2xl border border-border/60 bg-card text-card-foreground shadow-2xl animate-scale-in"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void confirmUserConfigSave();
+            }}
+          >
+            <div className="border-b border-border/50 px-5 py-4">
+              <h3 id="mihomo-save-user-config-title" className="text-base font-semibold text-foreground">
+                保存为用户配置
+              </h3>
+              <p className="mt-1 text-sm leading-5 text-muted-foreground">
+                默认配置保持由 MSF 管理，当前内容将另存为可自由编辑的用户配置。
+              </p>
+            </div>
+            <div className="space-y-2 px-5 py-4">
+              <label htmlFor="mihomo-user-config-name" className="text-sm font-medium text-foreground">
+                配置名称
+              </label>
+              <input
+                id="mihomo-user-config-name"
+                autoFocus
+                value={saveDialog.name}
+                onChange={(event) => setSaveDialog((current) => current ? { ...current, name: event.target.value, error: "" } : null)}
+                className="w-full rounded-xl border border-border/70 bg-background/70 px-3 py-2.5 font-mono text-sm text-foreground outline-none transition-[border-color,box-shadow] focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
+                placeholder="例如 user_config_0.yaml"
+                aria-invalid={Boolean(saveDialog.error)}
+                aria-describedby={saveDialog.error ? "mihomo-user-config-name-error" : undefined}
+              />
+              {saveDialog.error && (
+                <p id="mihomo-user-config-name-error" className="text-xs leading-5 text-destructive">
+                  {saveDialog.error}
+                </p>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 border-t border-border/50 px-5 py-4">
+              <button
+                type="button"
+                onClick={() => setSaveDialog(null)}
+                className="rounded-lg border border-border/60 px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
+              >
+                取消
+              </button>
+              <button
+                type="submit"
+                disabled={saving}
+                className="rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+              >
+                {saveDialog.applyAfterSave ? "保存并应用" : "保存配置"}
+              </button>
+            </div>
+          </form>
         </ModalViewport>
       )}
     </AppShell>

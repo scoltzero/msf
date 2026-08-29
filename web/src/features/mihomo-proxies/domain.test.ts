@@ -42,6 +42,21 @@ describe("mihomo proxy normalization", () => {
     expect(second.groupKeys).toBe(first.groupKeys);
   });
 
+  it("classifies a Smart group as a group even when all is empty", () => {
+    const store = normalizeProxySnapshot({
+      groups: [{ name: "Smart", type: "Smart", all: [] }],
+      proxies: {
+        Smart: { name: "Smart", type: "Smart", all: [] },
+        "SomeNode": { name: "SomeNode", type: "Trojan" },
+      },
+    });
+    const entity = store.entities[makeGlobalProxyKey("Smart")];
+    expect(entity.kind).toBe("group");
+    expect(entity.memberKeys).toEqual([]);
+    expect(store.groupKeys.map((key) => store.entities[key].name)).toContain("Smart");
+    expect(store.entities[makeGlobalProxyKey("SomeNode")].kind).toBe("node");
+  });
+
   it("keeps proxy-group array order when config_order is absent", () => {
     const store = normalizeProxySnapshot({
       groups: [

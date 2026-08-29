@@ -253,7 +253,7 @@ func applySetupStringDefaults(cfg *SetupConfig) {
 	if cfg.WebPort == "" {
 		cfg.WebPort = "7777"
 	}
-	cfg.MihomoCoreType = "meta"
+	cfg.MihomoCoreType = normalizeMihomoCoreType(cfg.MihomoCoreType)
 	if cfg.DNSOn == "" {
 		cfg.DNSOn = "127.0.0.1"
 	}
@@ -463,10 +463,10 @@ func (a *App) applyStructuredSetupSection(cfg *SetupConfig, section string, raw 
 			_ = a.writeJSONFile("configs/mosdns/audit_settings.json", map[string]any{"capacity": capacity})
 		case "mihomo_core_type", "mihomoCoreType", "core_type":
 			v := strings.ToLower(strings.TrimSpace(fmtAny(value)))
-			if !oneOf(v, "meta", "mihomo") {
+			if !oneOf(v, "meta", "mihomo", "smart") {
 				return false, false, false, fmt.Errorf("invalid mihomo_core_type")
 			}
-			cfg.MihomoCoreType = "meta"
+			cfg.MihomoCoreType = normalizeMihomoCoreType(v)
 			changed = true
 			regenerateRequired = true
 		case "proxy_core", "proxyCore":

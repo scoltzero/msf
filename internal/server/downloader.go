@@ -3,6 +3,7 @@ package server
 import (
 	"archive/tar"
 	"compress/gzip"
+	"context"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
@@ -30,10 +31,12 @@ type DownloadEvent struct {
 const (
 	componentVerificationSourceGitHubAssetDigest = "github_release_asset_digest"
 	componentVerificationSourceLocalUpload       = "local-upload"
+	defaultMihomoCoreSwitchAccelerator           = "https://gh-proxy.com/"
 )
 
 type componentDownloadAsset struct {
 	URL                string
+	Name               string
 	Digest             string
 	VerificationSource string
 }
@@ -56,7 +59,7 @@ func (a *App) componentDownloadOptions() (string, bool) {
 	return normalizeMihomoCoreType(coreType), amd64v3
 }
 
-func componentDownloadURLFor(component, goos, goarch, _ string, amd64v3 bool) string {
+func componentDownloadURLFor(component, goos, goarch, coreType string, amd64v3 bool) string {
 	switch component {
 	case "mihomo":
 		if goos != "linux" && goos != "darwin" {
@@ -67,6 +70,11 @@ func componentDownloadURLFor(component, goos, goarch, _ string, amd64v3 bool) st
 		}
 		// Official Mihomo assets include the release tag in every filename, so
 		// the concrete download URL is selected from the GitHub Release metadata.
+		// Smart uses the vernesong/mihomo Prerelease-Alpha release, never the
+		// official Meta release stream.
+		if normalizeMihomoCoreType(coreType) == "smart" {
+			return "https://github.com/vernesong/mihomo/releases/tag/Prerelease-Alpha"
+		}
 		return "https://github.com/MetaCubeX/mihomo/releases/latest"
 	case "mosdns":
 		if goos == "darwin" {
@@ -92,9 +100,13 @@ func componentDownloadURLFor(component, goos, goarch, _ string, amd64v3 bool) st
 	}
 }
 
-func normalizeMihomoCoreType(_ string) string {
-	// Alpha is no longer maintained. Preserve compatibility with databases
-	// that still contain "alpha" by migrating all selections to stable Meta.
+func normalizeMihomoCoreType(value string) string {
+	// First-class core types are exactly meta|smart. Legacy "alpha" values and
+	// any invalid/empty selection safely normalize to stable Meta, while a
+	// validated Smart selection is preserved for component download/update.
+	if strings.EqualFold(strings.TrimSpace(value), "smart") {
+		return "smart"
+	}
 	return "meta"
 }
 
@@ -192,6 +204,14 @@ func (a *App) installComponent(component string, emit func(DownloadEvent)) error
 		return err
 	}
 	_ = os.Chmod(target, 0755)
+	if component == "mihomo" {
+		if _, err := a.cacheMihomoCoreCandidate(a.selectedMihomoCoreType(), mihomoCoreCandidate{
+			Binary: target, AssetURL: asset.URL, AssetName: asset.Name, Digest: asset.Digest,
+			Version: a.componentCurrentVersion("mihomo"), VerificationSource: asset.VerificationSource,
+		}); err != nil {
+			return fmt.Errorf("cache installed Mihomo core: %w", err)
+		}
+	}
 	emit(DownloadEvent{Status: "completed", Progress: 100, Message: component + " installed", DownloadDigest: asset.Digest, VerifiedDigest: verifiedDigest, Verified: true, VerificationSource: asset.VerificationSource})
 	return nil
 }
@@ -228,9 +248,154 @@ func (a *App) componentDownloadAssetFromRelease(component string, release github
 	}
 	return componentDownloadAsset{
 		URL:                asset.BrowserDownloadURL,
+		Name:               asset.Name,
 		Digest:             digest,
 		VerificationSource: componentVerificationSourceGitHubAssetDigest,
 	}, nil
+}
+
+func (a *App) selectedMihomoCoreType() string {
+	coreType, _ := a.componentDownloadOptions()
+	return coreType
+}
+
+func (a *App) amd64v3Enabled() bool {
+	_, amd64v3 := a.componentDownloadOptions()
+	return amd64v3
+}
+
+func (a *App) persistMihomoCoreType(coreType string) error {
+	value := normalizeMihomoCoreType(coreType)
+	_, err := a.DB.Exec(`update system_setups set mihomo_core_type=?, updated_at=? where id=(select id from system_setups order by id desc limit 1)`, value, time.Now())
+	return err
+}
+
+// componentDownloadAssetForCoreType resolves and returns the download asset for a
+// specific Mihomo core type (meta|smart). Ordinary component update/check call
+// componentDownloadAsset, which follows the active selected core; the switch
+// endpoint uses this explicit variant so it never silently changes source.
+func (a *App) componentDownloadAssetForCoreType(component, coreType string) (componentDownloadAsset, error) {
+	component = normalizeComponent(component)
+	coreType = normalizeMihomoCoreType(coreType)
+	amd64v3 := a.amd64v3Enabled()
+	url := componentDownloadURLFor(component, runtime.GOOS, runtime.GOARCH, coreType, amd64v3)
+	if url == "" {
+		return componentDownloadAsset{}, fmt.Errorf("no download URL for %s on %s/%s", component, runtime.GOOS, runtime.GOARCH)
+	}
+	release, err := a.componentRemoteInfoForCoreType(component, coreType)
+	if err != nil {
+		return componentDownloadAsset{}, fmt.Errorf("fetch %s release metadata before download: %w", component, err)
+	}
+	return a.componentDownloadAssetFromReleaseForCore(component, coreType, release)
+}
+
+func (a *App) componentDownloadAssetFromReleaseForCore(component, coreType string, release githubRelease) (componentDownloadAsset, error) {
+	component = normalizeComponent(component)
+	coreType = normalizeMihomoCoreType(coreType)
+	amd64v3 := a.amd64v3Enabled()
+	fallback := componentDownloadURLFor(component, runtime.GOOS, runtime.GOARCH, coreType, amd64v3)
+	asset, ok := componentReleaseAssetForCore(release, component, runtime.GOOS, runtime.GOARCH, coreType, amd64v3, fallback)
+	if !ok {
+		want := componentReleaseAssetNameForCore(release, component, runtime.GOOS, runtime.GOARCH, coreType, amd64v3, fallback)
+		if want == "" {
+			want = component
+		}
+		return componentDownloadAsset{}, fmt.Errorf("%s release metadata does not include expected asset %q", component, want)
+	}
+	if strings.TrimSpace(asset.BrowserDownloadURL) == "" {
+		return componentDownloadAsset{}, fmt.Errorf("%s release asset %q has no download URL", component, asset.Name)
+	}
+	digest, err := canonicalSHA256Digest(asset.Digest)
+	if err != nil {
+		return componentDownloadAsset{}, fmt.Errorf("%s release asset %q has no valid SHA-256 digest; use local upload or wait for a verified release: %w", component, asset.Name, err)
+	}
+	return componentDownloadAsset{
+		URL:                asset.BrowserDownloadURL,
+		Name:               asset.Name,
+		Digest:             digest,
+		VerificationSource: componentVerificationSourceGitHubAssetDigest,
+	}, nil
+}
+
+// smartMihomoAssetContains returns deterministic, priority-ordered substrings
+// used to select the vernesong/mihomo Prerelease-Alpha assets. Smart assets are
+// named with an alpha-smart-<commit> suffix, so selection is by pattern rather
+// than by joining a fixed release tag. Ordering is independent of asset order in
+// the release metadata.
+func smartMihomoAssetContains(goos, goarch string, amd64v3 bool) []string {
+	if goos != "linux" && goos != "darwin" {
+		return nil
+	}
+	if goarch != "amd64" && goarch != "arm64" {
+		return nil
+	}
+	prefix := "mihomo-" + goos + "-" + goarch
+	if goos == "darwin" && goarch == "amd64" {
+		return []string{
+			prefix + "-compatible-alpha-smart-",
+			prefix + "-alpha-smart-",
+		}
+	}
+	if goarch == "amd64" {
+		if amd64v3 {
+			return []string{
+				prefix + "-v3-alpha-smart-",
+				prefix + "-v1-alpha-smart-",
+				prefix + "-alpha-smart-",
+			}
+		}
+		return []string{
+			prefix + "-v1-alpha-smart-",
+			prefix + "-alpha-smart-",
+		}
+	}
+	return []string{prefix + "-alpha-smart-"}
+}
+
+// smartMihomoVersionIdentity derives a version identity that changes when the
+// asset commit/digest changes, so the fixed Prerelease-Alpha release tag alone
+// never hides a new Smart build.
+func smartMihomoVersionIdentity(release githubRelease, goos, goarch string, amd64v3 bool) string {
+	asset, ok := componentReleaseAssetForCore(release, "mihomo", goos, goarch, "smart", amd64v3, "")
+	if !ok {
+		return strings.TrimSpace(release.TagName)
+	}
+	if commit := lastComponentCommitToken(asset.Name); commit != "" {
+		return "Prerelease-Alpha-" + commit
+	}
+	if digest := canonicalDigestToken(asset.Digest); digest != "" {
+		return "Prerelease-Alpha-" + digest
+	}
+	tag := strings.TrimSpace(release.TagName)
+	if tag != "" {
+		return tag
+	}
+	return asset.Name
+}
+
+func canonicalDigestToken(value string) string {
+	raw := strings.ToLower(strings.TrimSpace(value))
+	raw = strings.TrimPrefix(raw, "sha256:")
+	raw = strings.Trim(raw, " \\t\\r\\n")
+	if len(raw) == sha256.Size*2 {
+		if _, err := hex.DecodeString(raw); err == nil {
+			return raw
+		}
+	}
+	return ""
+}
+
+// validateMihomoAssetArch ensures the selected asset targets the current
+// operating system and architecture before a candidate is downloaded.
+func validateMihomoAssetArch(assetName, goos, goarch string) error {
+	name := strings.ToLower(strings.TrimSpace(assetName))
+	if goos != "" && !strings.Contains(name, goos) {
+		return fmt.Errorf("mihomo asset %q does not target %s", assetName, goos)
+	}
+	if goarch != "" && !strings.Contains(name, goarch) {
+		return fmt.Errorf("mihomo asset %q does not target %s", assetName, goarch)
+	}
+	return nil
 }
 
 func (a *App) componentTarget(component string) string {
@@ -275,12 +440,23 @@ func extractGzipBinary(src, dst string) error {
 }
 
 func (a *App) downloadFile(rawURL, dest string, emit func(DownloadEvent)) error {
+	return a.downloadFileContext(context.Background(), rawURL, dest, emit)
+}
+
+func (a *App) downloadFileContext(ctx context.Context, rawURL, dest string, emit func(DownloadEvent)) error {
+	return a.downloadResolvedURLContext(ctx, a.rewriteDownloadURL(rawURL), dest, emit)
+}
+
+func (a *App) downloadResolvedURLContext(ctx context.Context, finalURL, dest string, emit func(DownloadEvent)) error {
 	if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
 		return err
 	}
-	finalURL := a.rewriteDownloadURL(rawURL)
 	client := a.downloadHTTPClient()
-	resp, err := client.Get(finalURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, finalURL, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
@@ -327,11 +503,19 @@ func (a *App) downloadFile(rawURL, dest string, emit func(DownloadEvent)) error 
 }
 
 func (a *App) downloadVerifiedFile(rawURL, expectedDigest, dest string, emit func(DownloadEvent)) (string, error) {
+	return a.downloadVerifiedFileContext(context.Background(), rawURL, expectedDigest, dest, emit)
+}
+
+func (a *App) downloadVerifiedFileContext(ctx context.Context, rawURL, expectedDigest, dest string, emit func(DownloadEvent)) (string, error) {
+	return a.downloadVerifiedResolvedURLContext(ctx, a.rewriteDownloadURL(rawURL), expectedDigest, dest, emit)
+}
+
+func (a *App) downloadVerifiedResolvedURLContext(ctx context.Context, finalURL, expectedDigest, dest string, emit func(DownloadEvent)) (string, error) {
 	expected, err := canonicalSHA256Digest(expectedDigest)
 	if err != nil {
-		return "", fmt.Errorf("download %s requires a valid SHA-256 digest: %w", rawURL, err)
+		return "", fmt.Errorf("download %s requires a valid SHA-256 digest: %w", finalURL, err)
 	}
-	if err := a.downloadFile(rawURL, dest, emit); err != nil {
+	if err := a.downloadResolvedURLContext(ctx, finalURL, dest, emit); err != nil {
 		return "", err
 	}
 	actual, err := verifySHA256File(dest, expected)
@@ -339,6 +523,13 @@ func (a *App) downloadVerifiedFile(rawURL, expectedDigest, dest string, emit fun
 		return actual, err
 	}
 	return actual, nil
+}
+
+func (a *App) mihomoCoreSwitchDownloadURL(rawURL string) string {
+	if rewritten := a.rewriteDownloadURL(rawURL); rewritten != rawURL {
+		return rewritten
+	}
+	return defaultMihomoCoreSwitchAccelerator + rawURL
 }
 
 func verifySHA256File(path, expectedDigest string) (string, error) {
@@ -381,11 +572,30 @@ func (a *App) DownloadFile(rawURL, dest string, emit func(DownloadEvent)) error 
 func (a *App) downloadHTTPClient() *http.Client {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	if a != nil && a.DB != nil {
-		if proxy := a.downloadProxyURL(); proxy != nil {
+		proxy := a.downloadProxyURL()
+		if proxy == nil {
+			proxy = a.runningMihomoDownloadProxyURL()
+		}
+		if proxy != nil {
 			transport.Proxy = http.ProxyURL(proxy)
 		}
 	}
-	return &http.Client{Timeout: 10 * time.Minute, Transport: transport}
+	return &http.Client{Timeout: 30 * time.Minute, Transport: transport}
+}
+
+// runningMihomoDownloadProxyURL lets component downloads use the already
+// running Mihomo data plane when no explicit GitHub download proxy was saved.
+// This is safe for core replacement because the candidate is fully downloaded
+// and verified before the running core is stopped or replaced.
+func (a *App) runningMihomoDownloadProxyURL() *url.URL {
+	if a == nil || a.Services == nil || !a.Services.Status("mihomo").Running {
+		return nil
+	}
+	proxy, err := a.mihomoExitProxyURL()
+	if err != nil {
+		return nil
+	}
+	return proxy
 }
 
 func (a *App) downloadProxyURL() *url.URL {

@@ -9,6 +9,7 @@ import {
   Eye,
   EyeOff,
   FileText,
+  GitBranch,
   Languages,
   Loader2,
   Menu,
@@ -77,7 +78,7 @@ interface SubscriptionRow {
 interface InitConfigState {
   iface: string;
   proxyCore: "Mihomo" | "无";
-  mihomoType: "Meta";
+  mihomoType: "Meta" | "Smart";
   proxyMode: "nft" | "tun";
   autoDns: boolean;
   dnsEnable: string;
@@ -141,7 +142,7 @@ interface ReleaseItem {
   assets?: ReleaseAsset[];
 }
 
-interface ComponentUpdateState {
+export interface ComponentUpdateState {
   component?: string;
   current_version?: string;
   current_version_detail?: string;
@@ -160,6 +161,9 @@ interface ComponentUpdateState {
   installed_verification_source?: string;
   installed_verified_at?: string;
   last_check_time?: string;
+  core_type?: string;
+  installed_core_type?: string;
+  release_source?: string;
 }
 
 interface UpdateConfigState {
@@ -176,6 +180,42 @@ interface ComponentUpdateConfigState {
   auto_check: boolean;
   check_interval: number;
   auto_update: boolean;
+}
+
+export type MihomoCoreType = "meta" | "smart";
+
+export const MIHOMO_SWITCH_ENDPOINT = "/api/v1/component-updates/mihomo/switch";
+
+export function normalizeMihomoCoreType(value: unknown): MihomoCoreType {
+  return String(value ?? "").toLowerCase() === "smart" ? "smart" : "meta";
+}
+
+export function mihomoActiveCore(item?: ComponentUpdateState): MihomoCoreType {
+  return normalizeMihomoCoreType(item?.core_type || item?.installed_core_type);
+}
+
+export function mihomoSwitchBody(coreType: MihomoCoreType): string {
+  return JSON.stringify({ core_type: coreType });
+}
+
+export function mihomoSwitchConfirm(coreType: MihomoCoreType): string {
+  return coreType === "smart"
+    ? "切换到 Smart 实验版？此为第三方预发布版本，仅为 Smart 分流组设计。"
+    : "切换到官方 Meta 稳定版？系统会先退出当前用户配置并恢复 MSF 默认配置，再切换核心；用户配置文件会保留，切换成功后可自行调整并重新应用。";
+}
+
+export function mihomoCoreLabel(coreType: MihomoCoreType): string {
+  return coreType === "smart" ? "Smart 实验版" : "官方 Meta";
+}
+
+export function mihomoCurrentVersionLabel(item?: ComponentUpdateState): string {
+  const version = item?.current_version || "-";
+  return `${mihomoActiveCore(item) === "smart" ? "Smart Alpha" : "Meta"} · ${version}`;
+}
+
+export function mihomoReleaseSourceLabel(item?: ComponentUpdateState): string {
+  if (item?.release_source) return item.release_source;
+  return mihomoActiveCore(item) === "smart" ? "Smart 实验版" : "官方稳定版";
 }
 
 interface ProfileInfo {
@@ -298,6 +338,8 @@ function statusLabel(status?: string) {
       return "安装中";
     case "restarting":
       return "重启中";
+    case "switching":
+      return "核心切换中";
     case "failed":
       return "失败";
     case "running":
@@ -522,7 +564,7 @@ function setupToInitConfig(raw: any, forceTun = false, forceAutoDNS = false): In
   return {
     iface: String(data.selected_interface || data.selectedInterface || ""),
     proxyCore: String(data.proxy_core || data.proxyCore || "mihomo").toLowerCase() === "none" ? "无" : "Mihomo",
-    mihomoType: "Meta",
+    mihomoType: normalizeMihomoCoreType(data.mihomo_core_type ?? data.mihomoCoreType) === "smart" ? "Smart" : "Meta",
     proxyMode: forceTun || String(data.linux_proxy_mode || "nft").toLowerCase() === "tun" ? "tun" : "nft",
     autoDns: forceAutoDNS || (data.auto_set_dns ?? data.autoSetDNS ?? true),
     dnsEnable: String(data.dns_on || data.dnsOn || "127.0.0.1"),
@@ -547,7 +589,6 @@ function initConfigToSetupPayload(config: InitConfigState) {
   return {
     selected_interface: config.iface,
     proxy_core: config.proxyCore === "无" ? "none" : "mihomo",
-    mihomo_core_type: "meta",
     linux_proxy_mode: config.proxyMode,
     auto_set_dns: config.autoDns,
     dns_on: config.dnsEnable,
@@ -2117,6 +2158,9 @@ function ComponentUpdateCard({
   onCheck,
   onUpdate,
   onConfigChange,
+  onSwitchCore,
+  switching,
+  coreSwitchError,
 }: {
   name: string;
   component: string;
@@ -2127,6 +2171,9 @@ function ComponentUpdateCard({
   onCheck: (component: string) => void;
   onUpdate: (component: string) => void;
   onConfigChange: (component: string, patch: Partial<ComponentUpdateConfigState>) => void;
+  onSwitchCore?: (coreType: MihomoCoreType) => void;
+  switching?: boolean;
+  coreSwitchError?: string;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const current = item?.current_version || "-";
@@ -2135,17 +2182,21 @@ function ComponentUpdateCard({
   const hasUpdate = Boolean(item?.has_update);
   const canUpdate = Boolean(item?.can_update || item?.has_update);
   const isBusy = busy === component;
+  const actionBusy = isBusy || Boolean(component === "mihomo" && switching);
   const progress = typeof item?.progress === "number" ? item.progress : 0;
   const effectiveConfig = config || { component, auto_check: true, check_interval: 43200, auto_update: false };
   const installedVerified = Boolean(item?.installed_verified_at || item?.verified);
   const localUploaded = item?.installed_verification_source === "local-upload" || item?.verification_source === "local-upload";
   const VerificationIcon = installedVerified ? Check : ShieldAlert;
   const verificationTone = installedVerified ? "text-green-600" : localUploaded ? "text-amber-600" : "text-muted-foreground";
-  const releaseLink = COMPONENT_RELEASE_LINKS[component];
+  const activeCore = mihomoActiveCore(item);
+  const releaseLink = component === "mihomo" && activeCore === "smart"
+    ? { label: "vernesong/mihomo · Prerelease-Alpha", url: "https://github.com/vernesong/mihomo/releases/tag/Prerelease-Alpha" }
+    : COMPONENT_RELEASE_LINKS[component];
 
   return (
     <div className="rounded-xl border border-border/50 p-4">
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div className="mb-4 flex flex-col gap-3 2xl:flex-row 2xl:items-start 2xl:justify-between">
         <div className="min-w-0">
           <div className="flex items-center gap-2 font-semibold text-foreground">
             {name}
@@ -2170,9 +2221,12 @@ function ComponentUpdateCard({
               发布页: {releaseLink.label}
             </a>
           ) : null}
-          {item?.error_message ? <div className="mt-1 text-xs text-destructive">{item.error_message}</div> : null}
+          {item?.error_message || coreSwitchError ? <div className="mt-1 text-xs text-destructive">{item?.error_message || `核心切换失败：${coreSwitchError}`}</div> : null}
         </div>
-        <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end sm:pt-0.5">
+        <div className={cn(
+          "shrink-0 items-center gap-2 2xl:justify-end 2xl:pt-0.5",
+          component === "mihomo" ? "grid grid-cols-2 2xl:flex 2xl:flex-wrap" : "flex flex-wrap"
+        )}>
           <input
             ref={fileRef}
             type="file"
@@ -2184,15 +2238,26 @@ function ComponentUpdateCard({
               event.currentTarget.value = "";
             }}
           />
-          <OutlineButton disabled={isBusy} onClick={() => fileRef.current?.click()} className="h-8 min-w-[76px] px-3 text-xs">
+          <OutlineButton disabled={actionBusy} onClick={() => fileRef.current?.click()} className="h-8 min-w-[76px] px-3 text-xs">
             <Upload className="h-3.5 w-3.5" />
             本地上传
           </OutlineButton>
-          <OutlineButton disabled={isBusy} onClick={() => onCheck(component)} className="h-8 min-w-[76px] px-3 text-xs">
+          {component === "mihomo" && onSwitchCore ? (
+            <OutlineButton
+              disabled={actionBusy}
+              onClick={() => onSwitchCore(activeCore === "smart" ? "meta" : "smart")}
+              title={`当前 ${mihomoCoreLabel(activeCore)}；点击切换到 ${mihomoCoreLabel(activeCore === "smart" ? "meta" : "smart")}`}
+              className="h-8 min-w-[82px] px-3 text-xs"
+            >
+              {switching ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <GitBranch className="h-3.5 w-3.5" />}
+              {switching ? "切换中" : "核心切换"}
+            </OutlineButton>
+          ) : null}
+          <OutlineButton disabled={actionBusy} onClick={() => onCheck(component)} className="h-8 min-w-[76px] px-3 text-xs">
             <RefreshCw className={cn("h-3.5 w-3.5", isBusy && "animate-spin")} />
             检查更新
           </OutlineButton>
-          <PrimaryButton disabled={isBusy || !canUpdate} onClick={() => onUpdate(component)} className="h-8 min-w-[52px] px-3 text-xs">
+          <PrimaryButton disabled={actionBusy || !canUpdate} onClick={() => onUpdate(component)} className="h-8 min-w-[52px] px-3 text-xs">
             {hasUpdate ? "更新" : "覆盖更新"}
           </PrimaryButton>
         </div>
@@ -2211,7 +2276,7 @@ function ComponentUpdateCard({
       <div className="grid gap-2 text-sm md:grid-cols-2">
         <div className="rounded-lg bg-muted/20 p-3">
           <div className="text-xs text-muted-foreground">当前版本</div>
-          <div className="mt-1 font-mono text-foreground">{current}</div>
+          <div className="mt-1 font-mono text-foreground">{component === "mihomo" ? mihomoCurrentVersionLabel(item) : current}</div>
           <div className="mt-1 break-all text-xs text-muted-foreground">{currentDetail ? `详情: ${currentDetail}` : "时间: -"}</div>
         </div>
         <div className="rounded-lg bg-muted/20 p-3">
@@ -2254,6 +2319,8 @@ function UpdateTab({ showToast }: { showToast: (message: string) => void }) {
   const [componentUpdates, setComponentUpdates] = useState<ComponentUpdateState[]>([]);
   const [componentConfigs, setComponentConfigs] = useState<Record<string, ComponentUpdateConfigState>>({});
   const [componentBusy, setComponentBusy] = useState("");
+  const [coreSwitching, setCoreSwitching] = useState(false);
+  const [coreSwitchError, setCoreSwitchError] = useState("");
   const [repoError, setRepoError] = useState("");
   const [restartPending, setRestartPending] = useState(false);
   const restartRefreshTimer = useRef<number | null>(null);
@@ -2687,6 +2754,43 @@ function UpdateTab({ showToast }: { showToast: (message: string) => void }) {
     }
   };
 
+  const switchMihomoCore = async (coreType: MihomoCoreType) => {
+    const target = normalizeMihomoCoreType(coreType);
+    const active = mihomoActiveCore(componentItem("mihomo"));
+    if (target === active) return;
+    if (!window.confirm(mihomoSwitchConfirm(target))) return;
+    setCoreSwitching(true);
+    setCoreSwitchError("");
+    const progressTimer = window.setInterval(() => {
+      void reloadComponents().catch(() => undefined);
+    }, 1500);
+    try {
+      const payload = await api<any>(MIHOMO_SWITCH_ENDPOINT, {
+        method: "POST",
+        body: mihomoSwitchBody(target),
+      });
+      if (payload?.success === false) {
+        const message = payload.error || payload.message || "未知错误";
+        setCoreSwitchError(message);
+        showToast(`切换失败: ${message}`);
+      } else {
+        showToast(target === "smart" ? "已切换到 Smart 实验版" : "已切换到官方 Meta 稳定版");
+      }
+    } catch (err) {
+      const message = errorMessage(err);
+      setCoreSwitchError(message);
+      showToast(`切换失败: ${message}`);
+    } finally {
+      window.clearInterval(progressTimer);
+      setCoreSwitching(false);
+      try {
+        await reloadComponents();
+      } catch {
+        // Ignore refresh failures; the next poll/data load will reconcile.
+      }
+    }
+  };
+
   const updateProgress = Math.min(100, Math.max(0, typeof displayUpdateStatus.progress === "number" ? displayUpdateStatus.progress : 0));
   const showUpdateProgress = updateBusy || updateProgress > 0 || activeUpdatePhase === "downloaded" || activeUpdatePhase === "completed" || activeUpdatePhase === "failed";
   const indeterminateProgress = updateBusy && (activeUpdatePhase === "connecting" || updateProgress <= 3);
@@ -2888,7 +2992,7 @@ function UpdateTab({ showToast }: { showToast: (message: string) => void }) {
         <p className="mb-4 text-sm text-muted-foreground">组件更新管理</p>
         <div className="grid gap-4 lg:grid-cols-2">
           <ComponentUpdateCard name="MosDNS" component="mosdns" item={componentItem("mosdns")} config={componentConfigs.mosdns} busy={componentBusy} onUpload={uploadComponent} onCheck={checkComponent} onUpdate={updateComponent} onConfigChange={(item, patch) => void saveComponentConfig(item, patch)} />
-          <ComponentUpdateCard name="Mihomo" component="mihomo" item={componentItem("mihomo")} config={componentConfigs.mihomo} busy={componentBusy} onUpload={uploadComponent} onCheck={checkComponent} onUpdate={updateComponent} onConfigChange={(item, patch) => void saveComponentConfig(item, patch)} />
+          <ComponentUpdateCard name="Mihomo" component="mihomo" item={componentItem("mihomo")} config={componentConfigs.mihomo} busy={componentBusy} onUpload={uploadComponent} onCheck={checkComponent} onUpdate={updateComponent} onConfigChange={(item, patch) => void saveComponentConfig(item, patch)} onSwitchCore={switchMihomoCore} switching={coreSwitching} coreSwitchError={coreSwitchError} />
           <ComponentUpdateCard name="Zashboard" component="zashboard" item={componentItem("zashboard")} config={componentConfigs.zashboard} busy={componentBusy} onUpload={uploadComponent} onCheck={checkComponent} onUpdate={updateComponent} onConfigChange={(item, patch) => void saveComponentConfig(item, patch)} />
         </div>
       </Card>

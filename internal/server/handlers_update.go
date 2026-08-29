@@ -2,11 +2,13 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -51,6 +53,7 @@ func (a *App) registerUpdateRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/component-updates/{component}/check", a.handleComponentUpdateCheck)
 	mux.HandleFunc("POST /api/v1/component-updates/{component}/update", a.handleComponentUpdateRun)
 	mux.HandleFunc("POST /api/v1/component-updates/{component}/upload", a.handleComponentUpdateUpload)
+	mux.HandleFunc("POST /api/v1/component-updates/mihomo/switch", a.handleMihomoCoreSwitch)
 	mux.HandleFunc("GET /api/v1/component-updates/{component}/config", a.handleComponentUpdateConfig)
 	mux.HandleFunc("PUT /api/v1/component-updates/{component}/config", a.handleComponentUpdateConfigPut)
 }
@@ -721,6 +724,10 @@ func (a *App) handleComponentUpdateRun(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_component", "unknown component")
 		return
 	}
+	if component == "mihomo" {
+		a.configApplyMu.Lock()
+		defer a.configApplyMu.Unlock()
+	}
 	now := time.Now()
 	state := a.componentUpdateState(component)
 	latestVersion := componentStateString(state, "latest_version")
@@ -851,6 +858,14 @@ func (a *App) componentUpdateState(component string) map[string]any {
 		"progress":                      0,
 		"error_message":                 "",
 	}
+	if component == "mihomo" {
+		coreType := a.selectedMihomoCoreType()
+		state["core_type"] = coreType
+		if installed {
+			state["installed_core_type"] = coreType
+		}
+		state["release_source"] = mihomoCoreReleaseSource(coreType)
+	}
 	if display, detail := componentDisplayCurrentVersion(component, current, "-"); display != current {
 		state["current_version"] = display
 		state["current_version_detail"] = detail
@@ -912,10 +927,17 @@ func (a *App) componentUpdateState(component string) map[string]any {
 }
 
 func (a *App) componentRemoteInfo(component string) (githubRelease, error) {
+	return a.componentRemoteInfoForCoreType(component, a.selectedMihomoCoreType())
+}
+
+func (a *App) componentRemoteInfoForCoreType(component, coreType string) (githubRelease, error) {
 	switch normalizeComponent(component) {
 	case "mosdns":
 		return a.fetchLatestRelease("yyysuo", "mosdns")
 	case "mihomo":
+		if normalizeMihomoCoreType(coreType) == "smart" {
+			return a.fetchReleaseByTag("vernesong", "mihomo", "Prerelease-Alpha")
+		}
 		return a.fetchLatestRelease("MetaCubeX", "mihomo")
 	case "zashboard":
 		return a.fetchLatestRelease("Zephyruso", "zashboard")
@@ -926,6 +948,7 @@ func (a *App) componentRemoteInfo(component string) (githubRelease, error) {
 
 var componentVersionTokenRE = regexp.MustCompile(`(?i)(v?5-ph-srs-[0-9a-z._-]+|ph-yyds-[0-9a-z._-]+|v?\d+(?:\.\d+){1,3}(?:[-+][0-9a-z._-]+)?)`)
 var componentCommitTokenRE = regexp.MustCompile(`(?i)\b[0-9a-f]{7,40}\b`)
+var mihomoSmartVersionTokenRE = regexp.MustCompile(`(?i)\balpha-smart-[0-9a-z._-]+`)
 
 func (a *App) componentRemoteVersion(component string, release githubRelease) string {
 	component = normalizeComponent(component)
@@ -941,6 +964,11 @@ func (a *App) componentRemoteVersion(component string, release githubRelease) st
 			return v
 		}
 	case "mihomo":
+		if a.selectedMihomoCoreType() == "smart" {
+			if v := smartMihomoVersionIdentity(release, runtime.GOOS, runtime.GOARCH, a.amd64v3Enabled()); v != "" {
+				return v
+			}
+		}
 		if v := strings.TrimSpace(release.TagName); v != "" {
 			return v
 		}
@@ -1159,6 +1187,9 @@ func componentDisplayCurrentVersion(component, current, latest string) (string, 
 			return latest, current
 		}
 	case "mihomo":
+		if version := mihomoSmartVersionTokenRE.FindString(current); version != "" {
+			return version, current
+		}
 		if version := firstVersionToken(current); version != "" && version != current {
 			return version, current
 		}
@@ -1386,6 +1417,7 @@ type githubAsset struct {
 	Name               string `json:"name"`
 	BrowserDownloadURL string `json:"browser_download_url"`
 	Digest             string `json:"digest"`
+	Size               int64  `json:"size"`
 }
 
 type githubRelease struct {
@@ -1400,6 +1432,12 @@ type githubRelease struct {
 func (a *App) fetchLatestRelease(owner, repo string) (githubRelease, error) {
 	var release githubRelease
 	err := a.fetchGitHubJSON(fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", owner, repo), &release)
+	return release, err
+}
+
+func (a *App) fetchReleaseByTag(owner, repo, tag string) (githubRelease, error) {
+	var release githubRelease
+	err := a.fetchGitHubJSON(fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/tags/%s", owner, repo, url.PathEscape(tag)), &release)
 	return release, err
 }
 
@@ -1460,11 +1498,27 @@ func selfUpdateAssetContainsFor(goos, goarch string) string {
 }
 
 func (a *App) componentReleaseAsset(release githubRelease, component string) (githubAsset, bool) {
-	_, amd64v3 := a.componentDownloadOptions()
-	return componentReleaseAssetFor(release, component, runtime.GOOS, runtime.GOARCH, amd64v3, a.componentDownloadURL(component))
+	coreType, amd64v3 := a.componentDownloadOptions()
+	return componentReleaseAssetForCore(release, component, runtime.GOOS, runtime.GOARCH, coreType, amd64v3, a.componentDownloadURL(component))
 }
 
 func componentReleaseAssetFor(release githubRelease, component, goos, goarch string, amd64v3 bool, fallbackURL string) (githubAsset, bool) {
+	return componentReleaseAssetForCore(release, component, goos, goarch, "meta", amd64v3, fallbackURL)
+}
+
+func componentReleaseAssetForCore(release githubRelease, component, goos, goarch, coreType string, amd64v3 bool, fallbackURL string) (githubAsset, bool) {
+	component = normalizeComponent(component)
+	if component == "mihomo" && normalizeMihomoCoreType(coreType) == "smart" {
+		for _, pattern := range smartMihomoAssetContains(goos, goarch, amd64v3) {
+			for _, asset := range release.Assets {
+				name := strings.ToLower(asset.Name)
+				if strings.Contains(name, pattern) && strings.HasSuffix(name, ".gz") {
+					return asset, true
+				}
+			}
+		}
+		return githubAsset{}, false
+	}
 	for _, want := range componentReleaseAssetNamesFor(release, component, goos, goarch, amd64v3, fallbackURL) {
 		for _, asset := range release.Assets {
 			if strings.EqualFold(asset.Name, want) {
@@ -1476,11 +1530,22 @@ func componentReleaseAssetFor(release githubRelease, component, goos, goarch str
 }
 
 func (a *App) componentReleaseAssetName(release githubRelease, component string) string {
-	_, amd64v3 := a.componentDownloadOptions()
-	return componentReleaseAssetNameFor(release, component, runtime.GOOS, runtime.GOARCH, amd64v3, a.componentDownloadURL(component))
+	coreType, amd64v3 := a.componentDownloadOptions()
+	return componentReleaseAssetNameForCore(release, component, runtime.GOOS, runtime.GOARCH, coreType, amd64v3, a.componentDownloadURL(component))
 }
 
 func componentReleaseAssetNameFor(release githubRelease, component, goos, goarch string, amd64v3 bool, fallbackURL string) string {
+	return componentReleaseAssetNameForCore(release, component, goos, goarch, "meta", amd64v3, fallbackURL)
+}
+
+func componentReleaseAssetNameForCore(release githubRelease, component, goos, goarch, coreType string, amd64v3 bool, fallbackURL string) string {
+	if component == "mihomo" && normalizeMihomoCoreType(coreType) == "smart" {
+		patterns := smartMihomoAssetContains(goos, goarch, amd64v3)
+		if len(patterns) == 0 {
+			return ""
+		}
+		return patterns[0]
+	}
 	names := componentReleaseAssetNamesFor(release, component, goos, goarch, amd64v3, fallbackURL)
 	if len(names) == 0 {
 		return ""
@@ -1554,4 +1619,426 @@ func versionDifferent(current, latest string) bool {
 	current = strings.TrimPrefix(strings.TrimSpace(strings.ToLower(current)), "v")
 	latest = strings.TrimPrefix(strings.TrimSpace(strings.ToLower(latest)), "v")
 	return current != "" && latest != "" && current != latest && !strings.Contains(current, latest) && !strings.Contains(current, "dev")
+}
+
+// mihomoCoreSwitchResult is the response payload for a Mihomo core switch.
+type mihomoCoreSwitchResult struct {
+	From                  string `json:"from"`
+	To                    string `json:"to"`
+	PreviousCore          string `json:"previous_core"`
+	Version               string `json:"version"`
+	Restarted             bool   `json:"restarted"`
+	ControllerOK          bool   `json:"controller_ok"`
+	DefaultConfigRestored bool   `json:"default_config_restored,omitempty"`
+	PreviousUserConfig    string `json:"previous_user_config,omitempty"`
+	ConfigMode            string `json:"config_mode,omitempty"`
+	UsedCachedCore        bool   `json:"used_cached_core,omitempty"`
+}
+
+type mihomoCoreSwitchConfigSnapshot struct {
+	Files       []generatedConfigSnapshot
+	Mode        string
+	AppliedPath string
+}
+
+func (a *App) prepareMihomoMetaSwitchDefaultConfig() (*mihomoCoreSwitchConfigSnapshot, error) {
+	snapshot := &mihomoCoreSwitchConfigSnapshot{
+		Mode:        a.mihomoConfigMode(),
+		AppliedPath: a.setting(mihomoAppliedUserConfigKey, ""),
+	}
+	for _, rel := range []string{mihomoActiveConfigRelPath, "configs/mihomo/proxy_providers/msf_manual.yaml"} {
+		path, err := a.safePath(rel)
+		if err != nil {
+			return nil, err
+		}
+		file := generatedConfigSnapshot{Rel: rel, Path: path, Mode: 0o644}
+		if info, statErr := os.Stat(path); statErr == nil {
+			file.Existed = true
+			file.Mode = info.Mode().Perm()
+			file.Content, err = os.ReadFile(path)
+			if err != nil {
+				return nil, err
+			}
+		} else if !os.IsNotExist(statErr) {
+			return nil, statErr
+		}
+		snapshot.Files = append(snapshot.Files, file)
+	}
+	cfg, ok := a.latestSetupConfig()
+	if !ok {
+		return nil, fmt.Errorf("initialized setup config is unavailable")
+	}
+	cfg.MihomoCoreType = "meta"
+	if _, err := a.restoreMihomoGeneratedConfig(&cfg); err != nil {
+		return nil, err
+	}
+	a.setMihomoConfigMode("generated")
+	a.setSetting(mihomoAppliedUserConfigKey, "")
+	return snapshot, nil
+}
+
+func (a *App) restoreMihomoCoreSwitchConfig(snapshot *mihomoCoreSwitchConfigSnapshot, restart bool) error {
+	if snapshot == nil {
+		return nil
+	}
+	for index := len(snapshot.Files) - 1; index >= 0; index-- {
+		file := snapshot.Files[index]
+		if !file.Existed {
+			if err := os.Remove(file.Path); err != nil && !os.IsNotExist(err) {
+				return err
+			}
+			continue
+		}
+		if err := restoreGeneratedConfigSnapshot(file); err != nil {
+			return err
+		}
+	}
+	a.setMihomoConfigMode(snapshot.Mode)
+	a.setSetting(mihomoAppliedUserConfigKey, snapshot.AppliedPath)
+	if restart && a.Services.Status("mihomo").Running {
+		if _, err := a.Services.Restart(context.Background(), "mihomo"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// mihomoCoreSwitchOps decouples the core switch transaction from the live
+// service manager and controller so it can be exercised deterministically in
+// tests without touching a real running Mihomo process.
+type mihomoCoreSwitchOps struct {
+	Running     func() bool
+	Restart     func(context.Context) error
+	Probe       func() error
+	CurrentCore func() string
+	PersistCore func(string) error
+}
+
+func (a *App) defaultMihomoCoreSwitchOps() mihomoCoreSwitchOps {
+	return mihomoCoreSwitchOps{
+		Running:     func() bool { return a.Services.Status("mihomo").Running },
+		Restart:     func(ctx context.Context) error { _, err := a.Services.Restart(ctx, "mihomo"); return err },
+		Probe:       func() error { return a.probeMihomoController() },
+		CurrentCore: func() string { return a.selectedMihomoCoreType() },
+		PersistCore: func(v string) error { return a.persistMihomoCoreType(v) },
+	}
+}
+
+func (a *App) handleMihomoCoreSwitch(w http.ResponseWriter, r *http.Request) {
+	if !a.requireAdmin(r) {
+		writeError(w, http.StatusForbidden, "forbidden", "admin required")
+		return
+	}
+	a.configApplyMu.Lock()
+	defer a.configApplyMu.Unlock()
+	var req struct {
+		CoreType string `json:"core_type"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	target := strings.ToLower(strings.TrimSpace(req.CoreType))
+	if target != "meta" && target != "smart" {
+		writeError(w, http.StatusBadRequest, "bad_request", "core_type must be meta or smart")
+		return
+	}
+	if !a.IsInitialized() {
+		writeError(w, http.StatusConflict, "not_initialized", "system is not initialized")
+		return
+	}
+	activeConfig := filepath.Join(a.DataDir, mihomoActiveConfigRelPath)
+	if _, err := os.Stat(activeConfig); err != nil {
+		writeError(w, http.StatusConflict, "missing_config", "active mihomo config is not available")
+		return
+	}
+	current := a.selectedMihomoCoreType()
+	if target == current {
+		writeJSON(w, http.StatusOK, map[string]any{"success": true, "already": true, "data": mihomoCoreSwitchResult{From: current, To: target}})
+		return
+	}
+	switchCtx, cancel := context.WithTimeout(r.Context(), 30*time.Minute)
+	defer cancel()
+	a.setMihomoCoreSwitchState(target, "switching", 5, "")
+	if _, cacheErr := a.cacheMihomoCoreCandidate(current, mihomoCoreCandidate{
+		Binary: a.componentTarget("mihomo"), Version: a.componentCurrentVersion("mihomo"),
+		VerificationSource: mihomoCoreCacheVerificationSource,
+	}); cacheErr != nil {
+		a.setMihomoCoreSwitchState(target, "failed", 0, cacheErr.Error())
+		writeError(w, http.StatusInternalServerError, "cache_current_core_failed", cacheErr.Error())
+		return
+	}
+	var configSnapshot *mihomoCoreSwitchConfigSnapshot
+	if current == "smart" && target == "meta" {
+		var prepareErr error
+		configSnapshot, prepareErr = a.prepareMihomoMetaSwitchDefaultConfig()
+		if prepareErr != nil {
+			a.setMihomoCoreSwitchState(target, "failed", 0, prepareErr.Error())
+			writeError(w, http.StatusInternalServerError, "default_config_restore_failed", prepareErr.Error())
+			return
+		}
+	}
+	candidate, err := a.resolveMihomoCoreCandidate(switchCtx, target, func(event DownloadEvent) {
+		a.setMihomoCoreSwitchState(target, "switching", event.Progress, "")
+	})
+	if err != nil {
+		if restoreErr := a.restoreMihomoCoreSwitchConfig(configSnapshot, false); restoreErr != nil {
+			err = fmt.Errorf("%w; restore previous config: %v", err, restoreErr)
+		}
+		a.setMihomoCoreSwitchState(target, "failed", 0, err.Error())
+		writeError(w, http.StatusInternalServerError, "resolve_failed", err.Error())
+		return
+	}
+	defer candidate.cleanup()
+	result, err := a.switchMihomoCore(switchCtx, target, candidate)
+	if err != nil {
+		if restoreErr := a.restoreMihomoCoreSwitchConfig(configSnapshot, true); restoreErr != nil {
+			err = fmt.Errorf("%w; restore previous config: %v", err, restoreErr)
+		}
+		a.setMihomoCoreSwitchState(target, "failed", 0, err.Error())
+		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": err.Error(), "data": result})
+		return
+	}
+	if configSnapshot != nil {
+		result.DefaultConfigRestored = true
+		result.PreviousUserConfig = configSnapshot.AppliedPath
+		result.ConfigMode = "generated"
+	}
+	result.UsedCachedCore = candidate.FromCache
+	now := time.Now()
+	_, _ = a.DB.Exec(`insert into component_update_info(component,current_version,latest_version,has_update,download_url,download_digest,verified_digest,verified,verification_source,installed_verified_digest,installed_verification_source,installed_verified_at,status,progress,error_message,last_check_time,created_at,updated_at)
+		values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		on conflict(component) do update set current_version=excluded.current_version,latest_version=excluded.latest_version,has_update=false,download_url=excluded.download_url,download_digest=excluded.download_digest,verified_digest=excluded.verified_digest,verified=true,verification_source=excluded.verification_source,installed_verified_digest=excluded.installed_verified_digest,installed_verification_source=excluded.installed_verification_source,installed_verified_at=excluded.installed_verified_at,status='completed',progress=100,error_message='',last_check_time=excluded.last_check_time,updated_at=excluded.updated_at`,
+		"mihomo", result.Version, result.Version, false, candidate.AssetURL, candidate.Digest, candidate.Digest, true, firstNonEmpty(candidate.VerificationSource, componentVerificationSourceGitHubAssetDigest), candidate.Digest, firstNonEmpty(candidate.VerificationSource, componentVerificationSourceGitHubAssetDigest), now, "completed", 100, "", now, now, now)
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "data": result, "from": result.From, "to": result.To})
+}
+
+func (a *App) setMihomoCoreSwitchState(target, status string, progress int, errorMessage string) {
+	if progress < 0 {
+		progress = 0
+	}
+	if progress > 100 {
+		progress = 100
+	}
+	now := time.Now()
+	current := a.componentCurrentVersion("mihomo")
+	downloadURL := componentDownloadURLFor("mihomo", runtime.GOOS, runtime.GOARCH, target, a.amd64v3Enabled())
+	_, _ = a.DB.Exec(`insert into component_update_info(component,current_version,latest_version,has_update,download_url,status,progress,error_message,last_check_time,created_at,updated_at)
+		values(?,?,?,?,?,?,?,?,?,?,?)
+		on conflict(component) do update set current_version=excluded.current_version,download_url=excluded.download_url,status=excluded.status,progress=excluded.progress,error_message=excluded.error_message,last_check_time=excluded.last_check_time,updated_at=excluded.updated_at`,
+		"mihomo", current, "-", true, downloadURL, status, progress, errorMessage, now, now, now)
+}
+
+func mihomoCoreReleaseSource(coreType string) string {
+	if normalizeMihomoCoreType(coreType) == "smart" {
+		return "vernesong/mihomo · Prerelease-Alpha"
+	}
+	return "MetaCubeX/mihomo · stable"
+}
+
+func (a *App) switchMihomoCore(ctx context.Context, target string, candidate mihomoCoreCandidate) (mihomoCoreSwitchResult, error) {
+	return a.switchMihomoCoreWithOps(ctx, target, candidate, a.defaultMihomoCoreSwitchOps())
+}
+
+func (a *App) switchMihomoCoreWithOps(ctx context.Context, target string, candidate mihomoCoreCandidate, ops mihomoCoreSwitchOps) (mihomoCoreSwitchResult, error) {
+	res := mihomoCoreSwitchResult{}
+	from := ops.CurrentCore()
+	res.From = from
+	res.To = target
+	res.PreviousCore = from
+
+	// Validate the candidate against the current active config before any
+	// replacement: run `-v` and `-t` so an incompatible candidate (for example a
+	// Smart configuration being switched back to official Meta) is rejected
+	// without breaking the live service.
+	if err := candidate.validateForConfig(ctx, filepath.Join(a.DataDir, mihomoActiveConfigRelPath)); err != nil {
+		return res, fmt.Errorf("candidate %s core rejected: %w", target, err)
+	}
+	res.Version = candidate.Version
+
+	wasRunning := ops.Running()
+	hadPrevious := false
+	prevBinary := filepath.Join(a.DataDir, "data", "mihomo-core-switch-backup")
+	_ = os.Remove(prevBinary)
+	targetBinary := a.componentTarget("mihomo")
+	if _, err := os.Stat(targetBinary); err == nil {
+		if err := copyFile(targetBinary, prevBinary, 0755); err != nil {
+			return res, fmt.Errorf("back up current core binary: %w", err)
+		}
+		hadPrevious = true
+	}
+
+	if err := a.replaceMihomoBinary(candidate.Binary, targetBinary); err != nil {
+		a.rollbackMihomoCoreSwitch(targetBinary, prevBinary, hadPrevious, from, wasRunning, ops)
+		return res, fmt.Errorf("replace core binary: %w", err)
+	}
+
+	// Restart and probe the controller when it was previously running so we
+	// confirm the swapped core is healthy before committing the switch.
+	if wasRunning {
+		if err := ops.Restart(ctx); err != nil {
+			a.rollbackMihomoCoreSwitch(targetBinary, prevBinary, hadPrevious, from, wasRunning, ops)
+			return res, fmt.Errorf("restart mihomo after switch: %w", err)
+		}
+		res.Restarted = true
+		if err := ops.Probe(); err != nil {
+			a.rollbackMihomoCoreSwitch(targetBinary, prevBinary, hadPrevious, from, wasRunning, ops)
+			return res, fmt.Errorf("mihomo controller probe after switch: %w", err)
+		}
+		res.ControllerOK = true
+	}
+
+	// Persist the new core type only after the whole switch succeeded.
+	if err := ops.PersistCore(target); err != nil {
+		a.rollbackMihomoCoreSwitch(targetBinary, prevBinary, hadPrevious, from, wasRunning, ops)
+		return res, fmt.Errorf("persist %s core: %w", target, err)
+	}
+
+	_ = os.Remove(prevBinary)
+	return res, nil
+}
+
+func (a *App) rollbackMihomoCoreSwitch(targetBinary, prevBinary string, hadPrevious bool, prevCore string, wasRunning bool, ops mihomoCoreSwitchOps) {
+	if hadPrevious {
+		if err := copyFile(prevBinary, targetBinary, 0755); err == nil {
+			_ = os.Chmod(targetBinary, 0755)
+		}
+	} else {
+		_ = os.Remove(targetBinary)
+	}
+	_ = os.Remove(prevBinary)
+	if ops.PersistCore != nil {
+		_ = ops.PersistCore(prevCore)
+	}
+	if wasRunning && ops.Restart != nil {
+		_ = ops.Restart(context.Background())
+	}
+}
+
+func (a *App) replaceMihomoBinary(src, target string) error {
+	if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+		return err
+	}
+	tmp := target + ".switch-new"
+	_ = os.Remove(tmp)
+	if err := copyFile(src, tmp, 0755); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, target); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return os.Chmod(target, 0755)
+}
+
+func (a *App) probeMihomoController() error {
+	var lastErr error
+	for attempt := 0; attempt < 5; attempt++ {
+		_, ok, err := a.mihomoControllerJSONWithTimeout(http.MethodGet, "/configs", nil, 1500*time.Millisecond)
+		if err == nil && ok {
+			return nil
+		}
+		if err != nil {
+			lastErr = err
+		} else {
+			lastErr = fmt.Errorf("mihomo controller did not answer")
+		}
+		time.Sleep(300 * time.Millisecond)
+	}
+	return lastErr
+}
+
+type mihomoCoreCandidate struct {
+	Binary             string
+	ExtractDir         string
+	AssetURL           string
+	AssetName          string
+	Digest             string
+	Version            string
+	VerificationSource string
+	FromCache          bool
+}
+
+func (c *mihomoCoreCandidate) cleanup() {
+	if c.ExtractDir != "" {
+		_ = os.RemoveAll(c.ExtractDir)
+	}
+}
+
+func (a *App) resolveMihomoCoreCandidate(ctx context.Context, coreType string, emit func(DownloadEvent)) (mihomoCoreCandidate, error) {
+	coreType = normalizeMihomoCoreType(coreType)
+	if cached, ok := a.cachedMihomoCoreCandidate(coreType); ok {
+		cached.FromCache = true
+		if emit != nil {
+			emit(DownloadEvent{Status: "completed", Progress: 100, Message: "using verified cached " + coreType + " core"})
+		}
+		return cached, nil
+	}
+	asset, err := a.componentDownloadAssetForCoreType("mihomo", coreType)
+	if err != nil {
+		return mihomoCoreCandidate{}, fmt.Errorf("resolve %s core release: %w", coreType, err)
+	}
+	if err := validateMihomoAssetArch(asset.Name, runtime.GOOS, runtime.GOARCH); err != nil {
+		return mihomoCoreCandidate{}, err
+	}
+	tmp := filepath.Join(a.DataDir, "data", "mihomo-"+coreType+"-switch.download")
+	downloadURL := a.mihomoCoreSwitchDownloadURL(asset.URL)
+	_ = os.Remove(tmp)
+	defer os.Remove(tmp)
+	if _, err := a.downloadVerifiedResolvedURLContext(ctx, downloadURL, asset.Digest, tmp, emit); err != nil {
+		return mihomoCoreCandidate{}, fmt.Errorf("download %s core: %w", coreType, err)
+	}
+	extractDir, err := os.MkdirTemp(filepath.Join(a.DataDir, "data"), "mihomo-"+coreType+"-switch-*")
+	if err != nil {
+		return mihomoCoreCandidate{}, fmt.Errorf("create extract dir: %w", err)
+	}
+	if err := extractGzipBinary(tmp, filepath.Join(extractDir, "mihomo")); err != nil {
+		_ = os.RemoveAll(extractDir)
+		return mihomoCoreCandidate{}, fmt.Errorf("extract %s core: %w", coreType, err)
+	}
+	binaryPath := filepath.Join(extractDir, "mihomo")
+	_ = os.Chmod(binaryPath, 0755)
+	candidate := mihomoCoreCandidate{
+		Binary:             binaryPath,
+		ExtractDir:         extractDir,
+		AssetURL:           downloadURL,
+		AssetName:          asset.Name,
+		Digest:             asset.Digest,
+		VerificationSource: componentVerificationSourceGitHubAssetDigest,
+	}
+	cached, cacheErr := a.cacheMihomoCoreCandidate(coreType, candidate)
+	if cacheErr != nil {
+		_ = os.RemoveAll(extractDir)
+		return mihomoCoreCandidate{}, cacheErr
+	}
+	_ = os.RemoveAll(extractDir)
+	return cached, nil
+}
+
+func (c *mihomoCoreCandidate) validateForConfig(ctx context.Context, configPath string) error {
+	if out, err := runMihomoCoreCheck(ctx, c.Binary, "-v"); err != nil {
+		return fmt.Errorf("candidate version check failed: %w", err)
+	} else {
+		c.Version = compactVersionOutput(out)
+	}
+	if _, err := runMihomoCoreCheck(ctx, c.Binary, "-t", "-d", filepath.Dir(configPath), "-f", configPath); err != nil {
+		return fmt.Errorf("candidate config validation failed: %w", err)
+	}
+	return nil
+}
+
+func runMihomoCoreCheck(ctx context.Context, binary string, args ...string) (string, error) {
+	checkCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(checkCtx, binary, args...)
+	out, err := cmd.CombinedOutput()
+	text := strings.TrimSpace(string(out))
+	if checkCtx.Err() != nil {
+		return text, fmt.Errorf("%s %s timed out: %w", filepath.Base(binary), strings.Join(args, " "), checkCtx.Err())
+	}
+	if err != nil {
+		return text, fmt.Errorf("%s %s: %w: %s", filepath.Base(binary), strings.Join(args, " "), err, text)
+	}
+	return text, nil
 }

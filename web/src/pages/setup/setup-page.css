@@ -158,6 +158,31 @@
   background-color: var(--muted) !important;
 }
 
+.msf-setup-page button.msf-core-choice[aria-pressed="true"] {
+  color: #fff !important;
+  border-color: #007aff !important;
+  background: #007aff !important;
+  box-shadow: 0 2px 8px rgb(0 122 255 / 0.28) !important;
+}
+
+.msf-setup-page button.msf-core-choice[aria-pressed="false"] {
+  color: #1d1d1f !important;
+  border-color: rgb(0 0 0 / 0.15) !important;
+  background: #fff !important;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08) !important;
+}
+
+.dark .msf-setup-page button.msf-core-choice[aria-pressed="true"] {
+  border-color: #2e8dff !important;
+  background: #2e8dff !important;
+}
+
+.dark .msf-setup-page button.msf-core-choice[aria-pressed="false"] {
+  color: #fff !important;
+  border-color: rgb(255 255 255 / 0.15) !important;
+  background: #1c1c1e !important;
+}
+
 .msf-setup-page .msf-setup-control:-webkit-autofill,
 .msf-setup-page .msf-setup-control:-webkit-autofill:hover,
 .msf-setup-page .msf-setup-control:-webkit-autofill:focus {

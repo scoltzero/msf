@@ -24,6 +24,10 @@ func (a *App) handleComponentUpdateUpload(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, "bad_component", "unknown component")
 		return
 	}
+	if component == "mihomo" {
+		a.configApplyMu.Lock()
+		defer a.configApplyMu.Unlock()
+	}
 	if err := r.ParseMultipartForm(maxComponentUploadSize); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
@@ -72,6 +76,16 @@ func (a *App) handleComponentUpdateUpload(w http.ResponseWriter, r *http.Request
 		_, _ = a.DB.Exec(`update component_update_info set status='failed',progress=5,error_message=?,updated_at=? where component=?`, err.Error(), nowString(), component)
 		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": err.Error(), "data": a.componentUpdateState(component)})
 		return
+	}
+	if component == "mihomo" {
+		if _, err := a.cacheMihomoCoreCandidate(a.selectedMihomoCoreType(), mihomoCoreCandidate{
+			Binary: a.componentTarget("mihomo"), AssetURL: downloadURL, AssetName: filepath.Base(header.Filename),
+			Version: version, VerificationSource: componentVerificationSourceLocalUpload,
+		}); err != nil {
+			_, _ = a.DB.Exec(`update component_update_info set status='failed',progress=95,error_message=?,updated_at=? where component=?`, err.Error(), nowString(), component)
+			writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": err.Error(), "data": a.componentUpdateState(component)})
+			return
+		}
 	}
 
 	restarted := false
