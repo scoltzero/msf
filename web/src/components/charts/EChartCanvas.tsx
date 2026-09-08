@@ -1,9 +1,20 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import * as echarts from "echarts";
+// On-demand echarts build: the full package (`import * as echarts from
+// "echarts"`) shipped every chart type (~1.1MB chunk).  The app only uses
+// line + sankey series with grid/tooltip/title — register exactly those.
+// `EChartsOption` stays a type-only import from the full package (erased at
+// build time, zero runtime cost) so existing option objects keep their
+// permissive types.
+import * as echarts from "echarts/core";
+import { LineChart, SankeyChart } from "echarts/charts";
+import { GridComponent, LegendComponent, TitleComponent, TooltipComponent } from "echarts/components";
+import { CanvasRenderer } from "echarts/renderers";
 import type { EChartsOption } from "echarts";
 import { cn } from "@/lib/utils";
+
+echarts.use([LineChart, SankeyChart, GridComponent, LegendComponent, TitleComponent, TooltipComponent, CanvasRenderer]);
 
 export function EChartCanvas({
   option,

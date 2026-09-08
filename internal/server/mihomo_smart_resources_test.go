@@ -145,6 +145,12 @@ func TestInstalledSmartResourceRequiresVerifiedReceiptAndMatchingFile(t *testing
 	if err := os.WriteFile(target, corrupt, 0644); err != nil {
 		t.Fatal(err)
 	}
+	// 同尺寸写入在部分文件系统上 mtime 粒度不足（两次写入落在同一时间戳），
+	// 会让 size+mtime 快速路径误判"文件未变"。显式推进 mtime 隔离该不确定性。
+	if info, statErr := os.Stat(target); statErr == nil {
+		next := info.ModTime().Add(time.Second)
+		_ = os.Chtimes(target, next, next)
+	}
 	invalid := app.installedSmartResourceState(spec)
 	if invalid.Status == "ready" || invalid.Verified {
 		t.Fatalf("corrupt resource was accepted: %+v", invalid)

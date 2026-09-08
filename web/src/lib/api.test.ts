@@ -91,4 +91,39 @@ describe("clearSession", () => {
     expect(localStorage.getItem("msf-dashboard-settings")).toBeNull();
     expect(sessionStorage.getItem(sessionKey)).toBeNull();
   });
+
+  it("preserves appearance preferences in localStorage while clearing their sessionStorage copies", () => {
+    const localStorage = new MemoryStorage();
+    const sessionStorage = new MemoryStorage();
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: { localStorage, sessionStorage },
+    });
+
+    localStorage.setItem(TOKEN_KEY, "access-token");
+    localStorage.setItem("msf-theme", "dark");
+    localStorage.setItem("msf-language", "zh-CN");
+    localStorage.setItem("msf-skin", "amber");
+    localStorage.setItem("msf-custom-css", "body { --x: 1; }");
+    localStorage.setItem("msf-accent-color", "#f97316");
+    localStorage.setItem("msf-skin-tint", "120");
+    localStorage.setItem("msf-glass-scene", "static");
+    localStorage.setItem("msf-glass-quality", "balanced");
+    localStorage.setItem("msf-content-plate-settings", JSON.stringify({ subtle: 56, regular: 70, strong: 84 }));
+    sessionStorage.setItem("msf-theme", "dark");
+
+    clearSession();
+
+    expect(localStorage.getItem(TOKEN_KEY)).toBeNull();
+    expect(localStorage.getItem("msf-theme")).toBe("dark");
+    expect(localStorage.getItem("msf-language")).toBe("zh-CN");
+    expect(localStorage.getItem("msf-skin")).toBe("amber");
+    expect(localStorage.getItem("msf-custom-css")).toBe("body { --x: 1; }");
+    expect(localStorage.getItem("msf-accent-color")).toBe("#f97316");
+    expect(localStorage.getItem("msf-skin-tint")).toBe("120");
+    expect(localStorage.getItem("msf-glass-scene")).toBe("static");
+    expect(localStorage.getItem("msf-glass-quality")).toBe("balanced");
+    expect(localStorage.getItem("msf-content-plate-settings")).toBe(JSON.stringify({ subtle: 56, regular: 70, strong: 84 }));
+    expect(sessionStorage.getItem("msf-theme")).toBeNull();
+  });
 });

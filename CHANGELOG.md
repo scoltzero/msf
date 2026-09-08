@@ -2,6 +2,178 @@
 
 ## 未发布
 
+### 中文
+
+#### 国内 UDP 内核直连（游戏断线的根治性方案）
+
+- 新增「国内 UDP 直连」能力（默认开启）：目的地为国内 IP 的 UDP 流量在 nftables 内核层直接放行、不再经过代理隧道——所有国服游戏零配置免受代理隧道 60 秒 UDP 会话空闲超时导致的周期性断线影响；同时卸载了代理核心的国内 UDP 会话负担。内置数据固定来自 CC0 授权的 ipverse RIR 委派快照（IPv4 5513 段 / IPv6 2033 段），支持运行时覆盖并提供可重复生成、逐行校验脚本。
+- 设置页「系统管理 → UDP 直连」：新增总开关（即时热生效），原「游戏 UDP 直连端口」保留为补充覆盖（海外目标但需直连的场景，如自建语音服）。
+#### DNS 上游现代化（forward 迁移 + 首次测速选优）
+
+- MosDNS 上游插件从魔改版 aliapi 全面迁移到增强版 forward：不存在域名（NXDOMAIN）不再等满 5 秒（实测 ~50-90ms），裸 IP 的 UDP/TCP 上游恢复可用（实测 9-17ms），上游故障毫秒级快速失败并自动重置连接；国外上游经 socks5 代理的行为不变。
+- 国内默认池升级为跨供应商并发组合：阿里 UDP + 腾讯 UDP + 阿里 DoH（低延迟与加密兜底兼顾）；已有用户的上游配置原样保留、平滑兼容（裸 IP 自动补协议前缀，旧 aliapi 专用条目已不再支持并在保存时明确提示）。
+- 新增 DNS 上游测速：安装向导"网络与 DNS"步骤内实测主流公共 DNS（UDP 与 IP 直连 DoH）+ 本网络网关/DHCP DNS，每候选 3 轮（含不存在域探测）自动剔除不可达者；推荐组合由纯延迟排序升级为「两条最快 UDP + 一条 DoH 加密兜底」，避免低延迟网关把加密上游挤出推荐；MosDNS 系统页新增同一测速面板，可随时重测并应用为国内上游。
+- 上游编辑器移除 aliapi 协议选项；密钥字段的脱敏与保留机制不变。
+
+#### 工程修复
+
+- 修复 cloudflareredirect 包的 Windows 交叉编译：进程组设置按平台拆分（Setpgid）。
+- 修复 smart 内核资源校验测试在部分文件系统上因 mtime 粒度不足产生的间歇性失败。
+- 修复开发版本（如未注入版本号编译出的 0.1.0-dev）检查更新时的误导性提示：此前会谎报"已是最新版本"、更新状态甚至显示"更新完成"，而实际存在更新只是按保护策略禁用了自更新；现在会如实提示"检测到新版本 vX，当前为开发版本，已禁用在线更新"。
+- 完成 PR #13 合入前安全审计加固：GitHub Release 元数据不再经过公共镜像，自更新包要求独立可信的 GitHub SHA-256 摘要并在安装前复验；修复 `.lan/.local` 子串误匹配、DNS 测速接受 SERVFAIL/REFUSED、用户自带 Mihomo secret 被覆盖、只读用户写入全局自定义 CSS、gzip 协商与关闭阶段子进程重启竞态。
+- 本周期主体功能由 [Timeink88](https://github.com/Timeink88) 通过 PR #13 贡献，维护者在原 PR 分支完成安全、兼容性、测试与来源审计修复。
+
+#### 外观与皮肤系统
+
+- 修复每次重启后外观被重置：登录 token 过期触发的会话清理不再连带删除主题/皮肤偏好，外观设置全量同步到后端 SQLite（重启/换浏览器/换设备均不丢）。
+- 新增皮肤系统：琥珀暖白与经典玻璃两套，与明暗模式独立；设置页新增品牌主色调色盘（预设色板+取色器实时预览）。
+- 默认皮肤保持经典玻璃（MSF 原生蓝）；选择琥珀暖白后，登录页动态波浪同步读取琥珀明暗色板，不再停留在经典蓝色。
+- 调色工作台：主色全局化（侧栏/分段控件/图表五色/氛围光/文字选中色全部跟随主色）、氛围色相滑条、自定义 CSS 编辑器（模板一键填入、300ms 防抖实时预览、撤销预览）。
+
+#### GitHub 下载可靠性与 Token
+
+- GitHub Release 元数据始终通过 GitHub 官方 TLS 端点获取；资产下载只使用管理员主动填写的代理服务器或加速镜像源，系统不再内置、自动探测、排序或自动切换公共镜像。面板可按需检测当前手填的单一加速源，检测结果不改变线路；个人 Token 继续加密保存，资产仍需通过可信 SHA-256 校验。
+
+#### 性能优化（速赢包）
+
+- 波浪背景优先使用 OffscreenCanvas Worker，把 WebGL 初始化与逐帧渲染移出 UI 主线程；全屏三角形不再触发通用渲染器的无关扩展查询。保留原着色器、皮肤色板、画质预算、隐藏暂停和静态模式；不支持或启动失败时回退主线程渲染，无 WebGL 时保留静态底色。
+
+- 优化 Mihomo 首次加载：分离波浪与地球依赖、并行预载目标路由，首屏数据提交后再启动持久背景。代理节点先于辅助接口显示；概览图表延后初始化，地球/规则/订阅随视口加载，完整运行快照仅在展开高级信息后获取。
+
+- 静态资源缓存分级：带哈希的构建产物一年 immutable，固定名资源一小时，index.html 保持即时刷新——面板二次打开不再全量重下。
+- Mihomo 默认日志级别 info→warning（此前 info 级月均可写穿 1.2GB 磁盘）；msf 日志中 URL 的 token/secret 参数脱敏后再落盘；日志轮转按磁盘剩余空间自动分档；Go 运行时默认 512MiB 软内存上限（GOMEMLIMIT 环境变量可覆盖）。
+- 接口响应"别名复制"收尾：/mihomo/rules、/logs/{service}、/mosdns/logs 等接口去掉前端从不读取的重复字段，响应体积下降 47%-80%。
+
+#### DNS 稳定性
+
+- 根除 AAAA 五秒黑洞：IPv6 数据面关闭时 AAAA 查询立即返回空应答（原实现送国外 DNS 直连，被墙网络下每次等满 5 秒超时）。
+- 根除冷域名五秒黑洞：aliapi 插件对裸 IP 上游的查询会挂起至超时，国内上游改为 IP 直连 DoH；Windows 搜索域（*.lan/*.local）直接本地拒答，不再发送上游。
+- 修复本机 DNS 接管诊断误报：resolv.conf 指向本机 LAN 地址（旁路由常见）时不再误判为"未接管"。
+
+#### 运维基础设施
+
+- Smart 核心资源缺失或校验失败不再崩溃循环，面板提供分步修复指引；mihomo 进程异常退出自动退避重启。
+- mihomo external-controller 自动生成随机 secret（此前 9090 无认证暴露）；gzip 中间件（Content-Type 白名单，SSE/WebSocket 天然排除）；copytruncate 日志轮转；配置历史/审计日志/更新包保留清理；ExecStopPost 自动清理 nft 规则。
+- 详见仓库内 KNOWN_ISSUES.md 的完整问题清单。
+
+#### 升级注意事项
+
+- **国内 UDP 直连默认开启**：若自定义了「国内 IP 的 UDP 走代理」规则（罕见，如国内中转），请在设置页关闭该开关。
+- **旧配置中的 aliapi 专用上游（阿里私享 DoH API）不再受支持**：保存时会被明确拒绝，请改用 udp/tcp/tls/https 形式的上游；普通公共 DNS 上游不受影响。
+- **Mihomo 控制器（:9090）默认启用随机 secret**：升级后直连 9090 的工具（zashboard 等）首次连接需要填一次 secret——面板「Mihomo 概览」右上角可复制；不需要认证的环境可在设置中清空 `mihomo_controller_secret` 后重启。
+- **Go 运行时默认 512MiB 软内存上限**：对内存充裕的宿主机无感（软限可超，不会 OOM）；Docker/K8s 部署可通过容器的 `GOMEMLIMIT` 环境变量自行调整或置 -1 关闭。
+- **MosDNS 国内上游默认改为阿里 IP 直连 DoH**：aliapi 插件对裸 IP 上游存在挂起问题，DoH 形式更稳；如需改回可在面板 DNS 上游设置中编辑。
+
+### English
+
+#### Kernel-level CN UDP bypass (root fix for game disconnects)
+
+- New "CN UDP direct" capability (on by default): UDP traffic destined for
+  CN IPs is released at the nftables kernel layer and never enters the proxy
+  tunnel — every domestic game is immune to the proxy core's 60s idle UDP
+  session timeout without any per-game configuration, and the core's CN UDP
+  session load is removed. The embedded snapshot is pinned to the CC0 ipverse
+  RIR-delegation data (5513 v4 / 2033 v6), supports runtime overrides, and has
+  a reproducible per-CIDR validation script.
+- Settings → System → "UDP direct": a master toggle (hot-applied), with the
+  previous game-UDP port list kept as a supplemental override for
+  direct-but-overseas targets (e.g. self-hosted voice servers).
+
+#### DNS upstream modernization (forward migration + first-run benchmark)
+
+- MosDNS upstream plugin migrated from the modified aliapi to the enhanced
+  forward plugin: NXDOMAIN answers no longer hang for the full 5s entry
+  timeout (measured ~50-90ms), bare-IP UDP/TCP upstreams work again
+  (measured 9-17ms), and failed upstreams are dropped within milliseconds
+  with automatic connection resets. Foreign upstreams over socks5 are
+  unchanged.
+- The default domestic pool is now a cross-vendor concurrent mix (Ali UDP +
+  Tencent UDP + Ali DoH). Existing overrides are preserved and migrated
+  transparently (bare IPs gain protocol prefixes; legacy aliapi-only
+  entries are rejected with an explicit message).
+- New DNS upstream benchmark: the setup wizard's Network & DNS step now
+  probes major public resolvers (UDP and IP-direct DoH) plus the local
+  gateway/DHCP DNS — three rounds per candidate including an NXDOMAIN
+  probe — drops unreachable candidates, and recommends a cross-vendor
+  Top3 that can be applied in one click; the recommended mix is now
+  "two fastest UDP + one DoH fallback" instead of pure latency ordering,
+  so a fast gateway can no longer push the encrypted upstream out of the
+  recommendation. The same panel is available on the MosDNS system page
+  for re-benchmarking at any time.
+- The upstream editor no longer offers the aliapi protocol; secret
+  redaction and preservation for stored overrides is unchanged.
+
+#### Engineering fixes
+
+- Windows cross-compilation of the cloudflareredirect package fixed:
+  process-group setup split per platform (Setpgid).
+- Fixed intermittent smart-core resource verification test failures caused
+  by insufficient mtime granularity on some filesystems.
+- Fixed misleading update-check results on development builds (e.g. the
+  untagged "0.1.0-dev" from a plain `go build`): the check used to claim
+  "already latest" (and the status card even showed "completed") while a
+  newer release existed and self-update was merely held back by design.
+  It now honestly reports "new version detected; self-update is disabled
+  on development builds".
+- Hardened PR #13 before integration: GitHub Release metadata never transits
+  public mirrors; self-update requires an independently trusted GitHub SHA-256
+  digest and re-verifies it before installation. Also fixed `.lan/.local`
+  substring overmatching, DNS benchmarks accepting SERVFAIL/REFUSED, custom
+  Mihomo secret precedence, viewer writes to global custom CSS, gzip content
+  negotiation, and child restart races during shutdown.
+- The cycle's primary implementation was contributed by
+  [Timeink88](https://github.com/Timeink88) in PR #13; maintainers completed
+  the security, compatibility, test, and provenance hardening on that branch.
+
+#### Appearance & skin system
+
+- Fixed preferences being wiped on every restart: session cleanup triggered by token expiry no longer deletes appearance keys; appearance settings now fully synced to backend SQLite.
+- Skin system: Amber (warm-white glass) and Classic glass skins, independent of light/dark mode; brand accent color picker with live preview.
+- Classic glass (the original MSF blue) remains the default. Selecting Amber now also updates the login page's animated waves from the skin's light/dark palette.
+- Color studio: globalized accent (sidebar/segments/chart palette/atmosphere/selection follow the accent), atmosphere hue slider, custom CSS editor with template fill, debounced live preview and undo.
+
+#### GitHub download reliability & tokens
+
+- GitHub Release metadata always comes from the official TLS endpoint. Asset downloads use only an administrator-supplied proxy or accelerator prefix; MSF no longer bundles, automatically probes, ranks, or switches public mirrors. The panel can explicitly test only the configured accelerator without changing routing. Personal tokens remain encrypted at rest, and assets still require a trusted SHA-256 digest.
+
+#### Performance quick wins
+
+- Prefer an OffscreenCanvas worker for wave initialization and rendering, keeping GPU setup off the UI thread and avoiding unrelated renderer extension discovery. Preserve the original shader, skin palette, pixel budgets, visibility pause and static mode; fall back to main-thread rendering when unsupported or startup fails, and retain the static surface without WebGL.
+
+- Improve Mihomo cold loads: separate wave and globe dependencies, preload target route code alongside authentication, and start the persistent background after primary content. Publish proxy nodes before auxiliary requests; defer charts, load globe/rules/providers near the viewport, and fetch full runtime snapshots only when advanced details are opened.
+
+- Tiered static caching: immutable for hashed bundles, one hour for fixed-name assets, index.html always fresh.
+- Mihomo default log level info→warning; token/secret query params redacted from msf logs; log rotation tiered by free disk space; default 512MiB soft GOMEMLIMIT (env overridable).
+- Dropped never-read response mirrors on /mihomo/rules, /logs/{service}, /mosdns/logs etc. (47%-80% smaller payloads).
+
+#### DNS stability
+
+- Killed the AAAA 5s black hole: with the IPv6 data plane off, AAAA is answered empty immediately instead of querying foreign DNS over blocked direct UDP.
+- Killed the cold-domain 5s black hole: the aliapi plugin hangs on bare-IP upstreams, domestic upstreams moved to IP-direct DoH; Windows search-suffix queries (*.lan/*.local) are rejected locally.
+- Fixed a local DNS-takeover diagnostic false positive when resolv.conf points at the host's own LAN address.
+
+#### Operations infrastructure
+
+- Smart core resources missing or failing verification no longer crash-loop; the panel offers step-by-step recovery, and mihomo restarts with backoff after abnormal exits.
+- Auto-generated random secret for the mihomo external controller; gzip middleware (Content-Type allowlist, SSE/WebSocket excluded); copytruncate log rotation; retention pruning for config history/audit logs/update packages; ExecStopPost nft cleanup. See KNOWN_ISSUES.md for the full list.
+
+#### Upgrade notes
+
+- CN UDP direct is enabled by default. If you have custom rules routing a CN
+  IP's UDP through the proxy (rare, e.g. a CN relay), turn the toggle off.
+- Legacy aliapi-specific upstreams (Ali private DoH API) are no longer
+  supported and will be rejected on save; switch them to udp/tcp/tls/https
+  servers. Regular public DNS upstreams are unaffected.
+- The mihomo external controller (:9090) now defaults to a generated
+  random secret; tools connecting directly (zashboard etc.) need it
+  once — copy it from the Mihomo overview page, or clear
+  `mihomo_controller_secret` and restart to disable auth.
+- A default 512MiB soft GOMEMLIMIT applies; override or disable (-1)
+  via the GOMEMLIMIT environment variable (Docker/K8s friendly).
+- MosDNS domestic upstreams default to Ali IP-direct DoH (the aliapi
+  plugin hangs on bare-IP upstreams); editable in the DNS upstream
+  settings.
+
 ## v0.6.3 - 2026-09-06
 
 ### 中文
@@ -23,7 +195,6 @@
 - Added viewport-aware content skipping and batched rendering for Mihomo proxy nodes so large lists perform less layout, paint, and React work at once.
 - Deferred Overview chart initialization near the viewport, debounced and deprioritized connection-topology updates, and batched connection-history rows to keep live refreshes interactive.
 - Preserved login appearance, scene, and user-selected dynamic-background settings, with Dynamic scene + Balanced quality as the default.
-
 ## v0.6.2 - 2026-08-29
 
 ### 中文

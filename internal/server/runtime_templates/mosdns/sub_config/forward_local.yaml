@@ -1,10 +1,20 @@
 plugins:
 # 定义了一个带过期缓存的内部使用/外部使用的国内dns服务器
+# 使用 forward 插件（fork 增强版：随机并发、有 IP 应答立即返回、上游故障快速失败）。
+# 旧 aliapi 插件对裸 IP 上游与 NXDOMAIN 应答均等待 5 秒（插件行为，隔离环境可复现）；
+# forward 实测根治：裸 UDP 上游 17ms 起、NXDOMAIN ~80ms、死 IP 上游按
+# upstream_query_timeout 封顶（毫秒级快速失败并重置连接）。
+# 池策略：两家跨供应商 UDP（低延迟）+ 一条 IP 直连 DoH（加密兜底）。
   - tag: domestic
-    type: aliapi
+    type: forward
     args:
       concurrent: 3
       upstreams:
-        - addr: "223.5.5.5"
-        - addr: "223.6.6.6"
-        - addr: "114.114.114.114"
+        - addr: "udp://223.5.5.5"
+          tag: 阿里UDP
+          upstream_query_timeout: 1200
+        - addr: "udp://119.29.29.29"
+          tag: 腾讯UDP
+          upstream_query_timeout: 1200
+        - addr: "https://223.5.5.5/dns-query"
+          tag: 阿里DOH

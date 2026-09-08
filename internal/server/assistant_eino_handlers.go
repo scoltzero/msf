@@ -303,7 +303,14 @@ func (a *App) createAssistantEinoPendingAction(userID int64, sessionID, checkpoi
 }
 
 func approvalPayload(actionID string, info *assistantApprovalInfo) map[string]any {
-	return map[string]any{"action_id": actionID, "title": info.Title, "method": info.Method, "path": info.Path, "risk": info.Risk, "details": info.Details, "expires_in": 300}
+	payload := map[string]any{"action_id": actionID, "title": info.Title, "method": info.Method, "path": info.Path, "risk": info.Risk, "details": info.Details, "expires_in": 300}
+	if info.RiskLevel != "" {
+		payload["risk_level"] = info.RiskLevel
+	}
+	if len(info.RiskNotes) > 0 {
+		payload["risk_notes"] = info.RiskNotes
+	}
+	return payload
 }
 
 func (a *App) loadAssistantPendingAction(actionID string, userID int64) (assistantPendingAction, error) {

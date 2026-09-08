@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check, Globe2, KeyRound, Trash2, X } from "lucide-react";
+import { Check, Globe2, Trash2, X } from "lucide-react";
 import { GlassButton } from "@/components/liquid-glass/GlassButton";
 import { GlassSurface } from "@/components/liquid-glass/GlassSurface";
 import { ModalViewport } from "@/components/liquid-glass/ModalViewport";
@@ -22,7 +22,7 @@ export type UpstreamServerFormValues = {
 
 type DialogMode = "add" | "edit";
 
-const protocolOptions = ["udp", "tcp", "tls", "https", "quic", "h3", "aliapi"];
+const protocolOptions = ["udp", "tcp", "tls", "https", "quic", "h3"];
 
 const inputCls =
   "gary-field h-10 w-full px-3 text-sm text-foreground placeholder:text-muted-foreground/55";
@@ -73,16 +73,11 @@ export function UpstreamServerDialog({
   const title = mode === "add" ? "添加 上游" : "编辑 上游";
   const actionLabel = mode === "add" ? "添加" : "保存";
   const subtitle = mode === "edit" && name.trim() ? `${group.name} (${name.trim()})` : group.name;
-  const isAliAPI = protocol === "aliapi";
-  const secretAvailable = Boolean(accessKeySecret.trim() || server?.accessKeySecretSet);
-  const canSubmit = Boolean(
-    name.trim() && address.trim() && protocol.trim() &&
-      (!isAliAPI || (accountId.trim() && accessKeyId.trim() && secretAvailable && ecsClientMask >= 0 && ecsClientMask <= 128))
-  );
+  const canSubmit = Boolean(name.trim() && address.trim() && protocol.trim());
 
   const submit = () => {
     if (!canSubmit) {
-      setError(isAliAPI ? "请完整填写账户 ID、Access Key、服务器地址和有效的 ECS Mask" : "名称、协议和地址不能为空");
+      setError("名称、协议和地址不能为空");
       return;
     }
     onSave({
@@ -151,9 +146,7 @@ export function UpstreamServerDialog({
               <select
                 value={protocol}
                 onChange={(event) => {
-                  const nextProtocol = event.target.value;
-                  setProtocol(nextProtocol);
-                  if (nextProtocol === "aliapi" && protocol !== "aliapi") setAddress("223.5.5.5");
+                  setProtocol(event.target.value);
                   setError("");
                 }}
                 className={`${inputCls} pr-9`}
@@ -169,47 +162,14 @@ export function UpstreamServerDialog({
 
           <SolidPlate tone="regular" className="rounded-xl px-4 py-4">
             <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-foreground">
-              {isAliAPI ? <KeyRound className="h-4 w-4 text-primary" /> : <Globe2 className="h-4 w-4 text-primary" />}
-              {isAliAPI ? "阿里云 API 配置" : "上游服务器配置"}
+              <Globe2 className="h-4 w-4 text-primary" />
+              上游服务器配置
             </div>
-            {isAliAPI ? (
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-foreground">账户 ID <span className="text-destructive">*</span></label>
-                  <input value={accountId} onChange={(event) => { setAccountId(event.target.value); setError(""); }} autoComplete="username" className={inputCls} />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-foreground">Access Key ID <span className="text-destructive">*</span></label>
-                  <input value={accessKeyId} onChange={(event) => { setAccessKeyId(event.target.value); setError(""); }} autoComplete="off" className={inputCls} />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-foreground">Access Key Secret <span className="text-destructive">*</span></label>
-                  <input
-                    type="password"
-                    value={accessKeySecret}
-                    onChange={(event) => { setAccessKeySecret(event.target.value); setError(""); }}
-                    placeholder={server?.accessKeySecretSet ? "已设置，留空则保持不变" : "请输入 Access Key Secret"}
-                    autoComplete="new-password"
-                    className={inputCls}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-foreground">服务器地址 <span className="text-destructive">*</span></label>
-                  <input value={address} onChange={(event) => { setAddress(event.target.value); setError(""); }} placeholder="223.5.5.5" className={inputCls} />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-foreground">ECS Mask <span className="text-destructive">*</span></label>
-                  <input type="number" min={0} max={128} value={ecsClientMask} onChange={(event) => { setEcsClientMask(Number(event.target.value)); setError(""); }} className={inputCls} />
-                  <p className="text-xs text-muted-foreground">范围 0–128，通常使用 32</p>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-foreground">地址 <span className="text-destructive">*</span></label>
-                <input value={address} onChange={(event) => { setAddress(event.target.value); setError(""); }} placeholder="udp://127.0.0.1:6666" className={inputCls} />
-                <p className="text-xs text-muted-foreground">支持 udp://IP 或直接填写 IP 地址</p>
-              </div>
-            )}
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-foreground">地址 <span className="text-destructive">*</span></label>
+              <input value={address} onChange={(event) => { setAddress(event.target.value); setError(""); }} placeholder="udp://223.5.5.5 或 https://223.5.5.5/dns-query" className={inputCls} />
+              <p className="text-xs text-muted-foreground">udp/tcp 填 IP 或带前缀均可，https/tls 需完整地址</p>
+            </div>
           </SolidPlate>
 
           {error && (

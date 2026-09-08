@@ -20,9 +20,12 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
-import { api, apiData, getToken } from "@/lib/api";
+import { api, apiData } from "@/lib/api";
 import { useLanguage, type AppLanguage } from "@/lib/localization";
-import { applyTheme, getInitialTheme, prefersDarkMode, themeOptions, type ThemeMode } from "@/lib/appearance";
+import { applyTheme, getInitialTheme, prefersDarkMode, reconcileTheme, themeOptions, type ThemeMode } from "@/lib/appearance";
+import { applyCustomCSS, applySkin, getInitialSkin, isSkinId } from "@/lib/skin";
+import { applyAccentColor, isValidAccentColor } from "@/lib/accent";
+import { applySkinTint, parseSkinTint } from "@/lib/skinTint";
 
 const languageOptions: Array<{ id: AppLanguage; label: string }> = [
   { id: "zh-CN", label: "简体中文" },
@@ -57,12 +60,28 @@ export function AppHeader({ onToggleSidebar, onOpenDiagnostics, sidebarHidden = 
   }, [theme]);
 
   useEffect(() => {
-    if (!getToken()) return;
     api("/api/v1/settings/appearance")
       .then((payload) => {
         const data = apiData<Record<string, string>>(payload, {});
         if (data.language === "en-US" || data.language === "en") setLanguage("en-US");
         if (data.language === "zh-CN" || data.language === "zh") setLanguage("zh-CN");
+        const localTheme = getInitialTheme();
+        const { mode, pushToServer } = reconcileTheme(data.theme, localTheme);
+        if (mode !== localTheme) {
+          setTheme(mode);
+          applyTheme(mode);
+        }
+        if (pushToServer) {
+          void api("/api/v1/settings/appearance", {
+            method: "PUT",
+            body: JSON.stringify({ theme: mode }),
+          }).catch(() => undefined);
+        }
+        const backendSkin = isSkinId(data.skin) ? data.skin : getInitialSkin();
+        if (document.documentElement.dataset.skin !== backendSkin) applySkin(backendSkin);
+        applyAccentColor(isValidAccentColor(data.accent_color) ? data.accent_color : "");
+        applySkinTint(parseSkinTint(data.skin_tint));
+        if (typeof data.custom_css === "string") applyCustomCSS(data.custom_css);
       })
       .catch(() => undefined);
   }, [setLanguage]);
@@ -92,6 +111,10 @@ export function AppHeader({ onToggleSidebar, onOpenDiagnostics, sidebarHidden = 
     setTheme(mode);
     applyTheme(mode);
     setThemeOpen(false);
+    void api("/api/v1/settings/appearance", {
+      method: "PUT",
+      body: JSON.stringify({ theme: mode }),
+    }).catch(() => undefined);
   };
 
   return (
@@ -145,10 +168,13 @@ export function AppHeader({ onToggleSidebar, onOpenDiagnostics, sidebarHidden = 
                   <button
                     key={id}
                     onClick={() => selectTheme(id)}
-                    className="gary-popover__item flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm text-foreground"
+                    className={cn(
+                      "gary-popover__item flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm",
+                      theme === id ? "text-primary" : "text-foreground"
+                    )}
                   >
                     <span className="flex items-center gap-2">
-                      <Icon className="h-4 w-4 text-muted-foreground" />
+                      <Icon className={cn("h-4 w-4", theme === id ? "text-primary" : "text-muted-foreground")} />
                       {label}
                     </span>
                     {theme === id && <Check className="h-4 w-4 text-primary" />}
@@ -182,7 +208,10 @@ export function AppHeader({ onToggleSidebar, onOpenDiagnostics, sidebarHidden = 
                   <button
                     key={item.id}
                     onClick={() => selectLanguage(item.id)}
-                    className="gary-popover__item flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm text-foreground"
+                    className={cn(
+                      "gary-popover__item flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm",
+                      language === item.id ? "text-primary" : "text-foreground"
+                    )}
                   >
                     {item.label}
                     {language === item.id && <Check className="h-4 w-4 text-primary" />}

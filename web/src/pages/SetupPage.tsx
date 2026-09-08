@@ -39,6 +39,7 @@ import GradientWaves from "@/components/react-bits/GradientWaves";
 import { applyTheme, getInitialTheme, prefersDarkMode, themeOptions, type ThemeMode } from "@/lib/appearance";
 import { useLanguage, type AppLanguage } from "@/lib/localization";
 import { validateAllSetupSteps, validateSetupStep, type SetupValidationIssue } from "@/pages/setup/setup-validation";
+import { DnsBenchmarkPanel, type DnsBenchmarkCandidate } from "@/components/mosdns/DnsBenchmarkPanel";
 import "@/pages/setup/setup-page.css";
 
 interface NetworkInterface {
@@ -164,6 +165,7 @@ export const defaultForm = {
   github_socks5_proxy: "",
   github_accelerator_enabled: false,
   github_accelerator_url: "",
+  domestic_upstreams: [] as Array<{ name: string; protocol: string; addr: string }>,
 };
 
 export type SetupForm = typeof defaultForm;
@@ -1145,7 +1147,19 @@ export function SetupPage() {
     void fetchPreflight().catch((err) => setMessage(errorMessage(err)));
   }, [downloadStatus, fetchPreflight, step]);
 
-  const update = (key: keyof SetupForm, value: string | boolean) => {
+  const handleApplySetupBenchmark = (recommended: DnsBenchmarkCandidate[]) => {
+    if (recommended.length === 0) return;
+    update(
+      "domestic_upstreams",
+      recommended.map((item) => ({
+        name: item.name,
+        protocol: item.protocol === "doh" ? "https" : item.protocol === "gateway" ? "udp" : item.protocol,
+        addr: item.addr,
+      })),
+    );
+  };
+
+  const update = (key: keyof SetupForm, value: string | boolean | SetupForm["domestic_upstreams"]) => {
     if (key === "linux_proxy_mode" && isTunOnlyRuntime && value !== "tun") return;
     if (key === "auto_set_dns" && isMacOSRuntime && value !== true) return;
     if (key === "timezone" || key === "linux_proxy_mode") {
@@ -1709,6 +1723,18 @@ export function SetupPage() {
                         />
                       </Field>
                     </div>
+                    <div className="mt-3">
+                      <DnsBenchmarkPanel
+                        onApply={handleApplySetupBenchmark}
+                        applyLabel="使用测速推荐"
+                        description="安装前先对主流公共 DNS 与本网络网关实测 3 轮（含不存在域），自动剔除不可达者并推荐跨供应商 Top3 作为国内上游；跳过则使用内置默认组合。"
+                      />
+                      {form.domestic_upstreams.length > 0 && (
+                        <p className="mt-2 text-[11px] text-muted-foreground">
+                          已选上游：{form.domestic_upstreams.map((item) => `${item.name}（${item.addr}）`).join("、")}
+                        </p>
+                      )}
+                    </div>
                   </div>
                   <div className="rounded-lg border border-border bg-card p-3">
                     <div className="mb-3 flex items-center gap-3">
@@ -2061,11 +2087,11 @@ export function SetupPage() {
                       </CheckOption>
                       <CheckOption
                       name="github_accelerator_enabled"
-                      title="加速代理"
-                      description="使用 GitHub 加速镜像下载组件"
+                      title="加速镜像源（手动）"
+                      description="只使用你填写的 GitHub 加速前缀"
                       checked={form.github_accelerator_enabled}
                       onChange={(checked) => update("github_accelerator_enabled", checked)}
-                      >
+                    >
                         <div className="space-y-2 pl-0.5">
                         <input
                             className={cn(inputClass, "h-8 text-xs")}
@@ -2074,31 +2100,13 @@ export function SetupPage() {
                             type="url"
                             autoComplete="off"
                             spellCheck={false}
-                            placeholder="GitHub 加速前缀，例如 https://gh-proxy.com"
+                            placeholder="请输入完整的 HTTP(S) 加速前缀"
                             value={form.github_accelerator_url}
                             onChange={(event) => update("github_accelerator_url", event.target.value)}
                         />
-                        <div className="flex flex-wrap gap-2 text-xs">
-                          {[
-                            ["Cloudflare", "https://gh-proxy.com"],
-                            ["Fastly CDN", "https://cdn.gh-proxy.com"],
-                            ["EdgeOne", "https://edgeone.gh-proxy.com"],
-                          ].map(([label, value]) => (
-                            <button
-                              key={value}
-                              type="button"
-                              onClick={() => update("github_accelerator_url", value)}
-                              className={cn(
-                                "rounded-md border px-2.5 py-1.5 transition",
-                                form.github_accelerator_url === value
-                                  ? "border-primary bg-primary/10 text-primary"
-                                  : "border-border bg-background text-muted-foreground hover:text-foreground"
-                              )}
-                            >
-                              {label}
-                            </button>
-                          ))}
-                        </div>
+                        <p className="text-[11px] leading-relaxed text-muted-foreground">
+                          系统不预置、不探测，也不会自动切换镜像；留空不会启用任何加速源。若同时启用代理服务器，代理服务器优先。
+                        </p>
                       </div>
                       </CheckOption>
                     </div>

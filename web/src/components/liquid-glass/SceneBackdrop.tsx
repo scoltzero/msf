@@ -15,6 +15,23 @@ const WAVE_PALETTES = {
   },
 } as const;
 
+/** The WebGL waves resolve their palette from skin variables so every skin
+ * (including custom CSS overrides) restyles the dynamic scene as well. */
+function readWavePalette(dark: boolean) {
+  const fallback = dark ? WAVE_PALETTES.dark : WAVE_PALETTES.light;
+  if (typeof window === "undefined") return fallback;
+  const styles = window.getComputedStyle(document.documentElement);
+  const read = (name: string, fallbackValue: string) => {
+    const value = styles.getPropertyValue(name).trim();
+    return value || fallbackValue;
+  };
+  return {
+    horizon: read("--gary-scene-wave-horizon", fallback.horizon),
+    wave: read("--gary-scene-wave", fallback.wave),
+    crest: read("--gary-scene-wave-crest", fallback.crest),
+  };
+}
+
 type SceneMode = "dynamic" | "static" | "neutral";
 type ScenePerformanceProfile = "default" | "proxy-dense";
 
@@ -44,7 +61,7 @@ export function SceneBackdrop() {
 
     observer.observe(root, {
       attributes: true,
-      attributeFilter: ["class", "data-gary-scene", "data-gary-quality", "data-gary-scene-profile"],
+      attributeFilter: ["class", "data-gary-scene", "data-gary-quality", "data-gary-scene-profile", "data-skin"],
     });
     reducedMotion.addEventListener?.("change", syncState);
     syncState();
@@ -55,7 +72,7 @@ export function SceneBackdrop() {
     };
   }, []);
 
-  const palette = state.dark ? WAVE_PALETTES.dark : WAVE_PALETTES.light;
+  const palette = readWavePalette(state.dark);
   const animated = state.scene === "dynamic" && !state.reducedMotion;
   const qualityProfile = GLASS_QUALITY_PROFILES[state.quality];
   const visible = state.scene !== "neutral";
@@ -70,7 +87,6 @@ export function SceneBackdrop() {
       ) : null}
       {visible && (
         <GradientWaves
-          key={`${state.dark ? "dark" : "light"}-${state.quality}-${state.performanceProfile}`}
           className="gary-scene__gradient-waves"
           horizonColor={palette.horizon}
           waveColor={palette.wave}

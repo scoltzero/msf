@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type UIEvent } from "react";
-import { Blocks, Check, History, Loader2, Maximize2, Minimize2, Plus, Send, Square, X } from "lucide-react";
+import { Blocks, Check, History, Loader2, Maximize2, Minimize2, Plus, Send, Square, TriangleAlert, X } from "lucide-react";
 import { api } from "@/lib/api";
 import { GlassSurface } from "@/components/liquid-glass/GlassSurface";
 import { cn } from "@/lib/utils";
 import { deleteAssistantSkill, listAssistantSessions, listAssistantSkills, loadAssistantSession } from "@/features/assistant/api";
-import type { AssistantExecutionMode, AssistantSkill } from "@/features/assistant/types";
+import type { AssistantApproval, AssistantExecutionMode, AssistantSkill } from "@/features/assistant/types";
 import { assistantReducer, initialAssistantState } from "@/features/assistant/reducer";
 import { streamAssistantAction, streamAssistantMessage } from "@/features/assistant/sse";
 import { AssistantMarkdown } from "./AssistantMarkdown";
@@ -17,6 +17,46 @@ interface AssistantPanelProps {
 
 function newSessionId() {
   return `assistant-${crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`}`;
+}
+
+const APPROVAL_RISK_BADGES: Record<string, { label: string; className: string }> = {
+  high: { label: "高风险", className: "bg-red-500/15 text-red-700 dark:text-red-300" },
+  medium: { label: "中风险", className: "bg-amber-500/15 text-amber-700 dark:text-amber-300" },
+  low: { label: "低风险", className: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300" },
+};
+
+function ApprovalCard({ approval, onDecision }: { approval: AssistantApproval; onDecision: (decision: "approve" | "reject") => void }) {
+  const badge = APPROVAL_RISK_BADGES[approval.risk_level || ""] ?? (approval.risk_level ? APPROVAL_RISK_BADGES.low : undefined);
+  return (
+    <div className="assistant-panel__approval">
+      <div className="text-sm font-semibold text-foreground">需要确认操作</div>
+      <p className="mt-1 text-xs leading-5 text-muted-foreground">{approval.title}</p>
+      <code className="mt-2 block overflow-x-auto rounded-lg bg-black/5 p-2 text-[11px] dark:bg-white/10">{approval.method} {approval.path}</code>
+      {approval.details ? <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-black/5 p-2 text-[11px] leading-4 text-muted-foreground dark:bg-white/10">{approval.details}</pre> : null}
+      {badge ? (
+        <div className="mt-2 rounded-lg border border-border/60 p-2">
+          <div className="flex items-center gap-1.5">
+            <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold", badge.className)}>
+              <TriangleAlert className="mr-1 h-3 w-3" />
+              {badge.label}
+            </span>
+            <span className="text-[10px] text-muted-foreground">MSF 风险解析（请核对命令）</span>
+          </div>
+          {approval.risk_notes?.length ? (
+            <ul className="mt-1.5 space-y-0.5">
+              {approval.risk_notes.map((note, index) => (
+                <li key={index} className="text-[11px] leading-4 text-foreground/90">· {note}</li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
+      <div className="mt-3 flex gap-2">
+        <button type="button" onClick={() => onDecision("approve")} className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground"><Check className="h-3.5 w-3.5" />确认执行</button>
+        <button type="button" onClick={() => onDecision("reject")} className="rounded-lg border border-border/60 px-3 py-2 text-xs text-muted-foreground">拒绝</button>
+      </div>
+    </div>
+  );
 }
 
 function SkillSlot({ skill, deleting, onChoose, onDelete }: { skill: AssistantSkill; deleting: boolean; onChoose: (skill: AssistantSkill) => void; onDelete: (skill: AssistantSkill) => void }) {
@@ -223,7 +263,7 @@ export function AssistantPanel({ open, onClose, onStateChange }: AssistantPanelP
           {state.messages.length === 0 ? <div className="assistant-panel__empty"><div className="assistant-panel__empty-content"><p className="text-sm font-semibold text-foreground">最近使用的 Skills</p><p className="mt-1 text-xs leading-5 text-muted-foreground">点击卡槽填入执行提示。读操作会直接执行；写操作会先等待你确认。</p>{skillsLoading ? <div className="assistant-panel__skills-loading"><Loader2 className="h-4 w-4 animate-spin" />正在加载 Skills</div> : skills.length ? <div className="assistant-panel__skill-slots" aria-label="最近使用的 Skills">{skills.slice(0, 5).map((skill) => <SkillSlot key={skill.id} skill={skill} deleting={deletingSkill === skill.id} onChoose={chooseSkill} onDelete={(item) => void removeSkill(item)} />)}</div> : <div className="assistant-panel__skills-empty">还没有 Skill。点击输入框左侧的 +，或让 AI 保存一个可复用流程。</div>}{skillError ? <p className="assistant-panel__skill-error">{skillError}</p> : null}<p className="assistant-panel__empty-note">对 AI 说“把这套检查保存成 Skill”，确认后会写入你的专属 Skill 目录。</p></div></div> : state.messages.map((message, index) => <div key={`${index}-${message.role}`} className={cn("assistant-panel__message", message.role === "user" ? "assistant-panel__message--user" : "assistant-panel__message--assistant")}>{message.role === "assistant" ? <AssistantMarkdown content={message.content} /> : <div className="whitespace-pre-wrap break-words text-sm leading-6">{message.content}</div>}</div>)}
           {state.toolLabel ? <div className="assistant-panel__tool"><Loader2 className="h-3.5 w-3.5 animate-spin" />{state.toolLabel}</div> : null}
           {state.error ? <div className="assistant-panel__error">{state.error}</div> : null}
-          {state.approval ? <div className="assistant-panel__approval"><div className="text-sm font-semibold text-foreground">需要确认操作</div><p className="mt-1 text-xs leading-5 text-muted-foreground">{state.approval.title}</p><code className="mt-2 block overflow-x-auto rounded-lg bg-black/5 p-2 text-[11px] dark:bg-white/10">{state.approval.method} {state.approval.path}</code>{state.approval.details ? <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-black/5 p-2 text-[11px] leading-4 text-muted-foreground dark:bg-white/10">{state.approval.details}</pre> : null}<div className="mt-3 flex gap-2"><button type="button" onClick={() => void resumeApproval("approve")} className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground"><Check className="h-3.5 w-3.5" />确认执行</button><button type="button" onClick={() => void resumeApproval("reject")} className="rounded-lg border border-border/60 px-3 py-2 text-xs text-muted-foreground">拒绝</button></div></div> : null}
+          {state.approval ? <ApprovalCard approval={state.approval} onDecision={(decision) => void resumeApproval(decision)} /> : null}
         </div>
 
         {skillsOpen ? <section className="assistant-panel__skill-drawer" aria-label="Skill 列表"><div className="assistant-panel__skill-drawer-header"><span><Blocks className="h-4 w-4" />我的 Skills</span><small>全部 {skills.length}</small></div>{skillsLoading ? <div className="assistant-panel__skills-loading"><Loader2 className="h-4 w-4 animate-spin" />正在加载 Skills</div> : skills.length ? <div className="assistant-panel__skill-drawer-list">{skills.map((skill) => <SkillSlot key={skill.id} skill={skill} deleting={deletingSkill === skill.id} onChoose={chooseSkill} onDelete={(item) => void removeSkill(item)} />)}</div> : <div className="assistant-panel__skills-empty">暂无 Skill</div>}<p className="assistant-panel__skill-drawer-help">创建方式：对 AI 说明流程，并要求“保存成 Skill”。</p></section> : null}

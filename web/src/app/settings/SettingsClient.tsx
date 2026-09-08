@@ -10,6 +10,8 @@ import {
   EyeOff,
   FileText,
   GitBranch,
+  Gamepad2,
+  KeyRound,
   Languages,
   Loader2,
   Menu,
@@ -61,7 +63,27 @@ import {
 import { useLanguage } from "@/lib/localization";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
+import { getInitialTheme, reconcileTheme } from "@/lib/appearance";
+import {
+  CUSTOM_CSS_STORAGE_KEY,
+  applyCustomCSS,
+  applySkin,
+  getInitialSkin,
+  isSkinId,
+  skinOptions,
+  type SkinId,
+} from "@/lib/skin";
+import {
+  accentPresets,
+  applyAccentColor,
+  isValidAccentColor,
+  readableAccentForeground,
+} from "@/lib/accent";
+import { applySkinTint, parseSkinTint } from "@/lib/skinTint";
+import { buildSkinCSSTemplate } from "@/lib/skinTemplate";
 import { AssistantSettingsCard } from "@/app/settings/AssistantSettingsCard";
+import { GitHubAcceleratorCard } from "@/app/settings/GitHubAcceleratorCard";
+import { GameUdpBypassCard } from "@/app/settings/GameUdpBypassCard";
 
 type TabId = "profile" | "system" | "users" | "appearance" | "update" | "reset";
 type ThemeMode = "light" | "dark" | "system";
@@ -1205,31 +1227,13 @@ function InitConfigEditor({
                 <input
                   value={draft.githubAcceleratorUrl}
                   onChange={(event) => setDraft((current) => ({ ...current, githubAcceleratorUrl: event.target.value }))}
-                  placeholder="例如: https://gh-proxy.com"
+                  placeholder="请输入完整的 HTTP(S) 加速前缀"
                   className={`${inputClass} h-11 text-sm`}
                 />
               </Field>
-              <div className="flex flex-wrap gap-2">
-                {[
-                  ["Cloudflare", "https://gh-proxy.com"],
-                  ["Fastly CDN", "https://cdn.gh-proxy.com"],
-                  ["EdgeOne", "https://edgeone.gh-proxy.com"],
-                ].map(([label, value]) => (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() => setDraft((current) => ({ ...current, githubAcceleratorUrl: value }))}
-                    className={cn(
-                      "rounded-md border px-3 py-1.5 text-xs font-medium transition",
-                      draft.githubAcceleratorUrl === value
-                        ? "border-primary bg-primary/10 text-primary"
-                        : "border-border bg-background text-muted-foreground hover:text-foreground"
-                    )}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
+              <p className="text-xs text-muted-foreground">
+                只使用你填写的地址；系统不预置、不探测，也不会自动切换镜像。若同时启用代理服务器，代理服务器优先。
+              </p>
             </div>
           </div>
         </div>
@@ -1493,6 +1497,14 @@ function SystemTab({ showToast, isAdmin }: { showToast: (message: string) => voi
           />
         )}
       </Card>
+
+      <Card title="GitHub 下载线路与 Token" Icon={KeyRound}>
+        <GitHubAcceleratorCard />
+      </Card>
+
+      <Card title="UDP 直连" Icon={Gamepad2}>
+        <GameUdpBypassCard showToast={showToast} />
+      </Card>
     </div>
   );
 }
@@ -1550,6 +1562,21 @@ function AppearanceTab({ showToast }: { showToast: (message: string) => void }) 
   const { language, setLanguage } = useLanguage();
   const [scene, setScene] = useState<GlassSceneMode>("dynamic");
   const [quality, setQuality] = useState<GlassQuality>("balanced");
+  const [skin, setSkin] = useState<SkinId>(() => getInitialSkin());
+  const [accentColor, setAccentColor] = useState(() =>
+    typeof window === "undefined" ? "" : window.localStorage.getItem("msf-accent-color") ?? "",
+  );
+  const [customCssDraft, setCustomCssDraft] = useState(() =>
+    typeof window === "undefined" ? "" : window.localStorage.getItem(CUSTOM_CSS_STORAGE_KEY) ?? "",
+  );
+  const [customCssSaved, setCustomCssSaved] = useState(() =>
+    typeof window === "undefined" ? "" : window.localStorage.getItem(CUSTOM_CSS_STORAGE_KEY) ?? "",
+  );
+  const [customCssSaving, setCustomCssSaving] = useState(false);
+  const customCssPreviewTimer = useRef<number | null>(null);
+  const [skinTint, setSkinTint] = useState(() =>
+    typeof window === "undefined" ? "" : window.localStorage.getItem("msf-skin-tint") ?? "",
+  );
   const [saved, setSaved] = useState<ContentPlateOpacity>(() => readLocalContentPlateOpacity());
   const [draft, setDraft] = useState<ContentPlateOpacity>(() => readLocalContentPlateOpacity());
   const [snapshot, setSnapshot] = useState<ContentPlateOpacity>(() => readLocalContentPlateOpacity());
@@ -1728,9 +1755,28 @@ function AppearanceTab({ showToast }: { showToast: (message: string) => void }) 
     api("/api/v1/settings/appearance")
       .then((payload) => {
         const data = apiData<Record<string, string>>(payload, {});
-        const nextTheme = (data.theme === "light" || data.theme === "dark" || data.theme === "system" ? data.theme : "system") as ThemeMode;
+        const { mode: nextTheme, pushToServer } = reconcileTheme(data.theme, getInitialTheme());
         applyThemeMode(nextTheme);
+        if (pushToServer) {
+          void api("/api/v1/settings/appearance", {
+            method: "PUT",
+            body: JSON.stringify({ theme: nextTheme }),
+          }).catch(() => undefined);
+        }
         setLanguage(data.language === "en-US" || data.language === "en" ? "en-US" : "zh-CN");
+        const nextSkin = isSkinId(data.skin) ? data.skin : getInitialSkin();
+        setSkin(nextSkin);
+        applySkin(nextSkin);
+        const backendAccent = isValidAccentColor(data.accent_color) ? data.accent_color.trim().toLowerCase() : "";
+        setAccentColor(backendAccent);
+        applyAccentColor(backendAccent);
+        const backendCustomCss = typeof data.custom_css === "string" ? data.custom_css : "";
+        setCustomCssDraft(backendCustomCss);
+        setCustomCssSaved(backendCustomCss);
+        applyCustomCSS(backendCustomCss);
+        const backendTint = parseSkinTint(data.skin_tint);
+        setSkinTint(backendTint === null ? "" : String(backendTint));
+        applySkinTint(backendTint);
         const storedScene = data.scene || localStorage.getItem("msf-glass-scene");
         const nextScene: GlassSceneMode = storedScene === "static" || storedScene === "neutral" ? storedScene : "dynamic";
         const storedQuality = data.quality || localStorage.getItem("msf-glass-quality");
@@ -1851,6 +1897,119 @@ function AppearanceTab({ showToast }: { showToast: (message: string) => void }) 
     void saveAppearance({ quality: mode });
   };
 
+  const setSkinMode = (mode: SkinId) => {
+    setSkin(mode);
+    applySkin(mode);
+    void saveAppearance({ skin: mode });
+  };
+
+  /** Preview instantly while picking; persistence is handled by commitAccent. */
+  const previewAccent = (hex: string) => {
+    setAccentColor(hex);
+    applyAccentColor(hex);
+  };
+
+  const commitAccent = async (hex: string) => {
+    const normalized = isValidAccentColor(hex) ? hex.trim().toLowerCase() : "";
+    setAccentColor(normalized);
+    applyAccentColor(normalized);
+    try {
+      await api("/api/v1/settings/appearance", {
+        method: "PUT",
+        body: JSON.stringify({ accent_color: normalized }),
+      });
+      showToast(normalized ? "品牌主色已保存" : "已恢复皮肤默认主色");
+    } catch (error) {
+      showToast(errorMessage(error));
+    }
+  };
+
+  /** Slider input rotates the scene live; pointer/keyboard commit persists. */
+  const previewSkinTint = (value: string) => {
+    setSkinTint(value);
+    applySkinTint(value.trim() === "" ? null : parseSkinTint(value));
+  };
+
+  const commitSkinTint = async () => {
+    const degrees = parseSkinTint(skinTint);
+    const normalized = degrees === null ? "" : String(degrees);
+    setSkinTint(normalized);
+    applySkinTint(degrees);
+    try {
+      await api("/api/v1/settings/appearance", {
+        method: "PUT",
+        body: JSON.stringify({ skin_tint: normalized }),
+      });
+      showToast(normalized ? `氛围色相已保存（${normalized}°）` : "氛围色相已恢复皮肤默认");
+    } catch (error) {
+      showToast(errorMessage(error));
+    }
+  };
+
+  const customCssDirty = customCssDraft !== customCssSaved;
+
+  const cancelQueuedCssPreview = () => {
+    if (customCssPreviewTimer.current !== null) {
+      window.clearTimeout(customCssPreviewTimer.current);
+      customCssPreviewTimer.current = null;
+    }
+  };
+
+  useEffect(() => {
+    return () => cancelQueuedCssPreview();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!customCssDirty) return undefined;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [customCssDirty]);
+
+  /** Typing previews locally after a short debounce; only 保存 persists. */
+  const changeCustomCss = (value: string) => {
+    setCustomCssDraft(value);
+    cancelQueuedCssPreview();
+    customCssPreviewTimer.current = window.setTimeout(() => {
+      customCssPreviewTimer.current = null;
+      applyCustomCSS(value);
+    }, 300);
+  };
+
+  const insertCssTemplate = () => {
+    const template = buildSkinCSSTemplate();
+    changeCustomCss(customCssDraft.trim() ? `${customCssDraft.trimEnd()}\n\n${template}` : template);
+  };
+
+  const revertCustomCssPreview = () => {
+    cancelQueuedCssPreview();
+    setCustomCssDraft(customCssSaved);
+    applyCustomCSS(customCssSaved);
+  };
+
+  const saveCustomCss = async () => {
+    const css = customCssDraft;
+    setCustomCssSaving(true);
+    try {
+      await api("/api/v1/settings/appearance", {
+        method: "PUT",
+        body: JSON.stringify({ custom_css: css }),
+      });
+      cancelQueuedCssPreview();
+      applyCustomCSS(css);
+      setCustomCssSaved(css);
+      showToast(css.trim() ? "自定义 CSS 已保存并生效" : "自定义 CSS 已清空");
+    } catch (error) {
+      showToast(errorMessage(error));
+    } finally {
+      setCustomCssSaving(false);
+    }
+  };
+
   const plateTiers: Array<{
     key: ContentPlateOpacityKey;
     label: string;
@@ -1866,6 +2025,132 @@ function AppearanceTab({ showToast }: { showToast: (message: string) => void }) 
 
   return (
     <div className="space-y-4">
+      <Card title="面板皮肤" Icon={Palette}>
+        <div className="grid gap-3 md:grid-cols-2">
+          {skinOptions.map(({ id, label, description }) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setSkinMode(id)}
+              className={cn(
+                "min-h-24 rounded-2xl border p-4 text-left transition-colors",
+                skin === id ? "border-primary/60 bg-primary/10" : "border-border/60 bg-transparent hover:bg-muted/30"
+              )}
+            >
+              <span className="flex items-center gap-2.5">
+                <span
+                  aria-hidden
+                  className="flex h-9 w-14 items-center justify-center rounded-lg border border-border/60"
+                  style={{ background: id === "amber" ? "#f2f2f4" : "#eef0f2" }}
+                >
+                  <span
+                    className="h-4 w-4 rounded-full"
+                    style={{ background: id === "amber" ? "linear-gradient(135deg, #fb923c, #f97316)" : "linear-gradient(135deg, #60a5fa, #2563eb)" }}
+                  />
+                </span>
+                <span className="text-sm font-semibold text-foreground">{label}</span>
+              </span>
+              <span className="mt-2 block text-xs leading-relaxed text-muted-foreground">{description}</span>
+            </button>
+          ))}
+        </div>
+        <p className="mt-3 text-xs leading-relaxed text-muted-foreground">皮肤决定配色与材质风格，与明暗模式相互独立；保存后全设备一致。</p>
+      </Card>
+
+      <Card title="皮肤调色" Icon={Palette}>
+        <div className="flex flex-wrap items-center gap-3">
+          {accentPresets.map((hex) => (
+            <button
+              key={hex}
+              type="button"
+              title={hex}
+              aria-label={`使用主色 ${hex}`}
+              onClick={() => void commitAccent(hex)}
+              className={cn(
+                "h-9 w-9 rounded-full border-2 transition-transform hover:scale-110",
+                accentColor === hex ? "scale-110 border-foreground/70 ring-2 ring-ring/40" : "border-border"
+              )}
+              style={{ backgroundColor: hex }}
+            />
+          ))}
+          <span className="relative inline-flex h-9 w-9 items-center justify-center rounded-full border-2 border-dashed border-border" title="自定义颜色">
+            <input
+              type="color"
+              value={isValidAccentColor(accentColor) ? accentColor : "#f97316"}
+              onInput={(event) => previewAccent((event.target as HTMLInputElement).value)}
+              onChange={(event) => void commitAccent(event.target.value)}
+              aria-label="自定义品牌主色"
+              className="h-7 w-7 cursor-pointer appearance-none rounded-full border-0 bg-transparent p-0"
+            />
+          </span>
+          <button
+            type="button"
+            onClick={() => void commitAccent("")}
+            disabled={!accentColor}
+            className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            恢复皮肤默认
+          </button>
+          {isValidAccentColor(accentColor) ? (
+            <span
+              className="inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-medium"
+              style={{ backgroundColor: accentColor, color: readableAccentForeground(accentColor) }}
+            >
+              当前主色 {accentColor.toUpperCase()}
+            </span>
+          ) : (
+            <span className="text-[10px] text-muted-foreground">当前跟随皮肤默认</span>
+          )}
+        </div>
+        <p className="mt-2 text-xs leading-relaxed text-muted-foreground">品牌主色：按钮、焦点环、侧栏激活项、图表五色与氛围光 A 全部跟随；取色器拖动实时预览、松开即保存。</p>
+
+        <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
+          <label htmlFor="skin-tint-hue" className="text-sm font-semibold text-foreground">氛围色相</label>
+          <input
+            id="skin-tint-hue"
+            type="range"
+            min={0}
+            max={360}
+            step={1}
+            value={parseSkinTint(skinTint) ?? 0}
+            onChange={(event) => previewSkinTint(event.target.value)}
+            onPointerUp={() => void commitSkinTint()}
+            onKeyUp={(event) => {
+              if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) void commitSkinTint();
+            }}
+            disabled={customCssSaving}
+            aria-label="氛围色相"
+            className="hue-slider h-2.5 w-full cursor-pointer sm:max-w-xs"
+          />
+          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{parseSkinTint(skinTint) === null ? "跟随皮肤" : `${skinTint}°`}</span>
+          <button
+            type="button"
+            onClick={() => {
+              previewSkinTint("");
+              void commitSkinTint();
+            }}
+            disabled={!skinTint}
+            className="shrink-0 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            重置
+          </button>
+        </div>
+        <p className="mt-2 text-xs leading-relaxed text-muted-foreground">旋转背景氛围光与波浪的整体色相（亮暗模式通用，不影响文字与图表）。</p>
+
+        <div className="gary-solid-plate gary-solid-plate--subtle mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl p-3" aria-hidden="true">
+          <span className="gary-nav-row gary-nav-row--active px-3 py-1.5 text-xs">概览（侧栏激活）</span>
+          <span className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground shadow-sm">主按钮</span>
+          <span className="flex items-center gap-1.5 text-[10px] text-muted-foreground">图表
+            <i className="block h-1.5 w-9 rounded-full" style={{ background: "linear-gradient(90deg, transparent, rgb(var(--msf-chart-download)))" }} />
+            <i className="block h-1.5 w-9 rounded-full" style={{ background: "linear-gradient(90deg, transparent, rgb(var(--msf-chart-upload)))" }} />
+            <i className="block h-1.5 w-9 rounded-full" style={{ background: "linear-gradient(90deg, transparent, rgb(var(--msf-chart-connections)))" }} />
+          </span>
+          <span className="flex items-center gap-1.5 text-[10px] text-muted-foreground">氛围光
+            <i className="block h-4 w-16 rounded-md" style={{ background: "linear-gradient(90deg, var(--gary-scene-a), var(--gary-scene-b), var(--gary-scene-c))" }} />
+          </span>
+        </div>
+      </Card>
+
       <Card title="主题模式" Icon={Palette}>
         <div className="grid max-w-[672px] gap-3 md:grid-cols-3">
           {themeOptions.map(({ id, label, Icon }) => (
@@ -1929,6 +2214,60 @@ function AppearanceTab({ showToast }: { showToast: (message: string) => void }) 
           ))}
         </div>
         <p className="mt-3 text-xs leading-relaxed text-muted-foreground">设置会一次性应用并保存，不使用会导致白屏的实时物理参数滑条。</p>
+      </Card>
+
+      <Card title="自定义 CSS" Icon={Code2}>
+        <div className="space-y-3">
+          <textarea
+            value={customCssDraft}
+            onChange={(event) => changeCustomCss(event.target.value)}
+            spellCheck={false}
+            rows={10}
+            maxLength={65536}
+            placeholder={"/* 不确定写什么？点下方「填入当前皮肤模板」，会按当前实际值生成带注释的速查表 */"}
+            aria-label="自定义 CSS"
+            className="scrollbar-thin w-full resize-y rounded-lg border border-border bg-background/60 p-3 font-mono text-xs leading-relaxed text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+          />
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              {customCssDirty ? "有未保存修改（输入即时预览，仅本机生效）" : "输入即时预览；保存后全设备同步，最多 64KB。"}
+            </p>
+            <div className="flex shrink-0 flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={insertCssTemplate}
+                disabled={customCssSaving}
+                className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                填入当前皮肤模板
+              </button>
+              <button
+                type="button"
+                onClick={revertCustomCssPreview}
+                disabled={customCssSaving || !customCssDirty}
+                className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                撤销预览
+              </button>
+              <button
+                type="button"
+                onClick={() => setCustomCssDraft("")}
+                disabled={customCssSaving || !customCssDraft}
+                className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                清空
+              </button>
+              <button
+                type="button"
+                onClick={() => void saveCustomCss()}
+                disabled={customCssSaving || !customCssDirty}
+                className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {customCssSaving ? "保存中…" : "保存"}
+              </button>
+            </div>
+          </div>
+        </div>
       </Card>
 
       <Card title="内容底板透明度" Icon={Eye}>
@@ -2306,7 +2645,13 @@ function ComponentUpdateCard({
   );
 }
 
-function UpdateTab({ showToast }: { showToast: (message: string) => void }) {
+function UpdateTab({
+  showToast,
+  onNavigateSystem,
+}: {
+  showToast: (message: string) => void;
+  onNavigateSystem?: () => void;
+}) {
   const [checking, setChecking] = useState(false);
   const [updateAction, setUpdateAction] = useState<"" | "downloading" | "installing">("");
   const [loadingReleases, setLoadingReleases] = useState(false);
@@ -2324,6 +2669,11 @@ function UpdateTab({ showToast }: { showToast: (message: string) => void }) {
   const [restartPending, setRestartPending] = useState(false);
   const restartRefreshTimer = useRef<number | null>(null);
   const restartRefreshAttempts = useRef(0);
+  // Anonymous GitHub API quota is 60/h per IP; reusing a recent release list
+  // on repeat checks halves the cost until a Token is configured.
+  const releasesLoadedRef = useRef(false);
+  const releasesFetchedAtRef = useRef(0);
+  const RELEASES_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 
   const latestRelease = releases[0];
   const displayUpdateStatus = restartPending
@@ -2435,10 +2785,13 @@ function UpdateTab({ showToast }: { showToast: (message: string) => void }) {
       }
     }
 
+    const shouldFetchReleases =
+      checkRemote &&
+      (!releasesLoadedRef.current || Date.now() - releasesFetchedAtRef.current > RELEASES_CACHE_TTL_MS);
     const [versionResult, statusResult, releasesResult, componentResult, configResult, componentConfigResult] = await Promise.allSettled([
       api<any>("/api/v1/version"),
       api<any>("/api/v1/update/status"),
-      checkRemote ? api<any>("/api/v1/update/releases") : Promise.resolve(null),
+      shouldFetchReleases ? api<any>("/api/v1/update/releases") : Promise.resolve(null),
       api<any>("/api/v1/component-updates"),
       api<any>("/api/v1/update/config"),
       Promise.all(["mosdns", "mihomo", "zashboard"].map((component) => api<any>(`/api/v1/component-updates/${component}/config`))),
@@ -2463,7 +2816,12 @@ function UpdateTab({ showToast }: { showToast: (message: string) => void }) {
 
     if (checkRemote) {
       if (releasesResult.status === "fulfilled") {
-        setReleases(apiList<ReleaseItem>(releasesResult.value, ["data", "items", "releases"]));
+        const list = apiList<ReleaseItem>(releasesResult.value, ["data", "items", "releases"]);
+        if (list.length > 0) {
+          releasesLoadedRef.current = true;
+          releasesFetchedAtRef.current = Date.now();
+        }
+        setReleases(list);
       } else {
         failures.push(errorMessage(releasesResult.reason));
       }
@@ -2516,6 +2874,28 @@ function UpdateTab({ showToast }: { showToast: (message: string) => void }) {
     if (checkRemote) setLoadingReleases(false);
     setChecking(false);
   };
+
+  const refreshReleases = async () => {
+    setLoadingReleases(true);
+    try {
+      const payload = await api<any>("/api/v1/update/releases");
+      const list = apiList<ReleaseItem>(payload, ["data", "items", "releases"]);
+      if (list.length > 0) {
+        releasesLoadedRef.current = true;
+        releasesFetchedAtRef.current = Date.now();
+      }
+      setReleases(list);
+      setRepoError("");
+      showToast("发布列表已刷新");
+    } catch (err) {
+      setRepoError(errorMessage(err));
+      showToast(`刷新发布列表失败: ${errorMessage(err)}`);
+    } finally {
+      setLoadingReleases(false);
+    }
+  };
+
+  const repoErrorNeedsToken = /限流|rate limit|429|Token/i.test(repoError);
 
   useEffect(() => {
     return () => {
@@ -2922,9 +3302,20 @@ function UpdateTab({ showToast }: { showToast: (message: string) => void }) {
       <Card title="更新日志" Icon={FileText}>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
           <span>来源: {RELEASE_REPO}</span>
-          <a href={`${RELEASE_REPO_URL}/releases`} target="_blank" rel="noreferrer" className="text-primary hover:underline">
-            打开 GitHub Releases
-          </a>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              disabled={loadingReleases}
+              onClick={() => void refreshReleases()}
+              className="inline-flex items-center gap-1 text-muted-foreground transition hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <RotateCcw className="h-3 w-3" />
+              刷新列表
+            </button>
+            <a href={`${RELEASE_REPO_URL}/releases`} target="_blank" rel="noreferrer" className="text-primary hover:underline">
+              打开 GitHub Releases
+            </a>
+          </div>
         </div>
         {loadingReleases ? (
           <div className="rounded-lg border border-border/50 bg-muted/20 p-3 text-xs text-muted-foreground">正在加载更新日志...</div>
@@ -2935,6 +3326,15 @@ function UpdateTab({ showToast }: { showToast: (message: string) => void }) {
         ) : (
           <div className="rounded-lg border border-border/50 bg-muted/20 p-3 text-xs text-muted-foreground">
             {repoError || "当前仓库暂无发布记录。"}
+            {repoErrorNeedsToken && onNavigateSystem ? (
+              <button
+                type="button"
+                onClick={onNavigateSystem}
+                className="ml-2 inline-flex items-center gap-1 rounded-md border border-primary/50 bg-primary/10 px-2 py-1 text-[11px] font-medium text-primary transition hover:bg-primary/20"
+              >
+                去配置 GitHub Token（提升至 5000 次/小时）
+              </button>
+            ) : null}
           </div>
         )}
       </Card>
@@ -3002,6 +3402,15 @@ function UpdateTab({ showToast }: { showToast: (message: string) => void }) {
           {releases.length === 0 ? (
             <div className="rounded-lg border border-border/50 bg-muted/20 p-3 text-xs text-muted-foreground">
               {loadingReleases ? "正在加载历史版本..." : repoError || "当前仓库暂无历史版本。"}
+              {!loadingReleases && repoErrorNeedsToken && onNavigateSystem ? (
+                <button
+                  type="button"
+                  onClick={onNavigateSystem}
+                  className="ml-2 inline-flex items-center gap-1 rounded-md border border-primary/50 bg-primary/10 px-2 py-1 text-[11px] font-medium text-primary transition hover:bg-primary/20"
+                >
+                  去配置 GitHub Token
+                </button>
+              ) : null}
             </div>
           ) : (
             releases.map((release, index) => {
@@ -3247,7 +3656,7 @@ export function SettingsClient({ initialTab }: { initialTab: TabId }) {
           {activeTab === "system" && <SystemTab showToast={showToast} isAdmin={isAdmin} />}
           {activeTab === "users" && (isAdmin ? <UsersSettingsPanel /> : <SolidPlate tone="strong" className="rounded-[19.2px] p-6 text-sm text-muted-foreground">当前账号没有用户管理权限。</SolidPlate>)}
           {activeTab === "appearance" && <AppearanceTab showToast={showToast} />}
-          {activeTab === "update" && <UpdateTab showToast={showToast} />}
+          {activeTab === "update" && <UpdateTab showToast={showToast} onNavigateSystem={() => changeTab("system")} />}
           {activeTab === "reset" && <ResetTab showToast={showToast} />}
         </div>
       </div>

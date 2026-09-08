@@ -367,16 +367,21 @@ func TestComponentDownloadAssetFromReleaseRequiresDigest(t *testing.T) {
 	digest := testSHA256Digest([]byte("dist archive"))
 	release := githubRelease{Assets: []githubAsset{{
 		Name:               "dist.zip",
-		BrowserDownloadURL: "https://example.invalid/dist.zip",
+		BrowserDownloadURL: "https://github.com/Zephyruso/zashboard/releases/download/v1/dist.zip",
 		Digest:             digest,
 	}}}
 	asset, err := app.componentDownloadAssetFromRelease("zashboard", release)
 	if err != nil {
 		t.Fatalf("componentDownloadAssetFromRelease returned error: %v", err)
 	}
-	if asset.URL != "https://example.invalid/dist.zip" || asset.Digest != digest || asset.VerificationSource != componentVerificationSourceGitHubAssetDigest {
+	if asset.URL != release.Assets[0].BrowserDownloadURL || asset.Digest != digest || asset.VerificationSource != componentVerificationSourceGitHubAssetDigest {
 		t.Fatalf("unexpected asset metadata: %#v", asset)
 	}
+	release.Assets[0].BrowserDownloadURL = "https://example.invalid/dist.zip"
+	if _, err := app.componentDownloadAssetFromRelease("zashboard", release); err == nil || !strings.Contains(err.Error(), "untrusted download URL") {
+		t.Fatalf("untrusted browser download URL should fail, got %v", err)
+	}
+	release.Assets[0].BrowserDownloadURL = "https://github.com/Zephyruso/zashboard/releases/download/v1/dist.zip"
 
 	release.Assets[0].Digest = ""
 	if _, err := app.componentDownloadAssetFromRelease("zashboard", release); err == nil || !strings.Contains(err.Error(), "no valid SHA-256 digest") {
@@ -755,6 +760,7 @@ func TestSelfUpdateDownloadFailurePersistsStatusEvents(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	rawURL := server.URL + "/msf-linux-amd64.tar.gz"
 	server.Close()
+	app.setSetting(selfUpdateDownloadDigestKey, testSHA256Digest([]byte("unreachable")))
 	now := time.Now()
 	if _, err := app.DB.Exec(`insert into update_info(component,current_version,latest_version,has_update,status,progress,error_message,download_url,release_notes,last_check_time,created_at,updated_at)
 		values('msf',?,?,?,?,?,?,?,?,?,?,?)`, app.Version, "v9.9.9", true, "checked", 0, "", rawURL, "", now, now, now); err != nil {
@@ -785,6 +791,7 @@ func TestSelfUpdateDownloadSuccessPersistsProgressAndEvents(t *testing.T) {
 	}))
 	defer server.Close()
 	rawURL := server.URL + "/msf-linux-amd64.tar.gz"
+	app.setSetting(selfUpdateDownloadDigestKey, testSHA256Digest([]byte("hello update")))
 	now := time.Now()
 	if _, err := app.DB.Exec(`insert into update_info(component,current_version,latest_version,has_update,status,progress,error_message,download_url,release_notes,last_check_time,created_at,updated_at)
 		values('msf',?,?,?,?,?,?,?,?,?,?,?)`, app.Version, "v9.9.9", true, "checked", 0, "", rawURL, "", now, now, now); err != nil {
@@ -1936,7 +1943,7 @@ func TestMihomoConnectionsProxiesRulesAndClose(t *testing.T) {
 		t.Fatalf("connection close failed: status=%d body=%s", closeAll.Code, closeAll.Body.String())
 	}
 	proxies := requestJSON(t, app, http.MethodGet, "/api/v1/mihomo/proxies?search=proxy", token, nil)
-	if proxies.Code != http.StatusOK || !strings.Contains(proxies.Body.String(), `"name":"Proxy"`) || !strings.Contains(proxies.Body.String(), `"name":"proxy-a"`) || !strings.Contains(proxies.Body.String(), `"provider-name":"airport"`) || !strings.Contains(proxies.Body.String(), `"proxies":{"Proxy"`) || strings.Contains(proxies.Body.String(), `"proxy_list"`) || strings.Contains(proxies.Body.String(), `"raw":{"proxies"`) {
+	if proxies.Code != http.StatusOK || !strings.Contains(proxies.Body.String(), `"name":"Proxy"`) || !strings.Contains(proxies.Body.String(), `"name":"proxy-a"`) || !strings.Contains(proxies.Body.String(), `"provider-name":"airport"`) || !strings.Contains(proxies.Body.String(), `"proxies":{"Proxy"`) || !strings.Contains(proxies.Body.String(), `"proxy_list"`) || strings.Contains(proxies.Body.String(), `"raw":{"proxies"`) {
 		t.Fatalf("proxy list mismatch: status=%d body=%s", proxies.Code, proxies.Body.String())
 	}
 	selectProxy := requestJSON(t, app, http.MethodPut, "/api/v1/mihomo/proxies/Proxy", token, map[string]string{"name": "proxy-a"})

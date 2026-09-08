@@ -493,6 +493,9 @@ func (a *App) syncMihomoActiveConfigFromAppliedUserConfig(rel, content, username
 	if old, err := a.readTextFile(mihomoActiveConfigRelPath); err == nil {
 		a.createConfigHistory("mihomo", mihomoActiveConfigRelPath, old, "auto backup before active Mihomo config sync", username)
 	}
+	// The controller secret is MSF-managed hardening, applied on top of the
+	// user config unless it declares a secret of its own.
+	content = a.injectMihomoControllerSecret(content)
 	if err := a.writeTextFileDirect(mihomoActiveConfigRelPath, content); err != nil {
 		return err
 	}
@@ -515,7 +518,16 @@ func (a *App) reconcileAppliedMihomoUserConfig() error {
 		a.setSetting(mihomoAppliedUserConfigKey, "")
 		return nil
 	}
-	return a.syncMihomoActiveConfigFromAppliedUserConfig(rel, content, "system")
+	if err := a.syncMihomoActiveConfigFromAppliedUserConfig(rel, content, "system"); err != nil {
+		return err
+	}
+	// A successful reconcile means whatever blocked earlier startups (core
+	// mismatch, missing Smart resources, ...) is resolved; drop stale issues.
+	a.clearStartupIssue("mihomo_core_type_mismatch")
+	a.clearStartupIssue("mihomo_smart_resources_missing")
+	a.clearStartupIssue("mihomo_config_test_failed")
+	a.clearStartupIssue("mihomo_config_invalid")
+	return nil
 }
 
 func (a *App) nextMihomoUserConfigName() string {
@@ -748,6 +760,9 @@ func validateMihomoConfigContent(content string, proxyModes ...string) mihomoCon
 	check("external-ui", "ui")
 	check("port", 7890)
 	check("socks-port", 7891)
+	if _, ok := cfg["secret"]; !ok {
+		warnings = append(warnings, "未设置 secret：MSF 会在应用时自动注入随机 secret（可在设置中查看/修改）；若清空设置项 mihomo_controller_secret 则控制器 API 将无认证开放")
+	}
 	if isTUNProxyMode(setupPreflightProxyMode(proxyModes...)) {
 		if tun, ok := cfg["tun"].(map[string]any); ok {
 			if !isTruthy(fmtAny(tun["enable"])) {
@@ -833,7 +848,7 @@ func (a *App) mihomoProtectedFields() []string {
 			"tproxy-port: 7896",
 		)
 	}
-	return append(fields, "secret 如用户设置，MSF 会读取并用于控制器认证")
+	return append(fields, "secret: MSF 自动生成随机值并在应用时注入（用户自带的 secret 优先）")
 }
 
 func yamlListEmpty(value any) bool {

@@ -39,15 +39,13 @@ func (a *App) handleLogs(w http.ResponseWriter, r *http.Request) {
 		lines = append(lines, firstNonEmpty(fmtAny(item["display"]), fmtAny(item["message"]), fmtAny(item["raw"])))
 	}
 	stats := logStats(logs)
+	// The web client reads `logs` (its fallback-chain head) plus stats;
+	// legacy mirrors (items/data/lines/raw_lines/content) quintupled the
+	// payload on an 8s-polled endpoint and were never read.
 	writeJSON(w, http.StatusOK, map[string]any{
 		"success":    true,
 		"service":    service,
-		"lines":      lines,
-		"raw_lines":  rawLines,
 		"logs":       paged,
-		"items":      paged,
-		"data":       paged,
-		"content":    strings.Join(lines, "\n"),
 		"pagination": pagination(page, pageSize, len(logs)),
 		"stats":      stats,
 		"paths":      a.logPathRows(service),

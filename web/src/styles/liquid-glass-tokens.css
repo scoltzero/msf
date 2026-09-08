@@ -6,6 +6,10 @@
   --gary-scene-b: rgba(225, 205, 184, 0.44);
   --gary-scene-c: rgba(202, 211, 220, 0.58);
   --gary-scene-mask: rgba(246, 248, 249, 0.08);
+  /* Dynamic WebGL wave palette (SceneBackdrop), also skin-overridable. */
+  --gary-scene-wave-horizon: #f3fbff;
+  --gary-scene-wave: #00366f;
+  --gary-scene-wave-crest: #24d7ee;
 
   --gary-glass-fill-ultrathin: rgba(252, 252, 252, 0.12);
   --gary-glass-fill-regular: rgba(252, 252, 252, 0.18);
@@ -60,6 +64,14 @@
   --gary-z-nav: 40;
   --gary-z-header: 50;
   --gary-z-overlay: 70;
+
+  /* Chart series colors as comma-separated RGB triplets so skins can restyle
+     dashboards (see charts.tsx resolveChartColors). */
+  --msf-chart-cpu: 37, 99, 235;
+  --msf-chart-memory: 147, 51, 234;
+  --msf-chart-download: 96, 165, 250;
+  --msf-chart-upload: 74, 222, 128;
+  --msf-chart-connections: 139, 92, 246;
 }
 
 @supports (color: rgb(0 0 0 / 0.5)) {
@@ -78,6 +90,9 @@
   --gary-scene-b: rgba(82, 81, 88, 0.62);
   --gary-scene-c: rgba(51, 62, 70, 0.74);
   --gary-scene-mask: rgba(4, 5, 6, 0.10);
+  --gary-scene-wave-horizon: #0d0f11;
+  --gary-scene-wave: #243241;
+  --gary-scene-wave-crest: #126b9e;
 
   --gary-glass-fill-ultrathin: rgba(18, 18, 18, 0.12);
   --gary-glass-fill-regular: rgba(18, 18, 18, 0.16);

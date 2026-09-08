@@ -2,6 +2,7 @@
 
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { Plus, Settings2 } from "lucide-react";
+import { usePageReady } from "@/lib/page-readiness";
 import { AppShell } from "@/components/AppShell";
 import { GlassButton } from "@/components/liquid-glass/GlassButton";
 import { useToaster, ToastStack } from "@/components/Toaster";
@@ -57,7 +58,8 @@ export default function MihomoProxiesPage() {
   const [search, setSearch] = useState(""); const [searchMode, setSearchMode] = useState<ProxySearchMode>("groups"); const [regex, setRegex] = useState(false); const deferredSearch = useDeferredValue(search); const [typeFilter, setTypeFilter] = useState("all"); const [autoRefresh, setAutoRefresh] = useState(true); const [reorderEnabled, setReorderEnabled] = useState(false); const [settingsOpen, setSettingsOpen] = useState(false); const [chainGroup, setChainGroup] = useState<ProxyGroupView | null>(null); const [editor, setEditor] = useState<"provider" | "group" | "manual" | null>(null); const [groupManagerOpen, setGroupManagerOpen] = useState(false); const [providerManagerOpen, setProviderManagerOpen] = useState(false);
   const [providerDraft, setProviderDraft] = useState<ProxyProviderDraft>(); const [groupDraft, setGroupDraft] = useState<ProxyGroupDraftView>(); const [groupConfigLoading, setGroupConfigLoading] = useState(false); const [manualDraft, setManualDraft] = useState<ProxyManualNodeDraft>(); const [editorKey, setEditorKey] = useState(""); const [editorBusy, setEditorBusy] = useState<string | null>(null); const [testingTarget, setTestingTarget] = useState<string | null>(null); const [updatingProvider, setUpdatingProvider] = useState<string | null>(null);
   const runtime = useProxyRuntime({ enabled: true, autoRefreshMs: autoRefresh ? 30_000 : 0, pageFallback: { url: settings.delayTestUrl, timeoutMs: settings.delayTimeoutMs }, settings: { autoDisconnectOnSwitch: settings.autoDisconnectOnSwitch } }); const { store, loading, refreshing, error, testingJobs } = runtime; const resolveChain = runtime.resolveChain;
-  const { groupTraffic } = useProxyGroupTraffic({ enabled: true, intervalMs: 2_000 });
+  usePageReady(!loading);
+  const { groupTraffic } = useProxyGroupTraffic({ enabled: !loading, intervalMs: 2_000 });
   useEffect(() => { if (error) showToast(error); }, [error, showToast]);
 
   const baseGroups = useMemo(() => {

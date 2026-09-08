@@ -185,9 +185,11 @@ func (a *App) handleMosDNSVersionSwitch(w http.ResponseWriter, r *http.Request) 
 }
 
 func (a *App) handleMosDNSLogs(w http.ResponseWriter, r *http.Request) {
+	// Public compat endpoint (auth-exempt list); mirrors of the same entries
+	// (lines/data/content) quadrupled the payload — keep the chain-head key.
 	lines := filterLogLines(a.serviceLogLines("mosdns", queryInt(r, "lines", 500)), r)
 	entries := structuredLogLines(lines)
-	writeJSON(w, http.StatusOK, map[string]any{"success": true, "lines": lines, "logs": entries, "data": entries, "content": strings.Join(lines, "\n")})
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "logs": entries})
 }
 
 func (a *App) handleMosDNSInstall(w http.ResponseWriter, r *http.Request) {
@@ -565,7 +567,7 @@ func (a *App) handleMosDNSClientScanTask(w http.ResponseWriter, r *http.Request)
 	if task["found_count"] == nil {
 		task["found_count"] = task["found"]
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"success": true, "data": task, "task": task, "status": task["status"], "progress": task["progress"], "found_count": task["found_count"]})
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "data": task})
 }
 
 func (a *App) handleMosDNSClientIPs(w http.ResponseWriter, r *http.Request) {
@@ -862,10 +864,11 @@ func (a *App) handleMosDNSQueryLog(w http.ResponseWriter, r *http.Request) {
 		end = total
 	}
 	pageEntries := entries[start:end]
-	lines := mosDNSQueryRawLines(pageEntries)
+	// Single canonical shape: data.logs.  The former items/lines mirrors and
+	// root-level lifts serialized the same entries five times (7MB responses
+	// on a 1s-polled endpoint); the web client only reads `data.logs`.
 	payload := map[string]any{
 		"logs":        pageEntries,
-		"items":       pageEntries,
 		"total":       total,
 		"page":        page,
 		"limit":       limit,
@@ -873,13 +876,12 @@ func (a *App) handleMosDNSQueryLog(w http.ResponseWriter, r *http.Request) {
 		"pagination": map[string]any{
 			"page": page, "limit": limit, "page_size": limit, "total": total, "total_pages": (total + limit - 1) / limit,
 		},
-		"lines": lines,
 	}
 	if r.URL.Query().Get("stream") == "true" {
 		a.sseLoop(w, r, 2*time.Second, func() any { return payload })
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"success": true, "data": payload, "lines": lines, "logs": pageEntries})
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "data": payload})
 }
 
 func (a *App) handleMosDNSQueryMeta(w http.ResponseWriter, r *http.Request) {
@@ -1967,6 +1969,18 @@ func (a *App) setting(key, fallback string) string {
 
 func (a *App) setSetting(key, value string) {
 	_, _ = a.DB.Exec(`insert or replace into settings(key,value,updated_at) values(?,?,?)`, key, value, time.Now())
+	// Keep in-memory copies coherent: renderNFT runs inside factory-reset
+	// transactions that hold the single sqlite connection, so these cached
+	// readers must never fall back to the DB.
+	if key == mihomoControllerSecretSettingKey {
+		a.setCachedMihomoControllerSecret(strings.TrimSpace(value))
+	}
+	if key == "network.game_udp_bypass_ports" {
+		a.setCachedGameUDPBypassPorts(value)
+	}
+	if key == "network.china_udp_bypass" {
+		a.setCachedChinaUDPBypass(value)
+	}
 }
 
 func (a *App) jsonSetting(key string, fallback any) any {

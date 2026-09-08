@@ -152,23 +152,20 @@ func normalizeMosDNSQueryMap(obj map[string]any, index int, raw string) map[stri
 	if queryTime == "" {
 		queryTime = time.Now().Add(time.Duration(index) * -time.Second).Format(time.RFC3339)
 	}
+	// Canonical field names only: the web client and rank/meta consumers all
+	// read these first (their fallback chains cover older payloads).  The
+	// former alias mirrors (time/domain/client/type/rule/response) plus the
+	// debug "raw" dump tripled each entry's size on a 1s-polled endpoint.
 	return map[string]any{
 		"trace_id":      nonEmpty(firstString(obj, "trace_id", "id"), fmt.Sprintf("log-%d", index+1)),
 		"query_time":    queryTime,
-		"time":          queryTime,
 		"query_name":    queryName,
-		"domain":        queryName,
 		"client_ip":     nonEmpty(clientIP, "127.0.0.1"),
-		"client":        nonEmpty(clientIP, "127.0.0.1"),
 		"query_type":    queryType,
-		"type":          queryType,
 		"domain_set":    domainSet,
-		"rule":          domainSet,
 		"response_code": responseCode,
-		"response":      responseCode,
 		"duration_ms":   duration,
 		"answers":       answers,
-		"raw":           nonEmpty(raw, fmt.Sprint(obj)),
 	}
 }
 
@@ -249,20 +246,13 @@ func parseMosDNSQueryLine(line string, index int) (map[string]any, bool) {
 	return map[string]any{
 		"trace_id":      fmt.Sprintf("log-%d", index+1),
 		"query_time":    queryTime,
-		"time":          queryTime,
 		"query_name":    queryName,
-		"domain":        queryName,
 		"client_ip":     nonEmpty(clientIP, "127.0.0.1"),
-		"client":        nonEmpty(clientIP, "127.0.0.1"),
 		"query_type":    queryType,
-		"type":          queryType,
 		"domain_set":    domainSet,
-		"rule":          domainSet,
 		"response_code": responseCode,
-		"response":      responseCode,
 		"duration_ms":   duration,
 		"answers":       answers,
-		"raw":           line,
 	}, true
 }
 

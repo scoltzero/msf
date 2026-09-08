@@ -105,7 +105,7 @@ export type ProxyApi = ReturnType<typeof createProxyApi>;
 
 export function createProxyApi(transport: ProxyApiTransport = api): {
   request<T>(path: string, options?: RequestInit): Promise<T>;
-  loadRuntime(previous?: ProxyStore, signal?: AbortSignal): Promise<ProxyRuntimeLoadResult>;
+  loadRuntime(previous?: ProxyStore, signal?: AbortSignal, onPrimary?: (store: ProxyStore) => void): Promise<ProxyRuntimeLoadResult>;
   getProxies(signal?: AbortSignal): Promise<unknown>;
   getOverview(signal?: AbortSignal): Promise<unknown>;
   getProviders(signal?: AbortSignal): Promise<unknown>;
@@ -132,13 +132,18 @@ export function createProxyApi(transport: ProxyApiTransport = api): {
 
   return {
     request,
-    async loadRuntime(previous, signal) {
+    async loadRuntime(previous, signal, onPrimary) {
       const entries: Array<readonly [keyof ProxyRuntimeRequests, Promise<unknown>]> = [
         ["proxies", get("/api/v1/mihomo/proxies", signal)],
         ["overview", get("/api/v1/mihomo/overview", signal)],
         ["providers", get("/api/v1/mihomo/proxy-providers", signal)],
         ["authority", get("/api/v1/mihomo/config/mode", signal)],
       ];
+      // Canonical proxies include the authority and nodes needed to render.
+      // Auxiliary provider/overview endpoints must not hold back this result.
+      void entries[0][1].then(primary => {
+        if (!signal?.aborted) onPrimary?.(normalizeProxySnapshot(primary, previous));
+      }).catch(() => undefined);
       const settled = await Promise.allSettled(entries.map(([, promise]) => promise));
       const responses: ProxyRuntimeRequests = {};
       const errors: Error[] = [];

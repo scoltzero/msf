@@ -1,20 +1,23 @@
 plugins:
 #使用前面定义的内部dns服务器，并定义可复用的序列，文件名中的1代表了层级
-#转发请求至sing-box/mihome dns请求fakeip
+#转发请求至sing-box/mihome dns请求fakeip（forward：本地回环上游快速失败，
+# 旧 aliapi 对 NXDOMAIN 应答等 5 秒）
   - tag: nocnfake
-    type: aliapi
+    type: forward
     args:
       concurrent: 1
       upstreams:
         - addr: "udp://127.0.0.1:6666"
+          upstream_query_timeout: 2000
 
 #向mihomo请求国内的fakeip
   - tag: cnfake
-    type: aliapi
+    type: forward
     args:
       concurrent: 1
       upstreams:
         - addr: "udp://127.0.0.1:1053"
+          upstream_query_timeout: 2000
 
 #缓存序列-国内域名realip
   - tag: sequence_local_exit

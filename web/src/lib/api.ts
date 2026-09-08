@@ -1,14 +1,22 @@
 export const TOKEN_KEY = "msf_token";
 export const REFRESH_TOKEN_KEY = "msf_refresh_token";
 const PERSISTENT_LOGIN_ANNOUNCEMENT_KEY = /^msf-login-announcement:[^:]+:hidden$/;
-const PERSISTENT_APPEARANCE_KEYS = new Set([
-  "msf-theme",
-  "msf-language",
-  "msf-glass-scene",
-  "msf-glass-quality",
-  "msf-content-plate-settings",
-  "msf-content-plate-opacity",
-]);
+// Appearance preferences describe the viewer's environment, not an auth
+// session; they must survive token expiry (401) and logout-triggered cleanup.
+const PERSISTENT_PREFERENCE_KEYS = new Set(
+  [
+    "msf-theme",
+    "msf-language",
+    "msf-skin",
+    "msf-custom-css",
+    "msf-accent-color",
+    "msf-skin-tint",
+    "msf-glass-scene",
+    "msf-glass-quality",
+    "msf-content-plate-settings",
+    "msf-content-plate-opacity",
+  ].map((key) => key.toLowerCase()),
+);
 
 export interface ApiErrorPayload {
   error?: string;
@@ -56,12 +64,10 @@ export function clearSession() {
     for (let index = 0; index < storage.length; index += 1) {
       const key = storage.key(index);
       if (!key || !key.toLowerCase().startsWith("msf")) continue;
-      const normalizedKey = key.toLowerCase();
-      const isPermanentAnnouncementPreference =
-        storage === window.localStorage && PERSISTENT_LOGIN_ANNOUNCEMENT_KEY.test(normalizedKey);
-      const isPersistentAppearancePreference =
-        storage === window.localStorage && PERSISTENT_APPEARANCE_KEYS.has(normalizedKey);
-      if (!isPermanentAnnouncementPreference && !isPersistentAppearancePreference) keys.push(key);
+      const isPersistentPreference =
+        storage === window.localStorage &&
+        (PERSISTENT_LOGIN_ANNOUNCEMENT_KEY.test(key.toLowerCase()) || PERSISTENT_PREFERENCE_KEYS.has(key.toLowerCase()));
+      if (!isPersistentPreference) keys.push(key);
     }
     keys.forEach((key) => storage.removeItem(key));
   }

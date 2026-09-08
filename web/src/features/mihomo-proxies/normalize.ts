@@ -328,6 +328,9 @@ function providerEntries(value: unknown): Array<{ id: string; row: RecordValue }
 function providerPayload(data: RecordValue): unknown {
   const providerContainer = data.providers;
   if (providerContainer && asRecord(providerContainer)?.providers) return asRecord(providerContainer)?.providers;
+  // The /mihomo/proxy-providers response nests its rows under data.items
+  // (data.providers used to mirror them before the payload was slimmed).
+  if (providerContainer && asRecord(providerContainer)?.items) return asRecord(providerContainer)?.items;
   return providerContainer ?? data.proxy_providers ?? data.proxyProviders;
 }
 

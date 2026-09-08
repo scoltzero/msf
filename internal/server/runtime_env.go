@@ -96,10 +96,15 @@ func (a *App) ShutdownRuntime(ctx context.Context) error {
 	if err := restorePlatformNetwork(ctx, a, cfg); err != nil {
 		errs = append(errs, err)
 	}
-	if err := a.Services.StopAll(ctx); err != nil {
+	if err := a.Services.Shutdown(ctx); err != nil {
 		errs = append(errs, err)
 	}
-	if IsDockerRuntime() && DockerCleanupNetworkOnExit() && a.shouldCleanupDockerNetwork() {
+	// While msf is down its nft redirect target (7877/7896) is gone; leftover
+	// rules would blackhole every TCP flow through the gateway until msf
+	// returns.  Clear what we own on every exit path we control — systemd's
+	// ExecStopPost covers the ones we don't (SIGKILL, crash).  Docker keeps
+	// its explicit opt-out for preserving rules across container restarts.
+	if runtime.GOOS == "linux" && (!IsDockerRuntime() || DockerCleanupNetworkOnExit()) && a.shouldCleanupDockerNetwork() {
 		if _, clearErr := a.clearNFT(ctx); clearErr != nil {
 			errs = append(errs, clearErr)
 		}

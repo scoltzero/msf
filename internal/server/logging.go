@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -116,7 +117,7 @@ func (a *App) logHTTPRequest(r *http.Request, status int, latency time.Duration)
 	if a == nil || r == nil {
 		return
 	}
-	requestURI := r.URL.RequestURI()
+	requestURI := sanitizeRequestURI(r.URL)
 	if requestURI == "" {
 		requestURI = r.URL.Path
 	}
@@ -137,6 +138,42 @@ func (a *App) logHTTPRequest(r *http.Request, status int, latency time.Duration)
 		"method":  r.Method,
 		"path":    requestURI,
 	})
+}
+
+// sanitizeRequestURI redacts credential-bearing query parameters before a
+// request line is written to msf.log. Traffic stream URLs carry the full JWT
+// as ?token=...; persisting it makes every log file a credential leak.
+func sanitizeRequestURI(u *url.URL) string {
+	if u == nil {
+		return ""
+	}
+	if u.RawQuery == "" {
+		return u.RequestURI()
+	}
+	redacted := false
+	values := u.Query()
+	for key := range values {
+		if isSensitiveQueryKey(key) {
+			values.Set(key, "REDACTED")
+			redacted = true
+		}
+	}
+	if !redacted {
+		return u.RequestURI()
+	}
+	encoded := values.Encode()
+	if encoded == "" {
+		return u.Path
+	}
+	return u.Path + "?" + encoded
+}
+
+func isSensitiveQueryKey(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(key)) {
+	case "token", "secret", "password", "passwd", "api_key", "apikey", "access_token", "auth":
+		return true
+	}
+	return false
 }
 
 func clientIPFromRequest(r *http.Request) string {

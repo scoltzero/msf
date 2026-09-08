@@ -8,6 +8,7 @@ MSF instance.
 | --- | --- | --- |
 | `brand/generate-mizar-brand-assets.cjs` | Regenerates Mizar SVG, PNG, ICO, WebP, GIF, Web, macOS, fnOS, and Unraid delivery assets from the canonical source geometry. | Manual brand maintenance |
 | `compliance/audit-compliance.sh` | Rejects retired identifiers, private comparison artifacts, known live samples, unsafe proxy URLs, and prohibited strings in generated artifacts. | `make audit-compliance` |
+| `update-chnroute-data.sh` | Regenerates the embedded CN IPv4/IPv6 delegation snapshots from a pinned CC0 ipverse revision and validates every CIDR. | Manual data maintenance |
 | `docker/smoke-docker-tun.sh` | Starts a candidate container in host-TUN or macvlan-TUN mode and verifies initialization, reset, token invalidation, and TUN-only configuration. | Docker GHCR workflow |
 | `release/smoke-factory-reset.sh` | Runs a candidate native binary in an isolated temporary data directory and verifies nft-to-TUN reinitialization and Factory Reset behavior. | Release workflow |
 | `release/verify-release-assets.sh` | Verifies checksums, architectures, embedded commit/tag provenance, Unraid manifest metadata, and fnOS package manifests. | `make verify-release-assets` |

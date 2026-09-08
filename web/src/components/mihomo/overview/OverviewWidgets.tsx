@@ -8,7 +8,7 @@ import { GlassSurface } from "@/components/liquid-glass/GlassSurface";
 import { SolidPlate } from "@/components/liquid-glass/SolidPlate";
 import { aggregateConnections, clearClosedConnections, pruneClosedConnections, readClosedConnections, saveClosedConnections, toClosedConnection, type ClosedConnectionRecord, type HistoryAggregation } from "./connectionHistory";
 import { FAVICON_TARGETS, runFaviconRounds, type FaviconSample } from "./telemetry";
-import { echarts, ZashboardEChart, type EChartsOption } from "./ZashboardEChart";
+import { ZashboardEChart, type EChartsOption } from "./ZashboardEChart";
 import {
   MIHOMO_CONNECTION_AREA_COLOR,
   MIHOMO_CONNECTION_COLOR,
@@ -211,10 +211,10 @@ function SparklineChart({
         data: points,
         emphasis: { disabled: true },
         areaStyle: {
-          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+          color: { type: "linear", x: 0, y: 0, x2: 0, y2: 1, colorStops: [
             { offset: 0, color },
             { offset: 1, color: areaColor },
-          ]),
+          ] },
         },
       }],
     };
@@ -222,7 +222,7 @@ function SparklineChart({
   return <div className="relative h-full w-full overflow-hidden"><ZashboardEChart option={option} defer /></div>;
 }
 
-export function OverviewStatCards({ downloadSpeed, uploadSpeed, connections, downloadTotal, uploadTotal, memory, trafficHistory, connectionHistory }: { downloadSpeed: number; uploadSpeed: number; connections: number; downloadTotal: number; uploadTotal: number; memory: number | string; trafficHistory: OverviewTrafficHistoryPoint[]; connectionHistory: OverviewConnectionHistoryPoint[] }) {
+export function OverviewStatCards({ downloadSpeed, uploadSpeed, connections, downloadTotal, uploadTotal, memory, trafficHistory, connectionHistory, chartsReady = true }: { downloadSpeed: number; uploadSpeed: number; connections: number; downloadTotal: number; uploadTotal: number; memory: number | string; trafficHistory: OverviewTrafficHistoryPoint[]; connectionHistory: OverviewConnectionHistoryPoint[]; chartsReady?: boolean }) {
   const uploadParts = splitMetric(uploadSpeed);
   const downloadParts = splitMetric(downloadSpeed);
   const cards = [
@@ -230,7 +230,7 @@ export function OverviewStatCards({ downloadSpeed, uploadSpeed, connections, dow
     { label: "下载", value: downloadParts.value, unit: `${downloadParts.unit}/s`, total: `总计 ${formatBytes(downloadTotal)}`, points: trafficHistory.map((point) => ({ name: String(point.timestamp), value: [point.timestamp, point.downloadSpeed] as [number, number], init: point.init })), color: MIHOMO_DOWNLOAD_COLOR, areaColor: MIHOMO_DOWNLOAD_AREA_COLOR, floor: 60_000, axis: (value: number) => `${formatDecimalBytes(value, 0)}/s`, tooltip: (value: number) => `${formatDecimalBytes(value)}/s` },
     { label: "连接", value: String(connections), unit: "", total: `内存使用 ${formatBinaryBytes(memory)}`, points: connectionHistory.map((point) => ({ name: String(point.timestamp), value: [point.timestamp, point.connections] as [number, number], init: point.init })), color: MIHOMO_CONNECTION_COLOR, areaColor: MIHOMO_CONNECTION_AREA_COLOR, floor: 10, axis: (value: number) => String(Math.round(value)), tooltip: (value: number) => String(Math.round(value)) },
   ];
-  return <GlassSurface material="thick" className="@container rounded-2xl p-3"><div className="grid grid-cols-2 gap-3 @min-[768px]:grid-cols-3">{cards.map((card, index) => <SolidPlate tone="regular" key={card.label} className={cn("flex min-w-0 flex-col gap-1.5 p-[15px]", index === 2 && "col-span-2 @min-[768px]:col-span-1")}><div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">{card.label}{index === 2 ? <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> : null}</div><div className="flex items-baseline gap-1.5"><span className="text-3xl font-extralight tabular-nums text-foreground">{card.value}</span>{card.unit ? <span className="text-sm text-muted-foreground">{card.unit}</span> : null}</div><div className="mt-1 h-14"><SparklineChart points={card.points} name={card.label} color={card.color} areaColor={card.areaColor} yAxisFloor={card.floor} axisFormatter={card.axis} tooltipFormatter={card.tooltip} /></div><div className="text-xs text-muted-foreground">{card.total}</div></SolidPlate>)}</div></GlassSurface>;
+  return <GlassSurface material="thick" className="@container rounded-2xl p-3"><div className="grid grid-cols-2 gap-3 @min-[768px]:grid-cols-3">{cards.map((card, index) => <SolidPlate tone="regular" key={card.label} className={cn("flex min-w-0 flex-col gap-1.5 p-[15px]", index === 2 && "col-span-2 @min-[768px]:col-span-1")}><div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">{card.label}{index === 2 ? <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> : null}</div><div className="flex items-baseline gap-1.5"><span className="text-3xl font-extralight tabular-nums text-foreground">{card.value}</span>{card.unit ? <span className="text-sm text-muted-foreground">{card.unit}</span> : null}</div><div className="mt-1 h-14">{chartsReady ? <SparklineChart points={card.points} name={card.label} color={card.color} areaColor={card.areaColor} yAxisFloor={card.floor} axisFormatter={card.axis} tooltipFormatter={card.tooltip} /> : null}</div><div className="text-xs text-muted-foreground">{card.total}</div></SolidPlate>)}</div></GlassSurface>;
 }
 
 interface LatencyState {

@@ -330,9 +330,7 @@ func RestartMosDNSIfRunning(ctx context.Context, dataDir string) (bool, error) {
 	cmd.Dir = cfgDir
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
-	if runtime.GOOS != "windows" {
-		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	}
+	setProcessGroup(cmd)
 	if err := cmd.Start(); err != nil {
 		_ = stdout.Close()
 		_ = stderr.Close()

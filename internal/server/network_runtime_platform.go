@@ -52,6 +52,15 @@ func defaultApplyPlatformNetwork(ctx context.Context, a *App, cfg SetupConfig) e
 	switch runtime.GOOS {
 	case "linux":
 		if shouldRestoreNFT(cfg) {
+			// 升级部署不会重跑安装向导，这里在应用前重渲染 nft 文件，
+			// 让模板演进（如 CN UDP 直连集合）随二进制升级对存量安装生效。
+			// 渲染只读设置缓存与内嵌数据，可安全运行于恢复路径中。
+			if content := a.renderNFT(cfg); strings.TrimSpace(content) != "" {
+				path := filepath.Join(a.DataDir, "configs/network/network.nft")
+				if err := os.MkdirAll(filepath.Dir(path), 0o755); err == nil {
+					_ = os.WriteFile(path, []byte(content), 0o644)
+				}
+			}
 			_, err := a.applyNFT(ctx)
 			return err
 		}

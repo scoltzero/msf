@@ -66,8 +66,15 @@ func (a *App) mihomoFullSnapshot() map[string]any {
 	proxyProviders := anyMapSlice(providers["proxy_providers"])
 	proxyProviderCount := len(proxyProviders)
 	if proxyProviderCount == 0 {
-		if proxyProviderPayload, ok := providers["proxy"].(map[string]any); ok {
-			proxyProviderCount = len(anyMapSlice(proxyProviderPayload["runtime_items"]))
+		// Config-less setups still expose providers through the controller
+		// runtime; count them from the proxies payload (compatible excluded,
+		// matching the runtime_items semantics this count replaced).
+		if runtimeProviders, ok := proxies["providers"].(map[string]map[string]any); ok {
+			for _, provider := range runtimeProviders {
+				if providerVehicleType(provider) != "compatible" {
+					proxyProviderCount++
+				}
+			}
 		}
 	}
 	snapshot := map[string]any{
@@ -300,10 +307,13 @@ func (a *App) mihomoControllerURL(path string) string {
 }
 
 func (a *App) mihomoSecret() string {
-	if secret := a.setting("mihomo_controller_secret", ""); secret != "" {
+	// The active configuration is the controller's source of truth. Generated
+	// configs contain the MSF-managed value, while custom configs may carry an
+	// operator-supplied secret that must win over the generated setting.
+	if secret := strings.TrimSpace(stringMapValue(a.mihomoConfigMap(), "secret")); secret != "" {
 		return secret
 	}
-	return stringMapValue(a.mihomoConfigMap(), "secret")
+	return strings.TrimSpace(a.setting(mihomoControllerSecretSettingKey, ""))
 }
 
 func (a *App) mihomoControllerJSON(method, path string, body []byte) (any, bool, error) {
@@ -623,20 +633,18 @@ func (a *App) mihomoConnectionsPayload(r *http.Request) map[string]any {
 		end = total
 	}
 	items := filtered[start:end]
+	// The web client reads `connections` and the camelCase totals; the legacy
+	// items/raw/snake_case mirrors doubled this payload on a 2s poll.
 	return map[string]any{
-		"available":      available,
-		"connections":    items,
-		"items":          items,
-		"total":          total,
-		"active_count":   len(connections),
-		"downloadTotal":  numericMapValue(raw, "downloadTotal"),
-		"uploadTotal":    numericMapValue(raw, "uploadTotal"),
-		"download_total": numericMapValue(raw, "downloadTotal"),
-		"upload_total":   numericMapValue(raw, "uploadTotal"),
+		"available":     available,
+		"connections":   items,
+		"total":         total,
+		"active_count":  len(connections),
+		"downloadTotal": numericMapValue(raw, "downloadTotal"),
+		"uploadTotal":   numericMapValue(raw, "uploadTotal"),
 		"pagination": map[string]any{
 			"page": page, "limit": limit, "page_size": limit, "total": total, "total_pages": (total + limit - 1) / limit,
 		},
-		"raw": raw,
 	}
 }
 
@@ -728,7 +736,7 @@ func (a *App) mihomoProxiesPayload(r *http.Request) map[string]any {
 	}
 	rawProxies = mergeMihomoProviderProxies(rawProxies, rawProviders)
 	proxyMap, groups, proxies := normalizeMihomoProxies(rawProxies, a.mihomoProxyGroupOrder())
-	pagePolicy, groupPolicies, _ := a.mihomoTestPolicyData()
+	pagePolicy, _, _ := a.mihomoTestPolicyData()
 	a.attachMihomoTestPolicies(groups)
 	if r != nil {
 		search := strings.ToLower(strings.TrimSpace(firstNonEmpty(r.URL.Query().Get("search"), r.URL.Query().Get("q"))))
@@ -760,13 +768,19 @@ func (a *App) mihomoProxiesPayload(r *http.Request) map[string]any {
 		}
 		providers = filtered
 	}
+	// One canonical field per shape (groups/proxy_list/proxies/providers).
+	// Earlier versions also mirrored the same data under proxy_groups/nodes/raw
+	// and embedded each controller object as row.raw, which multiplied the
+	// response ~8x for 200-node setups (see KNOWN_ISSUES ⑩ / issue #11).
+	// include_raw=1 keeps an opt-in escape hatch to the untouched controller
+	// response for debugging.
 	payload := map[string]any{
-		"groups":            groups,
-		"proxies":           proxyMap,
-		"providers":         providers,
-		"test_policy":       pagePolicy,
-		"group_test_policy": groupPolicies,
-		"config_authority":  a.mihomoConfigModePayload(),
+		"groups":           groups,
+		"proxy_list":       proxies,
+		"proxies":          proxyMap,
+		"providers":        providers,
+		"test_policy":      pagePolicy,
+		"config_authority": a.mihomoConfigModePayload(),
 	}
 	if r != nil && r.URL.Query().Get("include_raw") == "1" {
 		payload["raw"] = rawProxies
@@ -865,7 +879,6 @@ func normalizeMihomoProxies(raw map[string]any, groupOrder map[string]int) (map[
 			"alive":         boolMapValue(item, "alive", true),
 			"provider":      firstNonEmpty(stringMapValue(item, "provider"), stringMapValue(item, "providerName"), stringMapValue(item, "provider-name")),
 			"provider_name": firstNonEmpty(stringMapValue(item, "providerName"), stringMapValue(item, "provider-name"), stringMapValue(item, "provider")),
-			"raw":           item,
 		}
 		if row["provider_name"] != "" {
 			row["provider-name"] = row["provider_name"]
@@ -1267,7 +1280,9 @@ func firstNumericMapValue(m map[string]any, keys ...string) float64 {
 func (a *App) mihomoProvidersPayload() map[string]any {
 	proxy := a.mihomoProxyProvidersPayload()
 	rule := a.mihomoRuleProvidersPayload()
-	return map[string]any{"proxy_providers": proxy["items"], "rule_providers": rule["items"], "proxy": proxy, "rule": rule}
+	// The "proxy"/"rule" nested wrappers duplicated the full payloads (each
+	// with several copies of every provider node list); nothing reads them.
+	return map[string]any{"proxy_providers": proxy["items"], "rule_providers": rule["items"]}
 }
 
 func (a *App) mihomoProxyProvidersPayload() map[string]any {
@@ -1279,10 +1294,19 @@ func (a *App) mihomoProxyProvidersPayload() map[string]any {
 		runtime = normalizeProviderMap(raw["providers"])
 	}
 	runtimeItems := runtimeProviderItems(runtime, "proxy")
+	// runtime_items only feeds subscription/traffic panels (name +
+	// subscriptionInfo); the embedded per-provider node arrays were pure
+	// payload weight — the canonical node lists live in items[].runtime.
+	for _, item := range runtimeItems {
+		delete(item, "proxies")
+	}
 	items := mergeProviders(configProviders, runtime, "proxy")
 	a.attachMihomoProviderTestPolicies(items)
 	pagePolicy, _, _ := a.mihomoTestPolicyData()
-	return map[string]any{"proxy-providers": cfg["proxy-providers"], "items": items, "providers": items, "runtime": runtime, "runtime_items": runtimeItems, "runtime_providers": runtimeItems, "test_policy": pagePolicy, "config_authority": a.mihomoConfigModePayload()}
+	// items is the single merged shape (config + runtime with node lists).
+	// The legacy providers/runtime/runtime_providers mirrors tripled the
+	// response for 200-node setups; see KNOWN_ISSUES ⑩/#11.
+	return map[string]any{"proxy-providers": cfg["proxy-providers"], "items": items, "runtime_items": runtimeItems, "test_policy": pagePolicy, "config_authority": a.mihomoConfigModePayload()}
 }
 
 func (a *App) mihomoRuleProvidersPayload() map[string]any {
@@ -1294,6 +1318,9 @@ func (a *App) mihomoRuleProvidersPayload() map[string]any {
 		runtime = normalizeProviderMap(raw["providers"])
 	}
 	runtimeItems := runtimeProviderItems(runtime, "rule")
+	for _, item := range runtimeItems {
+		delete(item, "rules")
+	}
 	items := mergeProviders(configProviders, runtime, "rule")
 	for _, item := range items {
 		name := stringMapValue(item, "name")
@@ -1312,10 +1339,7 @@ func (a *App) mihomoRuleProvidersPayload() map[string]any {
 		"source":               "controller",
 		"rule-providers":       cfg["rule-providers"],
 		"items":                items,
-		"providers":            items,
-		"runtime":              runtime,
 		"runtime_items":        runtimeItems,
-		"runtime_providers":    runtimeItems,
 		"capabilities":         map[string]any{"provider_update": ok},
 	}
 	if !ok {

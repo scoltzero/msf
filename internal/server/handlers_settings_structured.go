@@ -318,14 +318,46 @@ func (a *App) applyStructuredAppearance(raw map[string]any) error {
 				return fmt.Errorf("invalid quality")
 			}
 			updates["appearance.quality"] = v
+		case "skin":
+			v := strings.ToLower(strings.TrimSpace(fmtAny(value)))
+			if !oneOf(v, "amber", "classic") {
+				return fmt.Errorf("invalid skin")
+			}
+			updates["appearance.skin"] = v
+		case "custom_css":
+			css, ok := value.(string)
+			if !ok || len(css) > appearanceCustomCSSMaxBytes {
+				return fmt.Errorf("invalid custom_css")
+			}
+			updates["appearance.custom_css"] = css
 		case "compact":
 			v, err := structuredBoolValue(value)
 			if err != nil {
 				return fmt.Errorf("invalid compact")
 			}
 			updates["appearance.compact"] = boolSetting(v)
-		case "menu_order", "accent_color":
-			updates["appearance."+key] = fmtAny(value)
+		case "accent_color":
+			v := strings.TrimSpace(fmtAny(value))
+			if v != "" && !accentColorPattern.MatchString(v) {
+				return fmt.Errorf("invalid accent_color")
+			}
+			updates["appearance.accent_color"] = strings.ToLower(v)
+		case "skin_tint":
+			v := strings.TrimSpace(fmtAny(value))
+			if v != "" {
+				valid := skinTintPattern.MatchString(v)
+				if valid {
+					if degrees, err := strconv.Atoi(v); err != nil || degrees > 360 {
+						valid = false
+					}
+				}
+				if !valid {
+					return fmt.Errorf("invalid skin_tint")
+				}
+			}
+			updates["appearance.skin_tint"] = v
+		case "menu_order":
+			updates["appearance.menu_order"] = fmtAny(value)
 		case contentPlateOpacitySubtleKey, contentPlateOpacityRegularKey, contentPlateOpacityStrongKey:
 			if !hasOpacity {
 				return fmt.Errorf("content plate opacity fields must be provided together")

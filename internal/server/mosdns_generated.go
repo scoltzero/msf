@@ -3,7 +3,6 @@ package server
 import (
 	"fmt"
 	"net/netip"
-	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -78,47 +77,38 @@ func normalizeMosDNSUpstreamGroups(raw any) (map[string][]map[string]any, error)
 		if !ok {
 			continue
 		}
+		skippedUnsupported := 0
 		for _, value := range items {
 			item, ok := value.(map[string]any)
 			if !ok || !isTruthy(fmtAny(item["enabled"])) {
 				continue
 			}
 			protocol := strings.ToLower(strings.TrimSpace(fmtAny(item["protocol"])))
+			// forward 插件不支持 aliapi 专用条目（阿里私享 API），迁移后直接剔除。
+			if protocol == "aliapi" {
+				skippedUnsupported++
+				continue
+			}
 			upstream := map[string]any{}
 			if field, exists := item["tag"]; exists {
 				if tag := strings.TrimSpace(fmtAny(field)); tag != "" {
 					upstream["tag"] = tag
 				}
 			}
-			if protocol == "aliapi" {
-				for _, key := range []string{"account_id", "access_key_id", "access_key_secret", "server_addr"} {
-					field, exists := item[key]
-					if !exists || strings.TrimSpace(fmtAny(field)) == "" {
-						return nil, fmt.Errorf("mosdns upstream group %s contains an enabled ALIAPI server without %s", group, key)
-					}
-				}
-				if mask, exists := item["ecs_client_mask"]; exists {
-					value, err := strconv.ParseFloat(strings.TrimSpace(fmtAny(mask)), 64)
-					if err != nil {
-						return nil, fmt.Errorf("mosdns upstream group %s contains an invalid ALIAPI ECS mask", group)
-					}
-					if value < 0 || value > 128 {
-						return nil, fmt.Errorf("mosdns upstream group %s contains an invalid ALIAPI ECS mask", group)
-					}
-				}
-				upstream["type"] = "aliapi"
-			}
-			for _, key := range []string{"addr", "server_addr", "dial_addr", "socks5", "upstream_query_timeout", "ecs_client_mask"} {
+			for _, key := range []string{"addr", "dial_addr", "socks5", "upstream_query_timeout"} {
 				if field, exists := item[key]; exists && strings.TrimSpace(fmtAny(field)) != "" {
 					upstream[key] = field
 				}
 			}
-			if protocol != "aliapi" {
-				if _, hasAddr := upstream["addr"]; !hasAddr {
-					if _, hasServerAddr := upstream["server_addr"]; !hasServerAddr {
-						return nil, fmt.Errorf("mosdns upstream group %s contains an enabled server without an address", group)
-					}
+			// forward 的地址必须带协议前缀；旧配置里 udp/tcp 条目常存裸 IP，
+			// 迁移时自动补全（https/tls 历史数据均为完整 URL，无需处理）。
+			if addr, exists := upstream["addr"]; exists {
+				text := strings.TrimSpace(fmtAny(addr))
+				if !strings.Contains(text, "://") && (protocol == "udp" || protocol == "tcp") {
+					upstream["addr"] = protocol + "://" + text
 				}
+			} else if _, hasServerAddr := upstream["dial_addr"]; !hasServerAddr {
+				return nil, fmt.Errorf("mosdns upstream group %s contains an enabled server without an address", group)
 			}
 			out[group] = append(out[group], upstream)
 		}
@@ -127,6 +117,9 @@ func normalizeMosDNSUpstreamGroups(raw any) (map[string][]map[string]any, error)
 			continue
 		}
 		if len(items) > 0 && len(out[group]) == 0 {
+			if skippedUnsupported > 0 {
+				return nil, fmt.Errorf("mosdns upstream group %s only contains aliapi servers, which are no longer supported; enable a udp/tcp/tls/https server instead", group)
+			}
 			return nil, fmt.Errorf("mosdns upstream group %s must keep at least one enabled server", group)
 		}
 	}

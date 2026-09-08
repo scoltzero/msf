@@ -709,6 +709,18 @@ func combinedOutputWithTimeout(ctx context.Context, timeout time.Duration, name 
 	return out, err
 }
 
+// settingsResponseValue 处理通用设置响应里绝不能原样回显的凭据：
+// github_token 与 mihomo_controller_secret 都是可直接调用对应服务端的
+// Bearer 凭据。前端对通用 settings 只做按键读写（不整表回存），掩码值
+// 不会被写回；写入仍走各自专用端点。
+func settingsResponseValue(key, value string) string {
+	switch key {
+	case settingGitHubToken, mihomoControllerSecretSettingKey:
+		return maskGitHubToken(value)
+	}
+	return value
+}
+
 func (a *App) handleSettingsGet(w http.ResponseWriter, r *http.Request) {
 	rows, err := a.DB.Query(`select key,value from settings`)
 	if err != nil {
@@ -720,7 +732,10 @@ func (a *App) handleSettingsGet(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var k, v string
 		_ = rows.Scan(&k, &v)
-		settings[k] = v
+		if k == settingGitHubToken || k == settingGitHubTokenCiphertext || k == settingGitHubTokenNonce {
+			continue
+		}
+		settings[k] = settingsResponseValue(k, v)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"success": true, "settings": settings, "data": settings})
 }
@@ -731,11 +746,66 @@ func (a *App) handleSettingsPut(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
-	for k, value := range raw {
-		v := fmtAny(value)
-		_, _ = a.DB.Exec(`insert or replace into settings(key,value,updated_at) values(?,?,?)`, k, v, nowString())
+	if _, exists := raw[settingGitHubTokenCiphertext]; exists {
+		writeError(w, http.StatusBadRequest, "bad_request", "encrypted GitHub token fields are managed internally")
+		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"success": true})
+	if _, exists := raw[settingGitHubTokenNonce]; exists {
+		writeError(w, http.StatusBadRequest, "bad_request", "encrypted GitHub token fields are managed internally")
+		return
+	}
+	if value, exists := raw[settingGitHubToken]; exists {
+		token := strings.TrimSpace(fmtAny(value))
+		if token != "" && (len(token) < 16 || len(token) > 255) {
+			writeError(w, http.StatusBadRequest, "bad_request", "github token length looks invalid")
+			return
+		}
+		if err := a.saveGitHubToken(token); err != nil {
+			writeError(w, http.StatusInternalServerError, "settings_error", "save GitHub token: "+err.Error())
+			return
+		}
+	}
+	// setSetting（而非直写 DB）会同步刷新带内存缓存的设置项：
+	// game_udp_bypass_ports 的 nft 渲染只读缓存，直写 DB 会导致改动不生效。
+	for k, value := range raw {
+		if k == settingGitHubToken {
+			continue
+		}
+		a.setSetting(k, fmtAny(value))
+	}
+	payload := map[string]any{"success": true}
+	_, hitPorts := raw["network.game_udp_bypass_ports"]
+	_, hitToggle := raw["network.china_udp_bypass"]
+	if hitPorts || hitToggle {
+		if err := a.refreshNFTForNetworkSettings(r.Context()); err != nil {
+			payload["nft_refresh_error"] = err.Error()
+		} else {
+			payload["nft_refreshed"] = true
+		}
+	}
+	writeJSON(w, http.StatusOK, payload)
+}
+
+// refreshNFTForNetworkSettings 重渲染并应用 nft，使网络类设置（游戏 UDP
+// 直连端口、国内 UDP 直连开关）的改动即时生效（无需重启服务）。TUN 模式
+// 或非 nft 部署下静默跳过——重启后按已存设置正常渲染。
+func (a *App) refreshNFTForNetworkSettings(ctx context.Context) error {
+	cfg, ok := a.latestSetupConfig()
+	if !ok || isTUNProxyMode(cfg.LinuxProxyMode) || !shouldRestoreNFT(cfg) {
+		return nil
+	}
+	path := filepath.Join(a.DataDir, "configs/network/network.nft")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(path, []byte(a.renderNFT(cfg)), 0o644); err != nil {
+		return err
+	}
+	if _, err := a.applyNFT(ctx); err != nil {
+		return err
+	}
+	a.setSetting(nftDesiredKey, "true")
+	return nil
 }
 
 func (a *App) handleSettingsProfileGet(w http.ResponseWriter, r *http.Request) {
@@ -782,8 +852,16 @@ func (a *App) handleSettingsAppearancePut(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
+	if _, hasCustomCSS := req["custom_css"]; hasCustomCSS && !a.requireAdmin(r) {
+		writeError(w, http.StatusForbidden, "admin_required", "自定义 CSS 是全局设置，仅管理员可以修改")
+		return
+	}
 	opacity, hasOpacity, err := validateContentPlateOpacityPayload(req)
 	if err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	if err := validateAppearancePatch(req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
@@ -820,6 +898,53 @@ const (
 	contentPlateOpacityLegacyKey  = "content_plate_opacity"
 )
 
+const appearanceCustomCSSMaxBytes = 64 * 1024
+
+var accentColorPattern = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
+var skinTintPattern = regexp.MustCompile(`^\d{1,3}$`)
+
+// validateAppearancePatch guards enum and size budgets (skin, custom CSS,
+// accent color, atmosphere tint) before any appearance setting is written.
+func validateAppearancePatch(raw map[string]any) error {
+	if value, ok := raw["skin"]; ok {
+		skin, ok := value.(string)
+		if !ok || !oneOf(skin, "amber", "classic") {
+			return fmt.Errorf("skin must be one of amber, classic")
+		}
+	}
+	if value, ok := raw["custom_css"]; ok {
+		css, ok := value.(string)
+		if !ok || len(css) > appearanceCustomCSSMaxBytes {
+			return fmt.Errorf("custom_css must be a string of at most %d bytes", appearanceCustomCSSMaxBytes)
+		}
+	}
+	if value, ok := raw["accent_color"]; ok {
+		accent, ok := value.(string)
+		if !ok || (accent != "" && !accentColorPattern.MatchString(accent)) {
+			return fmt.Errorf("accent_color must be an #rrggbb hex string or empty")
+		}
+	}
+	if value, ok := raw["skin_tint"]; ok {
+		tint, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("skin_tint must be a string")
+		}
+		trimmed := strings.TrimSpace(tint)
+		if trimmed != "" {
+			valid := skinTintPattern.MatchString(trimmed)
+			if valid {
+				if degrees, err := strconv.Atoi(trimmed); err != nil || degrees > 360 {
+					valid = false
+				}
+			}
+			if !valid {
+				return fmt.Errorf("skin_tint must be empty or hue degrees 0-360")
+			}
+		}
+	}
+	return nil
+}
+
 var contentPlateOpacityIntegerPattern = regexp.MustCompile(`^[0-9]+$`)
 
 type contentPlateOpacityRange struct {
@@ -846,9 +971,12 @@ func (a *App) appearanceSettingsPayload() map[string]string {
 		"language":                    a.setting("appearance.language", a.setting("language", "zh-CN")),
 		"scene":                       a.setting("appearance.scene", a.setting("scene", "dynamic")),
 		"quality":                     a.setting("appearance.quality", a.setting("quality", "balanced")),
+		"skin":                        a.setting("appearance.skin", "classic"),
+		"custom_css":                  a.setting("appearance.custom_css", ""),
+		"accent_color":                a.setting("appearance.accent_color", ""),
+		"skin_tint":                   a.setting("appearance.skin_tint", ""),
 		"compact":                     a.setting("appearance.compact", "false"),
 		"menu_order":                  a.setting("appearance.menu_order", ""),
-		"accent_color":                a.setting("appearance.accent_color", ""),
 		contentPlateOpacitySubtleKey:  opacity[contentPlateOpacitySubtleKey],
 		contentPlateOpacityRegularKey: opacity[contentPlateOpacityRegularKey],
 		contentPlateOpacityStrongKey:  opacity[contentPlateOpacityStrongKey],

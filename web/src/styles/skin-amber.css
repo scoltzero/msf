@@ -1,0 +1,189 @@
+/*
+ * Amber skin — a warm-white glass
+ * aesthetic: warm-white canvas (#F2F2F4), cream hairlines (#F0EBE1), an orange
+ * brand identity, frosted white/50 panels with 40px blur and 1.8 saturation,
+ * and the signature three-light atmosphere (orange / emerald / blue). Dark
+ * mode extends the same identity over stone-900 surfaces using the terminal
+ * panel palette from the original project (#1c1917 / #292524 / #3f3936).
+ *
+ * Everything rides on the existing variable system — the classic skin is
+ * simply the absence of these overrides.
+ */
+
+html[data-skin="amber"] {
+  color-scheme: light;
+
+  --background: #f2f2f4;
+  --foreground: #292524;
+  --card: #fcfaf8;
+  --card-foreground: #292524;
+  --popover: #fcfaf8;
+  --popover-foreground: #292524;
+  --primary: #f97316;
+  --primary-foreground: #ffffff;
+  --secondary: #f5f5f4;
+  --secondary-foreground: #292524;
+  --muted: #f5f5f4;
+  --muted-foreground: #78716c;
+  --accent: #fff7ed;
+  --accent-foreground: #292524;
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+  --border: #f0ebe1;
+  --input: #f0ebe1;
+  --ring: #f97316;
+
+  --sidebar: #fcfaf8;
+  --sidebar-foreground: #292524;
+  --sidebar-primary: #f97316;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #fff7ed;
+  --sidebar-accent-foreground: #292524;
+  --sidebar-border: #f0ebe1;
+  --sidebar-ring: #f97316;
+
+  --radius: 0.75rem;
+
+  --gary-scene-base: #f2f2f4;
+  --gary-scene-ink: rgba(41, 37, 36, 0.94);
+  --gary-scene-muted: rgba(120, 113, 108, 0.72);
+  /* The three atmosphere lights: orange-400, emerald-400, blue-300. */
+  --gary-scene-a: rgba(251, 146, 60, 0.22);
+  --gary-scene-b: rgba(52, 211, 153, 0.16);
+  --gary-scene-c: rgba(147, 197, 253, 0.13);
+  --gary-scene-mask: rgba(252, 250, 248, 0.1);
+  --gary-scene-wave-horizon: #f2f2f4;
+  --gary-scene-wave: #7a4a24;
+  --gary-scene-wave-crest: #fb923c;
+
+  --gary-glass-fill-ultrathin: rgba(255, 255, 255, 0.34);
+  --gary-glass-fill-regular: rgba(255, 255, 255, 0.5);
+  --gary-glass-fill-thick: rgba(255, 255, 255, 0.6);
+  --gary-glass-fill-strong: rgba(255, 255, 255, 0.72);
+  --gary-plate-rgb: 252 250 248;
+
+  --gary-edge-highlight: rgba(255, 255, 255, 0.85);
+  --gary-edge-soft: rgba(255, 255, 255, 0.38);
+  --gary-edge-dim: rgba(240, 235, 225, 0.95);
+  --gary-edge-shadow: rgba(41, 37, 36, 0.08);
+  --gary-contact-shadow: 0 1px 2px rgba(41, 37, 36, 0.05);
+  --gary-environment-shadow: 0 8px 32px rgba(41, 37, 36, 0.06);
+  --gary-floating-shadow: 0 8px 30px rgba(41, 37, 36, 0.04);
+  --gary-frost-light: rgba(255, 255, 255, 0.24);
+  --gary-frost-dark: rgba(120, 90, 40, 0.06);
+
+  --gary-saturate: 180%;
+  --gary-contrast: 1;
+  --gary-radius-card: 32px;
+  --gary-radius-regular: 16px;
+  --gary-radius-compact: 12px;
+
+  --msf-chart-cpu: 249, 115, 22;
+  --msf-chart-memory: 16, 185, 129;
+  --msf-chart-download: 251, 146, 60;
+  --msf-chart-upload: 96, 165, 250;
+  --msf-chart-connections: 52, 211, 153;
+}
+
+/* Amber's signature 40px frosted blur only runs at full quality; balanced and
+   reduced quality keep the existing performance budgets. */
+html[data-skin="amber"][data-gary-quality="full"] {
+  --gary-blur-ultrathin: 30px;
+  --gary-blur-regular: 40px;
+  --gary-blur-thick: 48px;
+}
+
+@media (max-width: 767px) {
+  html[data-skin="amber"] {
+    --gary-radius-card: 28px;
+  }
+  html[data-skin="amber"][data-gary-quality="full"] {
+    --gary-blur-ultrathin: 24px;
+    --gary-blur-regular: 28px;
+    --gary-blur-thick: 32px;
+  }
+}
+
+html[data-skin="amber"] .gary-scene {
+  background: #f2f2f4;
+}
+
+html[data-skin="amber"] ::selection {
+  background: rgba(251, 146, 60, 0.35);
+}
+
+html[data-skin="amber"].dark {
+  color-scheme: dark;
+
+  --background: #1c1917;
+  --foreground: #e7e5e4;
+  --card: #292524;
+  --card-foreground: #e7e5e4;
+  --popover: #292524;
+  --popover-foreground: #e7e5e4;
+  --primary: #f97316;
+  --primary-foreground: #ffffff;
+  --secondary: #44403c;
+  --secondary-foreground: #e7e5e4;
+  --muted: #38332f;
+  --muted-foreground: #a8a29e;
+  --accent: rgba(249, 115, 22, 0.16);
+  --accent-foreground: #e7e5e4;
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+  --border: #3f3936;
+  --input: #3f3936;
+  --ring: #fb923c;
+
+  --sidebar: #292524;
+  --sidebar-foreground: #e7e5e4;
+  --sidebar-primary: #f97316;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: rgba(249, 115, 22, 0.16);
+  --sidebar-accent-foreground: #e7e5e4;
+  --sidebar-border: #3f3936;
+  --sidebar-ring: #fb923c;
+
+  --gary-scene-base: #1c1917;
+  --gary-scene-ink: rgba(231, 229, 228, 0.94);
+  --gary-scene-muted: rgba(168, 162, 158, 0.72);
+  --gary-scene-a: rgba(249, 115, 22, 0.16);
+  --gary-scene-b: rgba(52, 211, 153, 0.1);
+  --gary-scene-c: rgba(96, 165, 250, 0.08);
+  --gary-scene-mask: rgba(0, 0, 0, 0.12);
+  --gary-scene-wave-horizon: #1c1917;
+  --gary-scene-wave: #3b2a1c;
+  --gary-scene-wave-crest: #f97316;
+
+  --gary-glass-fill-ultrathin: rgba(28, 25, 23, 0.42);
+  --gary-glass-fill-regular: rgba(28, 25, 23, 0.52);
+  --gary-glass-fill-thick: rgba(28, 25, 23, 0.62);
+  --gary-glass-fill-strong: rgba(28, 25, 23, 0.74);
+  --gary-plate-rgb: 41 37 36;
+
+  --gary-edge-highlight: rgba(231, 229, 228, 0.12);
+  --gary-edge-soft: rgba(231, 229, 228, 0.05);
+  --gary-edge-dim: rgba(63, 57, 54, 0.95);
+  --gary-edge-shadow: rgba(0, 0, 0, 0.5);
+  --gary-contact-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --gary-environment-shadow: 0 22px 54px rgba(0, 0, 0, 0.42);
+  --gary-floating-shadow: 0 16px 40px rgba(0, 0, 0, 0.38);
+  --gary-frost-light: rgba(255, 255, 255, 0.1);
+  --gary-frost-dark: rgba(0, 0, 0, 0.2);
+
+  --gary-saturate: 150%;
+
+  --msf-chart-cpu: 251, 146, 60;
+  --msf-chart-memory: 52, 211, 153;
+  --msf-chart-download: 251, 146, 60;
+  --msf-chart-upload: 96, 165, 250;
+  --msf-chart-connections: 52, 211, 153;
+}
+
+html[data-skin="amber"].dark .gary-scene {
+  background: #1c1917;
+}
+
+html[data-skin="amber"].dark ::selection {
+  background: rgba(249, 115, 22, 0.35);
+}

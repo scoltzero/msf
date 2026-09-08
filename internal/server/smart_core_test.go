@@ -135,6 +135,12 @@ func insertSetupRow(t *testing.T, app *App, coreType string, amd64v3 bool, accel
 		now, now, "root", "", "Asia/Shanghai", "7777", amd64v3, "eth0", "", coreType, true, "127.0.0.1", "223.5.5.5", false, "28.0.0.0/8", "f2b0::/18", "nft", "direct_default", "mihomo", true, "", "", false, "", "", "", acceleratorURL != "", acceleratorURL, true); err != nil {
 		t.Fatal(err)
 	}
+	// Test fixtures also serve trusted release metadata from the same local
+	// server; production code never derives the metadata endpoint from the
+	// operator's accelerator setting.
+	if acceleratorURL != "" {
+		app.githubAPIBaseURL = acceleratorURL
+	}
 }
 
 func smartReleaseForPlatform(commit, digest string) githubRelease {
@@ -168,7 +174,7 @@ func newCapturingReleaseServer(t *testing.T, release githubRelease, blob []byte,
 			*captures = append(*captures, r.URL.Path)
 		}
 		switch {
-		case strings.Contains(r.URL.Path, "api.github.com"):
+		case strings.HasPrefix(r.URL.Path, "/repos/") || strings.Contains(r.URL.Path, "api.github.com"):
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write(releaseJSON)
 		case strings.Contains(r.URL.Path, "releases/download"):
@@ -321,8 +327,8 @@ func TestComponentDownloadUsesRunningMihomoWhenNoExplicitProxy(t *testing.T) {
 		t.Fatalf("download proxy = %v, want local Mihomo mixed port", proxyURL)
 	}
 	const official = "https://github.com/vernesong/mihomo/releases/download/Prerelease-Alpha/test.gz"
-	if got := app.githubDownloadRouteURL(official); got != official {
-		t.Fatalf("running Mihomo route = %q, want official GitHub URL", got)
+	if got := app.githubDownloadRoute(official); got.URL != official || got.Direct {
+		t.Fatalf("no-mirror route = %#v, want official GitHub URL on the proxy line", got)
 	}
 }
 
@@ -354,29 +360,32 @@ func TestMihomoCoreSwitchProgressUsesExistingComponentState(t *testing.T) {
 	}
 }
 
-func TestMihomoCoreSwitchDownloadURLUsesVerifiedAcceleratorPath(t *testing.T) {
+func TestMihomoCoreSwitchDownloadURLUsesOnlyConfiguredRoute(t *testing.T) {
 	const raw = "https://github.com/vernesong/mihomo/releases/download/Prerelease-Alpha/mihomo-linux-amd64-v1-alpha-smart-deadbee.gz"
-	t.Run("default", func(t *testing.T) {
+
+	t.Run("no configuration keeps official URL", func(t *testing.T) {
 		app := newTestApp(t)
-		if got := app.mihomoCoreSwitchDownloadURL(raw); got != defaultMihomoCoreSwitchAccelerator+raw {
-			t.Fatalf("default switch download URL = %q", got)
+		insertSetupRow(t, app, "meta", false, "")
+		if got := app.githubDownloadRoute(raw); got.URL != raw || got.Direct {
+			t.Fatalf("unconfigured switch route = %#v, want official URL", got)
 		}
 	})
-	t.Run("configured accelerator", func(t *testing.T) {
+	t.Run("manually configured accelerator", func(t *testing.T) {
+		const mirror = "https://operator-mirror.example"
 		app := newTestApp(t)
-		insertSetupRow(t, app, "meta", false, "https://mirror.example")
-		if got := app.mihomoCoreSwitchDownloadURL(raw); got != "https://mirror.example/"+raw {
-			t.Fatalf("configured switch download URL = %q", got)
+		insertSetupRow(t, app, "meta", false, mirror)
+		if got := app.githubDownloadRoute(raw); got.URL != mirror+"/"+raw || !got.Direct {
+			t.Fatalf("configured switch download route = %#v, want %q direct", got, mirror+"/"+raw)
 		}
 	})
 	t.Run("configured HTTP proxy keeps official URL", func(t *testing.T) {
 		app := newTestApp(t)
-		insertSetupRow(t, app, "meta", false, "")
+		insertSetupRow(t, app, "meta", false, "https://operator-mirror.example")
 		if _, err := app.DB.Exec(`update system_setups set github_proxy_enabled=true,github_http_proxy='http://127.0.0.1:18080'`); err != nil {
 			t.Fatal(err)
 		}
-		if got := app.mihomoCoreSwitchDownloadURL(raw); got != raw {
-			t.Fatalf("proxied switch download URL = %q, want official URL", got)
+		if got := app.githubDownloadRoute(raw); got.URL != raw || got.Direct {
+			t.Fatalf("explicit proxy must keep the official URL on the proxy line, got %#v", got)
 		}
 	})
 	t.Run("non GitHub URL is untouched", func(t *testing.T) {

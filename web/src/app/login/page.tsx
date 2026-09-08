@@ -22,6 +22,7 @@ import GradientWaves from "@/components/react-bits/GradientWaves";
 import { api, apiData } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { GLASS_QUALITY_PROFILES, normalizeGlassQuality } from "@/lib/glass-quality";
+import { DEFAULT_SKIN, isSkinId, type SkinId } from "@/lib/skin";
 
 import "./login.css";
 
@@ -31,7 +32,7 @@ const features = [
   { icon: Network, label: "网络优化" },
 ];
 
-const loginWavePalettes = {
+const loginWaveFallbacks = {
   light: {
     horizon: "#f3fbff",
     wave: "#00366f",
@@ -43,6 +44,22 @@ const loginWavePalettes = {
     crest: "#126b9e",
   },
 } as const;
+
+type LoginWavePalette = {
+  horizon: string;
+  wave: string;
+  crest: string;
+};
+
+function readLoginWavePalette(root: HTMLElement): LoginWavePalette {
+  const fallback = root.classList.contains("dark") ? loginWaveFallbacks.dark : loginWaveFallbacks.light;
+  const style = window.getComputedStyle(root);
+  return {
+    horizon: style.getPropertyValue("--gary-scene-wave-horizon").trim() || fallback.horizon,
+    wave: style.getPropertyValue("--gary-scene-wave").trim() || fallback.wave,
+    crest: style.getPropertyValue("--gary-scene-wave-crest").trim() || fallback.crest,
+  };
+}
 
 const LOGIN_ANNOUNCEMENT_ID = "2026-09-v0.6.3-performance";
 const LOGIN_ANNOUNCEMENT_HIDDEN_KEY = `msf-login-announcement:${LOGIN_ANNOUNCEMENT_ID}:hidden`;
@@ -79,6 +96,15 @@ export default function LoginPage() {
   const [qualityMode, setQualityMode] = useState(() =>
     normalizeGlassQuality(typeof document !== "undefined" ? document.documentElement.dataset.garyQuality : undefined)
   );
+  const [skinMode, setSkinMode] = useState<SkinId>(() => {
+    if (typeof document === "undefined") return DEFAULT_SKIN;
+    const value = document.documentElement.dataset.skin;
+    return isSkinId(value) ? value : DEFAULT_SKIN;
+  });
+  const [wavePalette, setWavePalette] = useState<LoginWavePalette>(() => {
+    if (typeof document === "undefined") return loginWaveFallbacks.light;
+    return readLoginWavePalette(document.documentElement);
+  });
 
   useEffect(() => {
     const root = document.documentElement;
@@ -86,9 +112,11 @@ export default function LoginPage() {
       setIsDarkTheme(root.classList.contains("dark"));
       setSceneMode(root.dataset.garyScene || "dynamic");
       setQualityMode(normalizeGlassQuality(root.dataset.garyQuality));
+      setSkinMode(isSkinId(root.dataset.skin) ? root.dataset.skin : DEFAULT_SKIN);
+      setWavePalette(readLoginWavePalette(root));
     };
     const observer = new MutationObserver(syncAppearance);
-    observer.observe(root, { attributes: true, attributeFilter: ["class", "data-gary-scene", "data-gary-quality"] });
+    observer.observe(root, { attributes: true, attributeFilter: ["class", "data-gary-scene", "data-gary-quality", "data-skin"] });
     syncAppearance();
     return () => observer.disconnect();
   }, []);
@@ -128,7 +156,6 @@ export default function LoginPage() {
   };
 
   const passwordToggleLabel = showPassword ? "隐藏密码" : "显示密码";
-  const wavePalette = isDarkTheme ? loginWavePalettes.dark : loginWavePalettes.light;
   const qualityProfile = GLASS_QUALITY_PROFILES[qualityMode];
 
   const closeAnnouncementForSession = () => {
@@ -155,7 +182,7 @@ export default function LoginPage() {
         <SceneBackdrop />
       ) : (
         <GradientWaves
-          key={`${isDarkTheme ? "dark" : "light"}-${qualityMode}`}
+          key={`${skinMode}-${isDarkTheme ? "dark" : "light"}-${qualityMode}`}
           className="msf-login-gradient-waves"
           horizonColor={wavePalette.horizon}
           waveColor={wavePalette.wave}

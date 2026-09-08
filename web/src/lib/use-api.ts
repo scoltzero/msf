@@ -11,7 +11,8 @@ export interface QueryState<T> {
 export function useApiQuery<T = any>(
   loader: () => Promise<T>,
   deps: unknown[] = [],
-  intervalMs = 0
+  intervalMs = 0,
+  enabled = true
 ): QueryState<T> {
   const mounted = useRef(true);
   const [data, setData] = useState<T | null>(null);
@@ -39,6 +40,7 @@ export function useApiQuery<T = any>(
 
   useEffect(() => {
     mounted.current = true;
+    if (!enabled) { setLoading(false); return () => { mounted.current = false; }; }
     void reload();
     if (!intervalMs) {
       return () => {
@@ -50,11 +52,11 @@ export function useApiQuery<T = any>(
       mounted.current = false;
       window.clearInterval(id);
     };
-  }, [reload, intervalMs]);
+  }, [reload, intervalMs, enabled]);
 
   return { data, error, loading, reload };
 }
 
-export function useApiPath<T = any>(path: string, deps: unknown[] = [], intervalMs = 0) {
-  return useApiQuery<T>(() => api<T>(path), [path, ...deps], intervalMs);
+export function useApiPath<T = any>(path: string, deps: unknown[] = [], intervalMs = 0, enabled = true) {
+  return useApiQuery<T>(() => api<T>(path), [path, ...deps], intervalMs, enabled);
 }

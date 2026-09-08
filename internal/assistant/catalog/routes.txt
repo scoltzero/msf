@@ -44,6 +44,7 @@ GET /api/v1/events/mihomo
 GET /api/v1/events/monitor
 GET /api/v1/events/mosdns
 GET /api/v1/events/proxy
+GET /api/v1/github/accelerators
 GET /api/v1/history
 GET /api/v1/history/compare
 GET /api/v1/history/{id}
@@ -189,6 +190,7 @@ GET /api/v1/singbox/status
 GET /api/v1/singbox/versions
 GET /api/v1/system/diagnostics
 GET /api/v1/system/diagnostics/download
+GET /api/v1/system/startup-issues
 GET /api/v1/update/config
 GET /api/v1/update/releases
 GET /api/v1/update/status
@@ -228,6 +230,7 @@ POST /api/v1/config/upload
 POST /api/v1/config/validate
 POST /api/v1/daemon/restart
 POST /api/v1/daemon/stop
+POST /api/v1/github/accelerators/probe
 POST /api/v1/history
 POST /api/v1/history/{id}/rollback
 POST /api/v1/history/{id}/star
@@ -250,6 +253,7 @@ POST /api/v1/mihomo/rule-providers
 POST /api/v1/mihomo/rule-providers/{name}/update
 POST /api/v1/mihomo/smart-resources/cancel
 POST /api/v1/mihomo/smart-resources/download
+POST /api/v1/mihomo/smart-resources/verify
 POST /api/v1/mihomo/start
 POST /api/v1/mihomo/stop
 POST /api/v1/mihomo/ui
@@ -330,6 +334,7 @@ POST /api/v1/singbox/stop
 POST /api/v1/singbox/validate
 POST /api/v1/singbox/version
 POST /api/v1/system/diagnostics/run
+POST /api/v1/system/dns-benchmark
 POST /api/v1/update/cancel
 POST /api/v1/update/check
 POST /api/v1/update/download
@@ -340,6 +345,7 @@ POST /api/v1/users/{id}/toggle-active
 PUT /api/v1/assistant/settings
 PUT /api/v1/component-updates/{component}/config
 PUT /api/v1/config/file
+PUT /api/v1/github/accelerators
 PUT /api/v1/mihomo/config
 PUT /api/v1/mihomo/config/{path...}
 PUT /api/v1/mihomo/controller/{path...}

@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -65,9 +64,7 @@ func Start(dataDir string) error {
 	cmd := exec.Command(exe, "cloudflare-redirect", "--config", dataDir, "run")
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
-	if runtime.GOOS != "windows" {
-		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	}
+	setProcessGroup(cmd)
 	if err := cmd.Start(); err != nil {
 		_ = logFile.Close()
 		return err

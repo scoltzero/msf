@@ -145,7 +145,14 @@ export function useProxyRuntime(options: ProxyRuntimeOptions = {}): ProxyRuntime
       if (!silent && !hadData) setLoading(true);
       else setRefreshing(true);
       try {
-        const result = await client.loadRuntime(storeRef.current, controller.signal);
+        const result = await client.loadRuntime(storeRef.current, controller.signal, primary => {
+          if (!mountedRef.current || sequence !== sequenceRef.current || controller.signal.aborted ||
+              revisionAtStart !== localRevisionRef.current || hadData) return;
+          const next = mergeProxyStore(storeRef.current, primary);
+          storeRef.current = next;
+          setStore(next);
+          setLoading(false);
+        });
         if (!mountedRef.current || sequence !== sequenceRef.current || controller.signal.aborted) return undefined;
         if (revisionAtStart !== localRevisionRef.current) return undefined;
         const next = mergeProxyStore(storeRef.current, result.store);

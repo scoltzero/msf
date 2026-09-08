@@ -46,12 +46,27 @@ func (a *App) registerStatic(mux *http.ServeMux) {
 				return
 			}
 			if _, err := fs.Stat(sub, rel); err == nil {
+				setStaticCacheHeaders(w, rel)
 				fileServer.ServeHTTP(w, r)
 				return
 			}
 		}
 		serveFrontendIndex(w, sub)
 	})
+}
+
+// setStaticCacheHeaders tiers browser caching for immutable build output.
+// Vite emits content-hashed bundles under assets/ (AppShell-BlBPXiEM.js): the
+// filename changes whenever the content does, so they can be cached forever.
+// Fixed-name files (favicons, manifest, textures) only get a short TTL.
+// index.html itself always stays no-store (see serveFrontendIndex) so new
+// builds are picked up immediately.
+func setStaticCacheHeaders(w http.ResponseWriter, rel string) {
+	if strings.HasPrefix(rel, "assets/") {
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		return
+	}
+	w.Header().Set("Cache-Control", "public, max-age=3600")
 }
 
 func serveFrontendIndex(w http.ResponseWriter, fsys fs.FS) {
@@ -99,6 +114,9 @@ func (a *App) handleMihomoUIAsset(w http.ResponseWriter, r *http.Request) {
 			a.serveZashboardIndex(w, r, abs)
 			return
 		}
+		// zashboard builds also hash their assets/ filenames; its index.html
+		// stays no-store (it embeds the controller secret dynamically).
+		setStaticCacheHeaders(w, rel)
 		http.ServeFile(w, r, abs)
 		return
 	}

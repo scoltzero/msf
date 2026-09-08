@@ -21,6 +21,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"syscall"
@@ -226,7 +227,20 @@ Notes:
 `)
 }
 
+// applyDefaultGoMemoryLimit sets a soft GC memory ceiling so the Go runtime
+// does not let the heap double freely on memory-constrained side-router
+// hosts that also run mihomo and mosdns. It is
+// a soft limit: the runtime exceeds it rather than OOM. An explicit
+// GOMEMLIMIT env var always wins and is left untouched.
+func applyDefaultGoMemoryLimit() {
+	if os.Getenv("GOMEMLIMIT") != "" {
+		return
+	}
+	debug.SetMemoryLimit(512 << 20)
+}
+
 func serve(dataDir, host string, port int) error {
+	applyDefaultGoMemoryLimit()
 	app, err := server.New(serverOptions(dataDir))
 	if err != nil {
 		return err
@@ -244,6 +258,7 @@ func serve(dataDir, host string, port int) error {
 	if err := app.EnsureBaseLayout(); err != nil {
 		return err
 	}
+	app.StartMaintenanceTasks()
 	app.LogInfo("app/app.go:158", "已生成配置文件并落地当前有效 JWT 密钥", map[string]any{"file": filepath.Join(dataDir, "configs/app.yaml")})
 	app.LogInfo("app/app.go:173", "JWT配置初始化成功", nil)
 	app.LogInfo("app/app.go:182", "数据库初始化成功", nil)
@@ -1169,6 +1184,14 @@ func serviceCommand(action string, opts serviceOptions) error {
 	}
 }
 
+// systemdNFTCleanupExec strips msf-owned nftables state when the unit stops,
+// on every exit path systemd observes (graceful stop, timeout, SIGKILL,
+// crash).  The nft redirects point at ports that only exist while msf runs;
+// leftovers would blackhole gateway traffic until msf comes back.  The fwmark
+// loops mirror policyRouteRuleDeleteCommands in internal/server.
+const systemdNFTCleanupExec = "# delete msf nft rules on every stop path so traffic falls back to direct\n" +
+	"ExecStopPost=-/bin/sh -c '/usr/sbin/nft delete table inet msf 2>/dev/null; for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do /usr/sbin/ip rule del fwmark 1 table 100 2>/dev/null || break; done; for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do /usr/sbin/ip -6 rule del fwmark 1 table 100 2>/dev/null || break; done; /usr/sbin/ip route del local 0.0.0.0/0 dev lo table 100 2>/dev/null; /usr/sbin/ip -6 route del local ::/0 dev lo table 100 2>/dev/null; true'\n"
+
 func installSystemdService(opts serviceOptions) error {
 	if currentEUID() != 0 {
 		return errors.New("service install must be run as root")
@@ -1203,7 +1226,7 @@ User=root
 WorkingDirectory=%s
 Environment=MSF_DATA_DIR=%s
 ExecStart=%s serve --config %s --host %s --port %d
-Restart=on-failure
+`+systemdNFTCleanupExec+`Restart=on-failure
 RestartSec=2
 TimeoutStopSec=30
 LimitNOFILE=1048576

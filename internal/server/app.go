@@ -1,14 +1,13 @@
 package server
 
 import (
-	"bytes"
-	"compress/gzip"
 	"context"
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -76,6 +75,16 @@ type App struct {
 	smartResourceMu         sync.RWMutex
 	smartResourceJobs       map[string]smartResourceState
 	smartResourceCancels    map[string]smartResourceCancelEntry
+	mihomoSecretValueMu     sync.RWMutex
+	mihomoSecretValue       string
+	gameUdpBypassMu         sync.RWMutex
+	gameUdpBypassValue      string
+	chinaUdpBypassMu        sync.RWMutex
+	chinaUdpBypassValue     string
+	githubAPIBaseURL        string
+	dnsBenchmarkMu          sync.Mutex
+	dnsBenchmarkRunning     bool
+	dnsBenchmarkLastStarted time.Time
 }
 
 type assistantCancelEntry struct {
@@ -121,6 +130,7 @@ func New(opts Options) (*App, error) {
 		assistantCancels:      make(map[string]assistantCancelEntry),
 		smartResourceJobs:     make(map[string]smartResourceState),
 		smartResourceCancels:  make(map[string]smartResourceCancelEntry),
+		githubAPIBaseURL:      "https://api.github.com",
 	}
 	if request, ok, readErr := readFactoryResetRequest(opts.DataDir); readErr == nil && ok {
 		app.operations.resetID = request.ResetID
@@ -134,6 +144,14 @@ func New(opts Options) (*App, error) {
 		db.Close()
 		return nil, err
 	}
+	if err := app.migrateGitHubTokenStorage(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("migrate GitHub token storage: %w", err)
+	}
+	app.ensureMihomoControllerSecret()
+	app.ensureGameUDPBypassCache()
+	app.ensureChinaUDPBypassCache()
+	app.reconcileMihomoCoreTypeWithBinary()
 	app.cleanupAssistantRuntimeState()
 	_, _ = app.DB.Exec(`delete from settings where key='factory_reset.completed_id'`)
 	app.Services = NewServiceManager(app)
@@ -190,11 +208,22 @@ func (a *App) EnsureBaseLayout() error {
 	if err := a.ensureRuntimeLayout(); err != nil {
 		return err
 	}
-	return a.reconcileAppliedMihomoUserConfig()
+	// A reconcile failure means the persisted user config no longer passes
+	// validation (core type mismatch, missing Smart resources, ...).  The
+	// panel must still come up so the failure can be repaired from the UI;
+	// fatal-ing here turned into a systemd crash loop with no repair surface.
+	if err := a.reconcileAppliedMihomoUserConfig(); err != nil {
+		issue := a.startupIssueFromValidation(err.Error())
+		a.recordStartupIssue(issue.Code, issue.Title, issue.Message, issue.FixSteps)
+	}
+	// Backfill the controller secret for configs written before this
+	// hardening existed (deployments upgrading from <= v0.6.2).
+	a.ensureActiveMihomoControllerSecret()
+	return nil
 }
 
 func (a *App) Router() http.Handler {
-	return a.withCommonMiddleware(a.rawRouter())
+	return withResponseCompression(a.withCommonMiddleware(a.rawRouter()))
 }
 
 // rawRouter returns the route table without authentication middleware.  Public
@@ -221,7 +250,7 @@ func (a *App) withCommonMiddleware(next http.Handler) http.Handler {
 			}
 			a.logHTTPRequest(r, rec.statusCode(), time.Since(start))
 		}()
-		rec.Header().Set("Vary", "Origin")
+		rec.Header().Add("Vary", "Origin")
 		rec.Header().Set("Access-Control-Allow-Origin", "*")
 		rec.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
 		rec.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
@@ -329,6 +358,9 @@ func (a *App) publicAPI(path string) bool {
 			return true
 		}
 	}
+	if path == "/api/v1/system/dns-benchmark" {
+		return !a.IsInitialized()
+	}
 	return strings.HasPrefix(path, "/api/v1/setup/download/")
 }
 
@@ -337,6 +369,7 @@ func (a *App) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/daemon/status", a.handleDaemonStatus)
 	mux.HandleFunc("POST /api/v1/daemon/restart", a.handleDaemonRestart)
 	mux.HandleFunc("POST /api/v1/daemon/stop", a.handleDaemonStop)
+	mux.HandleFunc("POST /api/v1/system/dns-benchmark", a.handleDNSBenchmark)
 
 	mux.HandleFunc("GET /api/v1/setup/check", a.handleSetupCheck)
 	mux.HandleFunc("GET /api/v1/setup/system-info", a.handleSetupSystemInfo)
@@ -394,6 +427,10 @@ func (a *App) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/system/diagnostics", a.handleDiagnostics)
 	mux.HandleFunc("POST /api/v1/system/diagnostics/run", a.handleDiagnosticsRun)
 	mux.HandleFunc("GET /api/v1/system/diagnostics/download", a.handleDiagnosticsDownload)
+	mux.HandleFunc("GET /api/v1/system/startup-issues", a.handleStartupIssues)
+	mux.HandleFunc("GET /api/v1/github/accelerators", a.handleGitHubAccelerators)
+	mux.HandleFunc("PUT /api/v1/github/accelerators", a.handleGitHubAccelerators)
+	mux.HandleFunc("POST /api/v1/github/accelerators/probe", a.handleGitHubAccelerators)
 	mux.HandleFunc("GET /api/v1/network/info", a.handleNetworkInfo)
 	a.registerNetworkRuntimeRoutes(mux)
 	mux.HandleFunc("POST /api/v1/network/apply", a.handleNFTApply)
@@ -480,25 +517,6 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		log.Printf("write json: %v", err)
 	}
-}
-
-func writeJSONGzip(w http.ResponseWriter, r *http.Request, status int, v any) {
-	if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
-		writeJSON(w, status, v)
-		return
-	}
-	var b bytes.Buffer
-	if err := json.NewEncoder(&b).Encode(v); err != nil {
-		writeJSON(w, status, v)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.Header().Set("Content-Encoding", "gzip")
-	w.Header().Add("Vary", "Accept-Encoding")
-	w.WriteHeader(status)
-	zw := gzip.NewWriter(w)
-	_, _ = zw.Write(b.Bytes())
-	_ = zw.Close()
 }
 
 func writeError(w http.ResponseWriter, status int, code, message string) {

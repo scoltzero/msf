@@ -112,7 +112,7 @@ func TestAppearanceOpacityAPIsAtomicAndConsistent(t *testing.T) {
 	if initial.Code != http.StatusOK {
 		t.Fatalf("appearance GET failed: status=%d body=%s", initial.Code, initial.Body.String())
 	}
-	for _, want := range []string{`"theme":"system"`, `"language":"zh-CN"`, `"scene":"dynamic"`, `"quality":"balanced"`, `"content_plate_opacity_subtle":"56"`, `"content_plate_opacity_regular":"70"`, `"content_plate_opacity_strong":"84"`} {
+	for _, want := range []string{`"theme":"system"`, `"language":"zh-CN"`, `"scene":"dynamic"`, `"quality":"balanced"`, `"skin":"classic"`, `"custom_css":""`, `"content_plate_opacity_subtle":"56"`, `"content_plate_opacity_regular":"70"`, `"content_plate_opacity_strong":"84"`} {
 		if !strings.Contains(initial.Body.String(), want) {
 			t.Fatalf("appearance GET missing %s: %s", want, initial.Body.String())
 		}
@@ -213,7 +213,156 @@ func TestAppearanceExplicitQualitySurvivesDefaultAndUpgradeFallbacks(t *testing.
 	}
 	app.setSetting("appearance.scene", "static")
 	if got := app.appearanceSettingsPayload()["scene"]; got != "static" {
-		t.Fatalf("explicit scene was overwritten by fallback %q", got)
+		t.Fatalf("explicit scene was overwritten by fallback")
+	}
+}
+
+func TestAppearanceSkinAndCustomCSSValidation(t *testing.T) {
+	app := newTestApp(t)
+	token := tokenForRole(t, app, "admin")
+	viewer := tokenForRole(t, app, "viewer")
+
+	if got := app.appearanceSettingsPayload()["skin"]; got != "classic" {
+		t.Fatalf("default skin mismatch: %q", got)
+	}
+	viewerCSS := requestJSON(t, app, http.MethodPut, "/api/v1/settings/appearance", viewer, map[string]any{"custom_css": "body { display: none; }"})
+	if viewerCSS.Code != http.StatusForbidden {
+		t.Fatalf("viewer changed global custom CSS: status=%d body=%s", viewerCSS.Code, viewerCSS.Body.String())
+	}
+
+	badSkin := requestJSON(t, app, http.MethodPut, "/api/v1/settings/appearance", token, map[string]any{"skin": "neon"})
+	if badSkin.Code != http.StatusBadRequest {
+		t.Fatalf("invalid skin should fail: status=%d body=%s", badSkin.Code, badSkin.Body.String())
+	}
+	badCSS := requestJSON(t, app, http.MethodPut, "/api/v1/settings/appearance", token, map[string]any{"custom_css": strings.Repeat("a", appearanceCustomCSSMaxBytes+1)})
+	if badCSS.Code != http.StatusBadRequest {
+		t.Fatalf("oversized custom_css should fail: status=%d body=%s", badCSS.Code, badCSS.Body.String())
+	}
+	if got := app.appearanceSettingsPayload()["skin"]; got != "classic" {
+		t.Fatalf("failed updates changed skin: %q", got)
+	}
+
+	valid := requestJSON(t, app, http.MethodPut, "/api/v1/settings/appearance", token, map[string]any{
+		"skin":       "amber",
+		"custom_css": ":root { --primary: #f97316; }",
+	})
+	if valid.Code != http.StatusOK {
+		t.Fatalf("valid skin/custom_css update failed: status=%d body=%s", valid.Code, valid.Body.String())
+	}
+	after := requestJSON(t, app, http.MethodGet, "/api/v1/settings/appearance", token, nil)
+	for _, want := range []string{`"skin":"amber"`, `"custom_css":":root { --primary: #f97316; }"`} {
+		if !strings.Contains(after.Body.String(), want) {
+			t.Fatalf("appearance GET missing %s: %s", want, after.Body.String())
+		}
+	}
+
+	badStructured := requestJSON(t, app, http.MethodPut, "/api/v1/settings/structured", token, map[string]any{
+		"appearance": map[string]any{"skin": "neon"},
+	})
+	if badStructured.Code != http.StatusBadRequest {
+		t.Fatalf("structured invalid skin should fail: status=%d body=%s", badStructured.Code, badStructured.Body.String())
+	}
+	validStructured := requestJSON(t, app, http.MethodPut, "/api/v1/settings/structured", token, map[string]any{
+		"appearance": map[string]any{"skin": "classic", "custom_css": ""},
+	})
+	if validStructured.Code != http.StatusOK {
+		t.Fatalf("structured skin update failed: status=%d body=%s", validStructured.Code, validStructured.Body.String())
+	}
+	payload := app.appearanceSettingsPayload()
+	if payload["skin"] != "classic" || payload["custom_css"] != "" {
+		t.Fatalf("structured update did not persist: %#v", payload)
+	}
+}
+
+func TestAppearanceAccentColorValidation(t *testing.T) {
+	app := newTestApp(t)
+	token := tokenForRole(t, app, "admin")
+
+	for _, bad := range []string{"red", "#12345", "123456"} {
+		badPut := requestJSON(t, app, http.MethodPut, "/api/v1/settings/appearance", token, map[string]any{"accent_color": bad})
+		if badPut.Code != http.StatusBadRequest {
+			t.Fatalf("invalid accent_color %q should fail: status=%d body=%s", bad, badPut.Code, badPut.Body.String())
+		}
+	}
+	badStructured := requestJSON(t, app, http.MethodPut, "/api/v1/settings/structured", token, map[string]any{
+		"appearance": map[string]any{"accent_color": "red"},
+	})
+	if badStructured.Code != http.StatusBadRequest {
+		t.Fatalf("structured invalid accent_color should fail: status=%d body=%s", badStructured.Code, badStructured.Body.String())
+	}
+	if got := app.appearanceSettingsPayload()["accent_color"]; got != "" {
+		t.Fatalf("failed updates changed accent_color: %q", got)
+	}
+
+	valid := requestJSON(t, app, http.MethodPut, "/api/v1/settings/appearance", token, map[string]any{"accent_color": "#0EA5E9"})
+	if valid.Code != http.StatusOK {
+		t.Fatalf("valid accent_color update failed: status=%d body=%s", valid.Code, valid.Body.String())
+	}
+	after := requestJSON(t, app, http.MethodGet, "/api/v1/settings/appearance", token, nil)
+	if !strings.Contains(after.Body.String(), `"accent_color":"#0EA5E9"`) {
+		t.Fatalf("appearance GET missing accent_color: %s", after.Body.String())
+	}
+
+	reset := requestJSON(t, app, http.MethodPut, "/api/v1/settings/appearance", token, map[string]any{"accent_color": ""})
+	if reset.Code != http.StatusOK {
+		t.Fatalf("accent_color reset failed: status=%d body=%s", reset.Code, reset.Body.String())
+	}
+	structured := requestJSON(t, app, http.MethodPut, "/api/v1/settings/structured", token, map[string]any{
+		"appearance": map[string]any{"accent_color": "#0EA5E9"},
+	})
+	if structured.Code != http.StatusOK {
+		t.Fatalf("structured accent_color update failed: status=%d body=%s", structured.Code, structured.Body.String())
+	}
+	if got := app.appearanceSettingsPayload()["accent_color"]; got != "#0ea5e9" {
+		t.Fatalf("structured accent_color should be lowercased: %q", got)
+	}
+}
+
+func TestAppearanceSkinTintValidation(t *testing.T) {
+	app := newTestApp(t)
+	token := tokenForRole(t, app, "admin")
+
+	for _, bad := range []string{"-10", "361", "abc", "999"} {
+		badPut := requestJSON(t, app, http.MethodPut, "/api/v1/settings/appearance", token, map[string]any{"skin_tint": bad})
+		if badPut.Code != http.StatusBadRequest {
+			t.Fatalf("invalid skin_tint %q should fail: status=%d body=%s", bad, badPut.Code, badPut.Body.String())
+		}
+	}
+	badStructured := requestJSON(t, app, http.MethodPut, "/api/v1/settings/structured", token, map[string]any{
+		"appearance": map[string]any{"skin_tint": "361"},
+	})
+	if badStructured.Code != http.StatusBadRequest {
+		t.Fatalf("structured invalid skin_tint should fail: status=%d body=%s", badStructured.Code, badStructured.Body.String())
+	}
+	if got := app.appearanceSettingsPayload()["skin_tint"]; got != "" {
+		t.Fatalf("failed updates changed skin_tint: %q", got)
+	}
+
+	valid := requestJSON(t, app, http.MethodPut, "/api/v1/settings/appearance", token, map[string]any{"skin_tint": "120"})
+	if valid.Code != http.StatusOK {
+		t.Fatalf("valid skin_tint update failed: status=%d body=%s", valid.Code, valid.Body.String())
+	}
+	after := requestJSON(t, app, http.MethodGet, "/api/v1/settings/appearance", token, nil)
+	if !strings.Contains(after.Body.String(), `"skin_tint":"120"`) {
+		t.Fatalf("appearance GET missing skin_tint: %s", after.Body.String())
+	}
+
+	validStructured := requestJSON(t, app, http.MethodPut, "/api/v1/settings/structured", token, map[string]any{
+		"appearance": map[string]any{"skin_tint": "0"},
+	})
+	if validStructured.Code != http.StatusOK {
+		t.Fatalf("structured skin_tint update failed: status=%d body=%s", validStructured.Code, validStructured.Body.String())
+	}
+	if got := app.appearanceSettingsPayload()["skin_tint"]; got != "0" {
+		t.Fatalf("structured skin_tint should persist 0: %q", got)
+	}
+
+	reset := requestJSON(t, app, http.MethodPut, "/api/v1/settings/appearance", token, map[string]any{"skin_tint": ""})
+	if reset.Code != http.StatusOK {
+		t.Fatalf("skin_tint reset failed: status=%d body=%s", reset.Code, reset.Body.String())
+	}
+	if got := app.appearanceSettingsPayload()["skin_tint"]; got != "" {
+		t.Fatalf("skin_tint reset should clear value: %q", got)
 	}
 }
 
@@ -393,5 +542,58 @@ func TestNetworkExitHTTPClientUsesConfiguredProxy(t *testing.T) {
 	}
 	if got, want := <-targets, "example.invalid"; got != want {
 		t.Fatalf("proxy received target %q, want %q", got, want)
+	}
+}
+
+func TestAppearanceCustomCSSRequiresAdmin(t *testing.T) {
+	app := newTestApp(t)
+	viewer := tokenForRole(t, app, "viewer")
+	admin := tokenForRole(t, app, "admin")
+
+	denied := requestJSON(t, app, http.MethodPut, "/api/v1/settings/appearance", viewer, map[string]any{
+		"custom_css": "body { display: none }",
+	})
+	if denied.Code != http.StatusForbidden {
+		t.Fatalf("viewer custom_css write = %d, want 403: %s", denied.Code, denied.Body.String())
+	}
+	after := requestJSON(t, app, http.MethodGet, "/api/v1/settings/appearance", viewer, nil)
+	if strings.Contains(after.Body.String(), "display: none") {
+		t.Fatal("rejected viewer custom_css write leaked into global appearance")
+	}
+
+	allowed := requestJSON(t, app, http.MethodPut, "/api/v1/settings/appearance", admin, map[string]any{
+		"custom_css": "body { --msf-test: 1 }",
+	})
+	if allowed.Code != http.StatusOK {
+		t.Fatalf("admin custom_css write failed: status=%d body=%s", allowed.Code, allowed.Body.String())
+	}
+
+	// 非 custom_css 的外观字段对非管理员保持原行为（全局外观可写）。
+	themeOnly := requestJSON(t, app, http.MethodPut, "/api/v1/settings/appearance", viewer, map[string]any{"theme": "light"})
+	if themeOnly.Code != http.StatusOK {
+		t.Fatalf("viewer theme write = %d, want 200: %s", themeOnly.Code, themeOnly.Body.String())
+	}
+}
+
+func TestSettingsGetRedactsCredentials(t *testing.T) {
+	app := newTestApp(t)
+	app.setSetting(settingGitHubToken, "ghp_token1234567890abcdef")
+	app.setSetting(mihomoControllerSecretSettingKey, "0123456789abcdef0123456789abcdef01234567")
+	admin := tokenForRole(t, app, "admin")
+	res := requestJSON(t, app, http.MethodGet, "/api/v1/settings", admin, nil)
+	if res.Code != http.StatusOK {
+		t.Fatalf("settings GET failed: status=%d body=%s", res.Code, res.Body.String())
+	}
+	body := res.Body.String()
+	for _, raw := range []string{"ghp_token1234567890abcdef", "0123456789abcdef0123456789abcdef01234567"} {
+		if strings.Contains(body, raw) {
+			t.Fatalf("credential leaked through generic settings GET: %s", raw)
+		}
+	}
+	if strings.Contains(body, "ghp_******cdef") || strings.Contains(body, settingGitHubTokenCiphertext) || strings.Contains(body, settingGitHubTokenNonce) {
+		t.Fatalf("GitHub token material should be omitted from the generic settings response: %s", body)
+	}
+	if !strings.Contains(body, "0123******4567") {
+		t.Fatalf("masked Mihomo controller secret missing from response: %s", body)
 	}
 }

@@ -386,10 +386,13 @@ func withTestSetupSystemOps(t *testing.T) {
 		setupTUNDeviceStat = oldTunDeviceStat
 		setupNetworkCapabilities = oldNetworkCapabilities
 		setupApplyProxyNetworkState = oldApplyProxyNetworkState
-		time.Local = oldLocal
-		if hadTZ {
+		if time.Local != oldLocal {
+			time.Local = oldLocal
+		}
+		currentTZ, hasCurrentTZ := os.LookupEnv("TZ")
+		if hadTZ && (!hasCurrentTZ || currentTZ != oldTZ) {
 			_ = os.Setenv("TZ", oldTZ)
-		} else {
+		} else if !hadTZ && hasCurrentTZ {
 			_ = os.Unsetenv("TZ")
 		}
 	})

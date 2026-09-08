@@ -46,11 +46,38 @@ export const SYSTEM_CHART_COLORS = {
   connections: "rgb(139, 92, 246)",
 } as const;
 
-const CPU_COLOR = SYSTEM_CHART_COLORS.cpu;
-const MEMORY_COLOR = SYSTEM_CHART_COLORS.memory;
-const UPLOAD_COLOR = SYSTEM_CHART_COLORS.upload;
-const DOWNLOAD_COLOR = SYSTEM_CHART_COLORS.download;
-const CONNECTION_COLOR = SYSTEM_CHART_COLORS.connections;
+type ChartSeriesName = keyof typeof SYSTEM_CHART_COLORS;
+
+/** Classic-skin RGB triplets; skins override these through --msf-chart-* variables. */
+const CHART_TRIPLETS: Record<ChartSeriesName, string> = {
+  cpu: "37, 99, 235",
+  memory: "147, 51, 234",
+  upload: "74, 222, 128",
+  download: "96, 165, 250",
+  connections: "139, 92, 246",
+};
+
+function chartTriplet(name: ChartSeriesName): string {
+  if (typeof document === "undefined") return CHART_TRIPLETS[name];
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(`--msf-chart-${name}`).trim();
+  return raw || CHART_TRIPLETS[name];
+}
+
+/** Resolve the current series colors from the active skin. */
+export function resolveChartColors(): Record<ChartSeriesName, string> {
+  return {
+    cpu: `rgb(${chartTriplet("cpu")})`,
+    memory: `rgb(${chartTriplet("memory")})`,
+    upload: `rgb(${chartTriplet("upload")})`,
+    download: `rgb(${chartTriplet("download")})`,
+    connections: `rgb(${chartTriplet("connections")})`,
+  };
+}
+
+function chartAreaStyle(name: ChartSeriesName, topAlpha: number, bottomAlpha: number) {
+  const triplet = chartTriplet(name);
+  return areaGradient(`rgba(${triplet}, ${topAlpha})`, `rgba(${triplet}, ${bottomAlpha})`);
+}
 
 function numberValue(value: unknown) {
   const numeric = Number(value || 0);
@@ -71,14 +98,25 @@ function formatTooltipTime(value: unknown) {
   return `${date.getFullYear()}.${pad(date.getMonth() + 1)}.${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
 
-function useDarkTheme() {
-  const [dark, setDark] = useState(() => typeof document !== "undefined" && document.documentElement.classList.contains("dark"));
+/** Tracks dark mode and the active skin so chart options re-resolve skin colors. */
+function useChartTheme() {
+  const read = () => ({
+    dark: typeof document !== "undefined" && document.documentElement.classList.contains("dark"),
+    skin: (typeof document !== "undefined" && document.documentElement.dataset.skin) || "",
+  });
+  const [theme, setTheme] = useState(read);
   useEffect(() => {
-    const observer = new MutationObserver(() => setDark(document.documentElement.classList.contains("dark")));
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    const observer = new MutationObserver(() => setTheme(read()));
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class", "data-skin"] });
     return () => observer.disconnect();
   }, []);
-  return dark;
+  return theme;
+}
+
+/** Series colors for legends; re-resolves when the skin attribute changes. */
+export function useChartSeriesColors() {
+  const { skin } = useChartTheme();
+  return useMemo(() => resolveChartColors(), [skin]);
 }
 
 function stableTimePoint(point: ChartPoint, value: unknown) {
@@ -138,13 +176,15 @@ export function TrendChart({
   scaleMax?: number;
   windowSeconds?: number;
 }) {
-  const dark = useDarkTheme();
+  const { dark, skin } = useChartTheme();
   const chartPoints = useMemo<ChartPoint[]>(
     () => points.length ? points : [{ timestamp: Date.now(), cpuPercent, memoryPercent }],
     [cpuPercent, memoryPercent, points],
   );
   const latest = latestTimestamp(chartPoints);
-  const option = useMemo<EChartsOption>(() => ({
+  const option = useMemo<EChartsOption>(() => {
+    const colors = resolveChartColors();
+    return {
     ...baseOption(dark, latest - windowSeconds * 1000, latest),
     tooltip: {
       ...(baseOption(dark, latest - windowSeconds * 1000, latest).tooltip as object),
@@ -152,7 +192,7 @@ export function TrendChart({
         const rows = Array.isArray(params) ? params : [params];
         const time = rows[0]?.value?.[0];
         const values = new Map(rows.map((row: any) => [row.seriesName, numberValue(row.value?.[1])]));
-        return `<div style="font-weight:600;margin-bottom:6px">${formatTooltipTime(time)}</div><div style="display:flex;justify-content:space-between;gap:20px"><span style="color:${CPU_COLOR}">CPU</span><b>${(values.get("CPU") ?? 0).toFixed(1)}%</b></div><div style="display:flex;justify-content:space-between;gap:20px"><span style="color:${MEMORY_COLOR}">内存</span><b>${(values.get("内存") ?? 0).toFixed(1)}%</b></div>`;
+        return `<div style="font-weight:600;margin-bottom:6px">${formatTooltipTime(time)}</div><div style="display:flex;justify-content:space-between;gap:20px"><span style="color:${colors.cpu}">CPU</span><b>${(values.get("CPU") ?? 0).toFixed(1)}%</b></div><div style="display:flex;justify-content:space-between;gap:20px"><span style="color:${colors.memory}">内存</span><b>${(values.get("内存") ?? 0).toFixed(1)}%</b></div>`;
       },
     },
     yAxis: {
@@ -170,8 +210,8 @@ export function TrendChart({
         symbol: "none",
         smooth: true,
         showSymbol: false,
-        lineStyle: { width: 1, color: MEMORY_COLOR, cap: "round", join: "round" },
-        areaStyle: { color: areaGradient("rgba(147,51,234,.30)", "rgba(147,51,234,.05)") },
+        lineStyle: { width: 1, color: colors.memory, cap: "round", join: "round" },
+        areaStyle: { color: chartAreaStyle("memory", 0.3, 0.05) },
         data: chartPoints.map((point) => timePair(point, point.memoryPercent)),
         emphasis: { disabled: true },
       },
@@ -181,13 +221,14 @@ export function TrendChart({
         symbol: "none",
         smooth: true,
         showSymbol: false,
-        lineStyle: { width: 1, color: CPU_COLOR, cap: "round", join: "round" },
-        areaStyle: { color: areaGradient("oklch(60% 0.21 235 / .30)", "oklch(60% 0.21 235 / .05)") },
+        lineStyle: { width: 1, color: colors.cpu, cap: "round", join: "round" },
+        areaStyle: { color: chartAreaStyle("cpu", 0.3, 0.05) },
         data: chartPoints.map((point) => timePair(point, point.cpuPercent)),
         emphasis: { disabled: true },
       },
     ],
-  }), [chartPoints, dark, latest, scaleMax, windowSeconds]);
+  };
+  }, [chartPoints, dark, latest, scaleMax, skin, windowSeconds]);
 
   return <EChartCanvas option={option} className="cursor-crosshair" />;
 }
@@ -205,7 +246,7 @@ export function RateChart({
   connections?: unknown;
   windowSeconds?: number;
 }) {
-  const dark = useDarkTheme();
+  const { dark, skin } = useChartTheme();
   const chartPoints = useMemo<ChartPoint[]>(
     () => points.length ? points : [{ timestamp: Date.now(), downloadSpeed, uploadSpeed, connections }],
     [connections, downloadSpeed, points, uploadSpeed],
@@ -246,7 +287,9 @@ export function RateChart({
   }
   const maxRate = rateScaleRef.current.state.ceiling;
   const maxConnections = connectionScaleRef.current.state.ceiling;
-  const option = useMemo<EChartsOption>(() => ({
+  const option = useMemo<EChartsOption>(() => {
+    const colors = resolveChartColors();
+    return {
     ...baseOption(dark, axisEnd - windowSeconds * 1000, axisEnd),
     tooltip: {
       ...(baseOption(dark, axisEnd - windowSeconds * 1000, axisEnd).tooltip as object),
@@ -254,34 +297,35 @@ export function RateChart({
         const rows = Array.isArray(params) ? params : [params];
         const time = rows[0]?.value?.[0];
         const values = new Map(rows.map((row: any) => [row.seriesName, numberValue(row.value?.[1])]));
-        return `<div style="font-weight:600;margin-bottom:6px">${formatTooltipTime(time)}</div><div style="display:flex;justify-content:space-between;gap:20px"><span style="color:${CONNECTION_COLOR}">连接数</span><b>${Math.round(values.get("连接数") ?? 0)}</b></div><div style="display:flex;justify-content:space-between;gap:20px"><span style="color:${UPLOAD_COLOR}">上传速度</span><b>${formatByteRate(values.get("上传速度"))}</b></div><div style="display:flex;justify-content:space-between;gap:20px"><span style="color:${DOWNLOAD_COLOR}">下载速度</span><b>${formatByteRate(values.get("下载速度"))}</b></div>`;
+        return `<div style="font-weight:600;margin-bottom:6px">${formatTooltipTime(time)}</div><div style="display:flex;justify-content:space-between;gap:20px"><span style="color:${colors.connections}">连接数</span><b>${Math.round(values.get("连接数") ?? 0)}</b></div><div style="display:flex;justify-content:space-between;gap:20px"><span style="color:${colors.upload}">上传速度</span><b>${formatByteRate(values.get("上传速度"))}</b></div><div style="display:flex;justify-content:space-between;gap:20px"><span style="color:${colors.download}">下载速度</span><b>${formatByteRate(values.get("下载速度"))}</b></div>`;
       },
     },
     yAxis: [
       { type: "value", show: false, min: 0, max: maxRate, splitNumber: 4, splitLine: { show: true, lineStyle: { color: dark ? "rgba(255,255,255,.06)" : "rgba(35,38,45,.06)", width: 0.3 } } },
-      { type: "value", show: false, min: 0, max: maxConnections, splitLine: { show: false } },
+      { type: "value", show: false, min: 0, max: maxConnections, splitNumber: 4, splitLine: { show: false } },
     ],
     series: [
       {
         id: "download-speed", type: "line", name: "下载速度", yAxisIndex: 0, symbol: "none", smooth: 0.2, showSymbol: false,
-        lineStyle: { width: 1.5, color: DOWNLOAD_COLOR, cap: "round", join: "round" },
-        areaStyle: { color: areaGradient("rgba(96,165,250,.28)", "rgba(96,165,250,.04)") },
+        lineStyle: { width: 1.5, color: colors.download, cap: "round", join: "round" },
+        areaStyle: { color: chartAreaStyle("download", 0.28, 0.04) },
         data: bufferedPoints.map((point) => stableTimePoint(point, point.downloadSpeed)), emphasis: { disabled: true },
       },
       {
         id: "upload-speed", type: "line", name: "上传速度", yAxisIndex: 0, symbol: "none", smooth: 0.2, showSymbol: false,
-        lineStyle: { width: 1.5, color: UPLOAD_COLOR, cap: "round", join: "round" },
-        areaStyle: { color: areaGradient("rgba(74,222,128,.26)", "rgba(74,222,128,.04)") },
+        lineStyle: { width: 1.5, color: colors.upload, cap: "round", join: "round" },
+        areaStyle: { color: chartAreaStyle("upload", 0.26, 0.04) },
         data: bufferedPoints.map((point) => stableTimePoint(point, point.uploadSpeed)), emphasis: { disabled: true },
       },
       {
         id: "connections", type: "line", name: "连接数", yAxisIndex: 1, symbol: "none", smooth: 0.2, showSymbol: false,
-        lineStyle: { width: 1.5, color: CONNECTION_COLOR, cap: "round", join: "round" },
-        areaStyle: { color: areaGradient("rgba(139,92,246,.24)", "rgba(139,92,246,.04)") },
+        lineStyle: { width: 1.5, color: colors.connections, cap: "round", join: "round" },
+        areaStyle: { color: chartAreaStyle("connections", 0.24, 0.04) },
         data: bufferedPoints.map((point) => stableTimePoint(point, point.connections)), emphasis: { disabled: true },
       },
     ],
-  }), [axisEnd, bufferedPoints, dark, maxConnections, maxRate, windowSeconds]);
+  };
+  }, [axisEnd, bufferedPoints, dark, maxConnections, maxRate, skin, windowSeconds]);
 
   return <EChartCanvas option={option} className="cursor-crosshair" />;
 }

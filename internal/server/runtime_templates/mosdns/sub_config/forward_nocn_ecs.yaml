@@ -2,7 +2,7 @@ plugins:
 #定义了一个带过期缓存的内部使用/外部使用的国外dns服务器（带ecs），供节点域名解析使用
 #在不泄露版本中，供不在域名列表中的域名初次解析使用
   - tag: foreignecs
-    type: aliapi
+    type: forward
     args:
       concurrent: 1
       upstreams:

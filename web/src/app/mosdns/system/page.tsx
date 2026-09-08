@@ -5,6 +5,7 @@ import { AppShell } from "@/components/AppShell";
 import { SystemHeader } from "@/components/mosdns/SystemHeader";
 import { GlobalSettingsCard } from "@/components/mosdns/GlobalSettingsCard";
 import { UpstreamDNSSection } from "@/components/mosdns/UpstreamDNSSection";
+import { DnsBenchmarkPanel, type DnsBenchmarkCandidate } from "@/components/mosdns/DnsBenchmarkPanel";
 import { UpstreamServerDialog, type UpstreamServerFormValues } from "@/components/mosdns/UpstreamServerDialog";
 import { RequestFilterSection } from "@/components/mosdns/RequestFilterSection";
 import { ResolutionPolicySection } from "@/components/mosdns/ResolutionPolicySection";
@@ -473,6 +474,22 @@ export default function MosdnsSystemPage() {
     }
   };
 
+  const handleApplyBenchmark = (recommended: DnsBenchmarkCandidate[]) => {
+    if (recommended.length === 0) return;
+    if (!window.confirm(`将「国内」组上游替换为测速推荐（${recommended.map((item) => item.name).join("、")}）并保存？`)) return;
+    const servers: UpstreamServer[] = recommended.map((item) => ({
+      id: `bench-${item.protocol}-${item.addr}`,
+      name: item.name,
+      protocol: item.protocol === "doh" ? "https" : item.protocol === "gateway" ? "udp" : item.protocol,
+      address: item.addr,
+      enabled: true,
+    }));
+    const nextGroups = groups.map((group) =>
+      group.id === "domestic" ? { ...group, servers } : group,
+    );
+    void persistGroups(nextGroups, "测速推荐已应用为国内上游");
+  };
+
   const handleToggleGroup = (groupId: string, enabled: boolean) => {
     const nextGroups = groups.map((group) => ({
       ...group,
@@ -778,15 +795,22 @@ export default function MosdnsSystemPage() {
         </div>
 
         <div className="grid items-start gap-4 2xl:grid-cols-2">
-          <UpstreamDNSSection
-            regularGroups={regularGroups}
-            fakeIPGroups={fakeIPGroups}
-            onToggleGroup={handleToggleGroup}
-            onToggleServer={handleToggleServer}
-            onEditServer={handleEditServer}
-            onDeleteServer={handleDeleteServer}
-            onAddServer={handleAddServer}
-          />
+          <div className="space-y-4">
+            <UpstreamDNSSection
+              regularGroups={regularGroups}
+              fakeIPGroups={fakeIPGroups}
+              onToggleGroup={handleToggleGroup}
+              onToggleServer={handleToggleServer}
+              onEditServer={handleEditServer}
+              onDeleteServer={handleDeleteServer}
+              onAddServer={handleAddServer}
+            />
+            <DnsBenchmarkPanel
+              onApply={handleApplyBenchmark}
+              applyLabel="应用为国内上游"
+              description="对主流公共 DNS 与本网络网关实测 3 轮（含不存在域），自动剔除不可达者；应用推荐会替换「国内」组的上游并立即保存。"
+            />
+          </div>
 
           <CacheSystemSection
             data={{

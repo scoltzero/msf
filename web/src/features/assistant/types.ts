@@ -57,6 +57,9 @@ export interface AssistantApproval {
   method: string;
   path: string;
   risk: string;
+  /** bash 命令风险解析：high/medium/low + 命中的危险模式说明 */
+  risk_level?: "high" | "medium" | "low" | string;
+  risk_notes?: string[];
   details?: string;
   expires_in?: number;
 }

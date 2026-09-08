@@ -1,15 +1,14 @@
 plugins:
 #定义了一个带过期缓存的内部使用/外部使用的国外dns服务器
-#转发dns请求到国外dns
+#转发dns请求到国外dns（forward 增强版：socks5 逐上游支持、快速失败；
+# 旧 aliapi 对 NXDOMAIN 等 5 秒，forward 实测 ~80ms）
   - tag: foreign
-    type: aliapi
+    type: forward
     args:
       concurrent: 2
       upstreams:
         - addr: "https://1.1.1.1/dns-query"
-          socks5: ""
         - addr: "https://8.8.8.8/dns-query"
-          socks5: ""
           upstream_query_timeout: 1000
 
 #国内域名 内部使用

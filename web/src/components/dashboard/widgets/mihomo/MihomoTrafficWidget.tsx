@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { TimeWindowSelector } from "@/components/charts/TimeWindowSelector";
 import { withinTimeWindow, type TimeWindowSeconds } from "@/components/charts/timeSeries";
 import { formatBytes } from "@/lib/api";
-import { RateChart, SYSTEM_CHART_COLORS } from "../../charts";
+import { RateChart, useChartSeriesColors } from "../../charts";
 import { useMihomoDashboardData } from "../../data";
 
 export type MihomoWidgetSize = "s" | "m" | "l";
@@ -24,6 +24,7 @@ export function MihomoTrafficWidget({ size = "m" }: MihomoTrafficWidgetProps) {
   const upload = latest?.uploadSpeed ?? Number(overview.uploadSpeed ?? overview.upload_speed ?? stats.uploadSpeed ?? stats.upload_speed ?? 0);
   const connections = latest?.connections ?? Number(overview.activeConnections ?? overview.active_connections ?? stats.activeConnections ?? stats.active_connections ?? 0);
   const compact = size !== "l";
+  const chartColors = useChartSeriesColors();
   const uploadRate = `${formatBytes(upload)}/s`;
   const downloadRate = `${formatBytes(download)}/s`;
   const height = size === "s" ? "min-h-[150px]" : size === "l" ? "min-h-[270px]" : "min-h-[190px]";
@@ -36,9 +37,9 @@ export function MihomoTrafficWidget({ size = "m" }: MihomoTrafficWidgetProps) {
     <div className={`min-w-0 flex-1 ${height}`} data-rate-chart><RateChart points={points} downloadSpeed={download} uploadSpeed={upload} connections={connections} windowSeconds={range} /></div>
     <div className={`${compact ? "mt-1 flex flex-col items-stretch gap-1.5" : "mt-2 flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5"}`} data-rate-footer>
       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2.5 gap-y-1" data-rate-metrics-placement={compact ? "footer" : undefined}>
-        <Legend color={SYSTEM_CHART_COLORS.upload} label="上传" value={compact ? uploadRate : undefined} />
-        <Legend color={SYSTEM_CHART_COLORS.download} label="下载" value={compact ? downloadRate : undefined} />
-        <Legend color={SYSTEM_CHART_COLORS.connections} label="连接数" value={compact ? String(connections) : undefined} />
+        <Legend color={chartColors.upload} label="上传" value={compact ? uploadRate : undefined} />
+        <Legend color={chartColors.download} label="下载" value={compact ? downloadRate : undefined} />
+        <Legend color={chartColors.connections} label="连接数" value={compact ? String(connections) : undefined} />
         <span className="text-[10px] text-muted-foreground">{trafficConnected ? "WebSocket 实时" : "概览采样兜底"}</span>
       </div>
       <div className="flex min-w-0 justify-end"><TimeWindowSelector value={range} onChange={setRange} /></div>

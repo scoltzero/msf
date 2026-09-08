@@ -26,8 +26,8 @@ UrlTest: &UrlTest {type: url-test, interval: 30, tolerance: 20, lazy: true, url:
 
 # 运行模式
 mode: rule
-# 日志级别
-log-level: info
+# 日志级别（info 级曾以 1.2GB/月 的速度写穿磁盘，默认 warning；排障时再临时调高）
+log-level: warning
 # 统一延迟
 unified-delay: true
 # TCP 并发

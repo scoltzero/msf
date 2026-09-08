@@ -103,6 +103,9 @@ User=root
 WorkingDirectory=$DATA_DIR
 Environment=MSF_DATA_DIR=$DATA_DIR
 ExecStart=$BIN_DEST serve --config $DATA_DIR --host $HOST --port $PORT
+# Strip msf-owned nft rules on every stop path (incl. crash/SIGKILL) so
+# traffic falls back to direct instead of blackholing while msf is down.
+ExecStopPost=-/bin/sh -c '/usr/sbin/nft delete table inet msf 2>/dev/null; for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do /usr/sbin/ip rule del fwmark 1 table 100 2>/dev/null || break; done; for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do /usr/sbin/ip -6 rule del fwmark 1 table 100 2>/dev/null || break; done; /usr/sbin/ip route del local 0.0.0.0/0 dev lo table 100 2>/dev/null; /usr/sbin/ip -6 route del local ::/0 dev lo table 100 2>/dev/null; true'
 Restart=on-failure
 RestartSec=2
 TimeoutStopSec=30

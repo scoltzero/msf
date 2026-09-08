@@ -218,6 +218,10 @@ func (a *App) handleSetupPutConfig(w http.ResponseWriter, r *http.Request) {
 	if cfg.Username == "" {
 		cfg.Username = "root"
 	}
+	if err := a.applySetupDomesticUpstreams(cfg); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_upstream_choice", err.Error())
+		return
+	}
 	if err := applyHostTimezone(r.Context(), cfg.Timezone); err != nil {
 		writeError(w, http.StatusConflict, "timezone_error", err.Error())
 		return
@@ -446,6 +450,10 @@ func (a *App) handleSetupInitialize(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := a.createOrUpdateAdmin(cfg.Username, cfg.Password, cfg.Email); err != nil {
 		writeError(w, http.StatusInternalServerError, "user_error", err.Error())
+		return
+	}
+	if err := a.applySetupDomesticUpstreams(cfg); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_upstream_choice", err.Error())
 		return
 	}
 	if err := a.writeGeneratedConfigs(cfg); err != nil {

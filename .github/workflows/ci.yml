@@ -1,0 +1,64 @@
+name: Source validation
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Check Go formatting
+        shell: bash
+        run: |
+          set -euo pipefail
+          unformatted="$(gofmt -l $(git ls-files '*.go'))"
+          if [[ -n "$unformatted" ]]; then
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Test and vet Go source
+        run: |
+          go test ./...
+          go vet ./...
+
+      - name: Install and validate frontend
+        run: |
+          npm --prefix web ci
+          npm --prefix web test
+          npm --prefix web run check
+
+      - name: Verify embedded CN delegation data
+        run: |
+          scripts/update-chnroute-data.sh
+          git diff --exit-code -- \
+            internal/server/runtime_templates/network/chnroute_v4.txt \
+            internal/server/runtime_templates/network/chnroute_v6.txt
+
+      - name: Cross-build supported targets
+        shell: bash
+        run: |
+          set -euo pipefail
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
+            GOOS="${target%/*}" GOARCH="${target#*/}" CGO_ENABLED=0 go build ./...
+          done
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build ./internal/cloudflareredirect

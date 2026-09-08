@@ -38,11 +38,102 @@ type assistantApprovalInfo struct {
 	Method        string
 	Path          string
 	Risk          string
+	RiskLevel     string
+	RiskNotes     []string
 	Details       string
 	Capability    string
 	ToolName      string
 	ToolCallID    string
 	ArgumentsJSON string
+}
+
+// assistantRiskAnnotation surfaces concrete danger patterns detected in the
+// frozen arguments so the human approving the action sees a risk breakdown,
+// not just the raw command text (KNOWN_ISSUES ②).  A third-party LLM backend
+// can make a harmless-looking command wrap something destructive; the
+// annotation makes the destructive part visible at a glance.
+type assistantRiskAnnotation struct {
+	Level string
+	Notes []string
+}
+
+func (r assistantRiskAnnotation) apply(info *assistantApprovalInfo) {
+	if r.Level != "" {
+		info.RiskLevel = r.Level
+	}
+	if len(r.Notes) > 0 {
+		info.RiskNotes = r.Notes
+	}
+}
+
+// analyzeBashRisk classifies a shell command by the dangerous patterns it
+// contains.  It is advisory (displayed on the approval card); execution
+// policy itself is unchanged.
+func analyzeBashRisk(command string) assistantRiskAnnotation {
+	lower := strings.ToLower(command)
+	level := "low"
+	var notes []string
+	high := []struct{ pattern, note string }{
+		{`rm -rf`, "递归强制删除文件"},
+		{`rm -fr`, "递归强制删除文件"},
+		{"mkfs", "格式化文件系统"},
+		{"wipefs", "清除文件系统签名"},
+		{"fdisk", "修改磁盘分区表"},
+		{"sfdisk", "修改磁盘分区表"},
+		{"parted", "修改磁盘分区表"},
+		{`dd if=`, "底层磁盘/设备写入（dd）"},
+		{`dd of=`, "底层磁盘/设备写入（dd）"},
+		{"/dev/sd", "直接操作块设备"},
+		{"/dev/nvme", "直接操作块设备"},
+		{"/dev/mmcblk", "直接操作块设备"},
+		{"| sh", "管道执行远程/未审计脚本"},
+		{"|sh", "管道执行远程/未审计脚本"},
+		{"| bash", "管道执行远程/未审计脚本"},
+		{"|bash", "管道执行远程/未审计脚本"},
+		{"shutdown", "关机/重启系统"},
+		{"reboot", "关机/重启系统"},
+		{"poweroff", "关机/重启系统"},
+		{"halt", "关机/重启系统"},
+		{`systemctl stop msf`, "停止 msf 本体（面板将离线）"},
+		{`systemctl restart msf`, "重启 msf 本体"},
+		{`systemctl disable msf`, "禁用 msf 开机自启"},
+		{"iptables", "修改防火墙规则"},
+		{"nft ", "修改 nftables 规则"},
+		{"nftables", "修改 nftables 规则"},
+		{"kill -9 1", "向 init 进程发送 SIGKILL"},
+		{"shred", "不可恢复地擦除文件"},
+	}
+	for _, item := range high {
+		if strings.Contains(lower, item.pattern) {
+			level = "high"
+			notes = append(notes, item.note)
+		}
+	}
+	medium := []struct{ pattern, note string }{
+		{"apt", "变更系统软件包"},
+		{"dpkg", "变更系统软件包"},
+		{"systemctl", "管理系统服务"},
+		{"crontab", "修改定时任务"},
+		{"useradd", "修改系统用户"},
+		{"usermod", "修改系统用户"},
+		{"passwd", "修改账户密码"},
+		{"docker", "操作 Docker 容器"},
+		{"msf.db", "直接写入 MSF 数据库"},
+		{"chmod 777", "放宽文件权限为全局可写"},
+		{"chown", "变更文件属主"},
+	}
+	for _, item := range medium {
+		if strings.Contains(lower, item.pattern) && level != "high" {
+			level = "medium"
+		}
+		if strings.Contains(lower, item.pattern) {
+			notes = append(notes, item.note)
+		}
+	}
+	if len(notes) > 8 {
+		notes = notes[:8]
+	}
+	return assistantRiskAnnotation{Level: level, Notes: notes}
 }
 
 type assistantApprovalState struct {
@@ -290,7 +381,7 @@ func (s *assistantEinoToolSet) writeFile(ctx context.Context, input assistantWri
 	if versionErr != nil {
 		return "", versionErr
 	}
-	return s.runHostWriteTool(ctx, "write", "写入文件", input.Path, input, resourceVersion, func() (string, error) {
+	return s.runHostWriteTool(ctx, "write", "写入文件", input.Path, input, resourceVersion, assistantRiskAnnotation{}, func() (string, error) {
 		path, err := normalizeAssistantWritePath(input.Path)
 		if err != nil {
 			return "", err
@@ -328,7 +419,7 @@ func (s *assistantEinoToolSet) editFile(ctx context.Context, input assistantEdit
 	if versionErr != nil {
 		return "", versionErr
 	}
-	return s.runHostWriteTool(ctx, "edit", "编辑文件", input.Path, input, resourceVersion, func() (string, error) {
+	return s.runHostWriteTool(ctx, "edit", "编辑文件", input.Path, input, resourceVersion, assistantRiskAnnotation{}, func() (string, error) {
 		path, err := normalizeAssistantWritePath(input.Path)
 		if err != nil {
 			return "", err
@@ -370,7 +461,7 @@ type assistantBashInput struct {
 }
 
 func (s *assistantEinoToolSet) runBash(ctx context.Context, input assistantBashInput) (string, error) {
-	return s.runHostWriteTool(ctx, "bash", "执行 Shell 命令", input.Cwd, input, "", func() (string, error) {
+	return s.runHostWriteTool(ctx, "bash", "执行 Shell 命令", input.Cwd, input, "", analyzeBashRisk(input.Command), func() (string, error) {
 		command := strings.TrimSpace(input.Command)
 		if command == "" || len(command) > 32<<10 {
 			return "", fmt.Errorf("shell 命令为空或过长")
@@ -426,7 +517,7 @@ func (s *assistantEinoToolSet) runBash(ctx context.Context, input assistantBashI
 	})
 }
 
-func (s *assistantEinoToolSet) runHostWriteTool(ctx context.Context, toolName, title, target string, input any, resourceVersion string, execute func() (string, error)) (string, error) {
+func (s *assistantEinoToolSet) runHostWriteTool(ctx context.Context, toolName, title, target string, input any, resourceVersion string, risk assistantRiskAnnotation, execute func() (string, error)) (string, error) {
 	wasInterrupted, hasState, state := tool.GetInterruptState[assistantApprovalState](ctx)
 	if wasInterrupted {
 		if !hasState || state.ToolName != toolName {
@@ -434,7 +525,9 @@ func (s *assistantEinoToolSet) runHostWriteTool(ctx context.Context, toolName, t
 		}
 		isTarget, hasData, decision := tool.GetResumeContext[*assistantApprovalDecision](ctx)
 		if !isTarget {
-			return "", tool.StatefulInterrupt(ctx, &assistantApprovalInfo{Title: title, Method: strings.ToUpper(toolName), Path: target, Risk: string(assistant.RiskSensitive), ToolName: toolName, Capability: toolName, ToolCallID: compose.GetToolCallID(ctx), ArgumentsJSON: state.ArgumentsJSON}, state)
+			info := &assistantApprovalInfo{Title: title, Method: strings.ToUpper(toolName), Path: target, Risk: string(assistant.RiskSensitive), ToolName: toolName, Capability: toolName, ToolCallID: compose.GetToolCallID(ctx), ArgumentsJSON: state.ArgumentsJSON}
+			risk.apply(info)
+			return "", tool.StatefulInterrupt(ctx, info, state)
 		}
 		if !hasData || decision == nil {
 			return "", fmt.Errorf("%s 工具恢复时缺少确认结果", toolName)
@@ -481,11 +574,13 @@ func (s *assistantEinoToolSet) runHostWriteTool(ctx context.Context, toolName, t
 	}
 	if s.mode == assistant.ExecutionConfirmWrites {
 		state := assistantApprovalState{Capability: toolName, ToolName: toolName, ArgumentsJSON: string(arguments), ResourceVersion: resourceVersion}
-		return "", tool.StatefulInterrupt(ctx, &assistantApprovalInfo{
+		info := &assistantApprovalInfo{
 			Title: title, Method: strings.ToUpper(toolName), Path: target, Risk: string(assistant.RiskSensitive),
 			Details: truncateAssistantResult(string(arguments), 4096), Capability: toolName, ToolName: toolName,
 			ToolCallID: compose.GetToolCallID(ctx), ArgumentsJSON: string(arguments),
-		}, state)
+		}
+		risk.apply(info)
+		return "", tool.StatefulInterrupt(ctx, info, state)
 	}
 	s.emitToolStarted(toolName, strings.ToUpper(toolName), target)
 	started := time.Now()

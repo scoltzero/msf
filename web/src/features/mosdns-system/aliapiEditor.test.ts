@@ -4,18 +4,16 @@ import { describe, expect, it } from "vitest";
 const dialog = readFileSync(new URL("../../components/mosdns/UpstreamServerDialog.tsx", import.meta.url), "utf8");
 const page = readFileSync(new URL("../../app/mosdns/system/page.tsx", import.meta.url), "utf8");
 
-describe("MosDNS ALIAPI upstream editor", () => {
-  it("shows and validates every required credential field", () => {
-    for (const field of ["账户 ID", "Access Key ID", "Access Key Secret", "服务器地址", "ECS Mask"]) {
-      expect(dialog).toContain(field);
+// forward 迁移后 aliapi 协议不再受支持：编辑器只保留 udp/tcp/tls/https/quic/h3。
+describe("MosDNS upstream editor after forward migration", () => {
+  it("no longer offers the aliapi protocol or its credential fields", () => {
+    for (const field of ["账户 ID", "Access Key ID", "Access Key Secret", "ECS Mask", '"aliapi"']) {
+      expect(dialog).not.toContain(field);
     }
-    expect(dialog).toContain('type="password"');
-    expect(dialog).toContain("ecsClientMask >= 0 && ecsClientMask <= 128");
-    expect(dialog).toContain("已设置，留空则保持不变");
   });
 
-  it("maps the editor values to MosDNS override keys and clears plaintext locally", () => {
-    for (const key of ["account_id", "access_key_id", "access_key_secret", "access_key_secret_set", "server_addr", "ecs_client_mask"]) {
+  it("keeps the secret redaction plumbing for stored overrides", () => {
+    for (const key of ["access_key_secret", "access_key_secret_set"]) {
       expect(page).toContain(key);
     }
     expect(page).toContain("redactLocalUpstreamSecrets");

@@ -5,7 +5,7 @@ import { Cpu, MemoryStick } from "lucide-react";
 import { TimeWindowSelector } from "@/components/charts/TimeWindowSelector";
 import { withinTimeWindow, type TimeWindowSeconds } from "@/components/charts/timeSeries";
 import { formatPercent } from "@/lib/api";
-import { TrendChart, SYSTEM_CHART_COLORS } from "../../charts";
+import { TrendChart, useChartSeriesColors } from "../../charts";
 import { useSystemDashboardData } from "../../data";
 import type { SystemWidgetSize } from "./SystemInfoCollectionWidget";
 
@@ -26,14 +26,15 @@ export function SystemResourcesWidget({ size = "m" }: SystemResourcesWidgetProps
   const memory = resources.memory_percent ?? resources.mem_percent ?? 0;
   const points = useMemo(() => withinTimeWindow(history, range), [history, range]);
   const scaleMax = autoScale ? systemPercentScale(points, cpu, memory) : 100;
+  const chartColors = useChartSeriesColors();
   const chartHeight = size === "s" ? "min-h-[130px]" : size === "l" ? "min-h-[260px]" : "min-h-[165px]";
 
   return (
     <div className="@container flex h-full min-h-0 flex-col">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs">
         <div className="flex items-center gap-3">
-          <span className="flex items-center gap-1.5 text-muted-foreground"><Cpu className="h-3.5 w-3.5" style={{ color: SYSTEM_CHART_COLORS.cpu }} />CPU <b className="tabular-nums text-foreground">{formatPercent(cpu)}</b></span>
-          <span className="flex items-center gap-1.5 text-muted-foreground"><MemoryStick className="h-3.5 w-3.5" style={{ color: SYSTEM_CHART_COLORS.memory }} />内存 <b className="tabular-nums text-foreground">{formatPercent(memory)}</b></span>
+          <span className="flex items-center gap-1.5 text-muted-foreground"><Cpu className="h-3.5 w-3.5" style={{ color: chartColors.cpu }} />CPU <b className="tabular-nums text-foreground">{formatPercent(cpu)}</b></span>
+          <span className="flex items-center gap-1.5 text-muted-foreground"><MemoryStick className="h-3.5 w-3.5" style={{ color: chartColors.memory }} />内存 <b className="tabular-nums text-foreground">{formatPercent(memory)}</b></span>
         </div>
         <button type="button" aria-pressed={autoScale} onClick={() => setAutoScale((value) => !value)} className={`gary-segmented__item px-2.5 py-1.5 text-[10px] ${autoScale ? "gary-segmented__item--active" : "text-muted-foreground"}`} title="切换固定 100% / 动态量程">{autoScale ? `动态 ${scaleMax}%` : "固定 100%"}</button>
       </div>

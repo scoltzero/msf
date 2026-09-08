@@ -17,7 +17,29 @@ export default defineConfig({
   },
   build: {
     outDir: path.resolve(__dirname, "../internal/server/web/dist"),
-    emptyOutDir: true
+    emptyOutDir: true,
+    // Split the heavyweight vendors into their own chunks so route-level
+    // lazy loading (App.tsx) actually keeps them off the first paint.  The
+    // single default bundle previously measured 3.1MB and stalled cold loads.
+    rollupOptions: {
+      output: {
+        manualChunks(id: string) {
+          if (!id.includes("node_modules")) return undefined;
+          if (/[\\/]node_modules[\\/](react|react-dom|react-router|react-router-dom|scheduler|react-is)[\\/]/.test(id)) {
+            return "react-vendor";
+          }
+          if (/[\\/]node_modules[\\/](echarts|zrender)[\\/]/.test(id)) return "echarts";
+          if (/[\\/]node_modules[\\/](@codemirror|@lezer|@uiw|crelt)[\\/]/.test(id)) return "editor";
+          if (/[\\/]node_modules[\\/]three[\\/]/.test(id)) return "three";
+          if (/[\\/]node_modules[\\/]ogl[\\/]/.test(id)) return "ogl";
+          if (/[\\/]node_modules[\\/](react-markdown|remark-gfm|remark-|rehype-|micromark|mdast-|hast-|unist-|vfile|unified|devlop|html-url-attributes|github-slugger)[^\\/]*[\\/]/.test(id)) {
+            return "markdown";
+          }
+          return undefined;
+        }
+      }
+    },
+    chunkSizeWarningLimit: 1024
   },
   worker: {
     format: "es"

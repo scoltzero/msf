@@ -371,8 +371,7 @@ func (a *App) runSmartResourceDownload(ctx context.Context, spec smartResourceSp
 	}
 	tmp := target + ".msf-download"
 	_ = os.Remove(tmp)
-	effectiveURL := a.mihomoCoreSwitchDownloadURL(asset.BrowserDownloadURL)
-	verifiedDigest, err := a.downloadVerifiedResolvedURLContext(ctx, effectiveURL, digest, tmp, func(event DownloadEvent) {
+	verifiedDigest, err := a.downloadVerifiedFileContext(ctx, asset.BrowserDownloadURL, digest, tmp, func(event DownloadEvent) {
 		a.updateSmartResourceState(spec.Key, jobID, func(state *smartResourceState) {
 			state.Progress = event.Progress
 			state.Message = event.Message

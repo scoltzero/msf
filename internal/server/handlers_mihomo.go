@@ -84,6 +84,7 @@ func (a *App) registerMihomoRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/mihomo/proxy-config/validate", a.handleMihomoProxyConfigValidate)
 	mux.HandleFunc("GET /api/v1/mihomo/smart-resources", a.handleMihomoSmartResources)
 	mux.HandleFunc("POST /api/v1/mihomo/smart-resources/download", a.handleMihomoSmartResourceDownload)
+	mux.HandleFunc("POST /api/v1/mihomo/smart-resources/verify", a.handleMihomoSmartResourceVerify)
 	mux.HandleFunc("POST /api/v1/mihomo/smart-resources/cancel", a.handleMihomoSmartResourceCancel)
 	mux.HandleFunc("GET /api/v1/mihomo/rule-providers", a.handleMihomoRuleProviders)
 	mux.HandleFunc("PUT /api/v1/mihomo/rule-providers", a.handleMihomoRuleProvidersPut)
@@ -451,8 +452,12 @@ func (a *App) handleMihomoConnectionClose(w http.ResponseWriter, r *http.Request
 }
 
 func (a *App) handleMihomoProxies(w http.ResponseWriter, r *http.Request) {
-	payload := a.mihomoProxiesPayload(r)
-	writeJSONGzip(w, r, http.StatusOK, map[string]any{"success": true, "data": payload})
+	// The payload itself is the single normalized shape; the legacy root-level
+	// copies of groups/proxies/providers doubled the response size and were
+	// never read by the web client (it unwraps `data` only).  Compression is
+	// applied uniformly by the gzip middleware (see gzip.go), so no per-handler
+	// gzip helper is needed here.
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "data": a.mihomoProxiesPayload(r)})
 }
 
 func (a *App) handleMihomoProxySelect(w http.ResponseWriter, r *http.Request) {
@@ -484,13 +489,15 @@ func (a *App) handleMihomoProxyDelay(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleMihomoRules(w http.ResponseWriter, r *http.Request) {
-	payload := a.mihomoRulesRuntime(r)
-	writeJSON(w, http.StatusOK, map[string]any{"success": true, "data": payload, "rules": payload["rules"], "items": payload["items"], "pagination": payload["pagination"]})
+	// Root-level mirrors of the payload keys tripled the response and were
+	// never read by the web client (it unwraps data first).
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "data": a.mihomoRulesRuntime(r)})
 }
 
 func (a *App) handleMihomoProviders(w http.ResponseWriter, r *http.Request) {
-	payload := a.mihomoProvidersPayload()
-	writeJSON(w, http.StatusOK, map[string]any{"success": true, "data": payload, "providers": payload["proxy_providers"], "proxy_providers": payload["proxy_providers"], "rule_providers": payload["rule_providers"]})
+	// Root-level mirrors of the payload keys doubled the response and were
+	// never read by the web client.
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "data": a.mihomoProvidersPayload()})
 }
 
 func (a *App) handleMihomoProxyProvidersConfig(w http.ResponseWriter, r *http.Request) {

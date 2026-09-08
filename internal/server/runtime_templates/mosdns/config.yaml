@@ -33,6 +33,12 @@ plugins:
   - tag: sequence_6666
     type: sequence
     args:
+      - matches:                            #本地保留TLD(.lan)直接拒答——搜索域查询永不上游
+        - "qname domain:lan"
+        exec: reject 0
+      - matches:                            #本地保留TLD(.local)
+        - "qname domain:local"
+        exec: reject 0
       - matches:                            #阻止SOA PTR HTTPS类型的dns查询
         - "qtype 6 12 65"
         - switch5 'A'
@@ -136,6 +142,12 @@ plugins:
   - tag: sequence_requery
     type: sequence
     args:
+      - matches:                            #本地保留TLD(.lan)直接拒答——搜索域查询永不上游
+        - "qname domain:lan"
+        exec: reject 0
+      - matches:                            #本地保留TLD(.local)
+        - "qname domain:local"
+        exec: reject 0
       - matches:                            #阻止SOA PTR HTTPS类型的dns查询
         - "qtype 6 12 65"
         - switch5 'A'

@@ -32,3 +32,10 @@ docs/research/*-login/
 docs/design-references/*-login/
 docs/design-references/logo-archive/
 docs/research/components/login-logo-showcase.spec.md
+
+# Local tooling artifacts (not part of the project)
+.playwright-mcp/
+.spec-workflow/
+.zcode/
+/*.jpg
+web/pnpm-lock.yaml

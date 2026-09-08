@@ -27,6 +27,8 @@ const (
 	updateConfigNotifyKey            = "update.notify"
 	updateConfigMosDNSUpgradeModeKey = "update.mosdns_upgrade_mode"
 	updateConfigMihomoUpgradeModeKey = "update.mihomo_upgrade_mode"
+	selfUpdateDownloadDigestKey      = "update.msf.download_digest"
+	selfUpdateVerifiedDigestKey      = "update.msf.verified_digest"
 	defaultUpdateCheckInterval       = 12 * 60 * 60
 	maxSelfUpdateEvents              = 20
 )
@@ -266,7 +268,7 @@ func (a *App) selfUpdateState() map[string]any {
 				item["can_install"] = true
 			}
 		}
-		if latest != "" && !versionDifferent(a.Version, latest) && oneOf(status, "installing", "restarting", "downloaded", "checked") {
+		if latest != "" && !versionDifferent(a.Version, latest) && !devUpdateSuppressed(a.Version, latest) && oneOf(status, "installing", "restarting", "downloaded", "checked") {
 			item["current_version"] = a.Version
 			item["has_update"] = false
 			item["status"] = "completed"
@@ -295,7 +297,15 @@ func (a *App) handleUpdateCheck(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": err.Error(), "data": a.selfUpdateState()})
 		return
 	}
-	downloadURL := releaseAssetURL(release, selfUpdateAssetContainsFor(runtime.GOOS, runtime.GOARCH), ".tar.gz")
+	asset, err := selfUpdateReleaseAsset(release, runtime.GOOS, runtime.GOARCH)
+	if err != nil {
+		a.setSelfUpdateState("failed", "failed", 1, "发布资产校验失败", err.Error(), "error", "发布资产校验失败: "+err.Error())
+		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": err.Error(), "data": a.selfUpdateState()})
+		return
+	}
+	downloadURL := asset.URL
+	a.setSetting(selfUpdateDownloadDigestKey, asset.Digest)
+	a.setSetting(selfUpdateVerifiedDigestKey, "")
 	hasUpdate := versionDifferent(a.Version, release.TagName)
 	now := time.Now()
 	phase := "idle"
@@ -305,6 +315,9 @@ func (a *App) handleUpdateCheck(w http.ResponseWriter, r *http.Request) {
 		phase = "ready"
 		message = "检测到新版本可用"
 		eventMessage = "检测到新版本 " + release.TagName
+	} else if devUpdateSuppressed(a.Version, release.TagName) {
+		message = "检测到新版本 " + release.TagName + "，当前为开发版本（" + a.Version + "），已禁用在线更新"
+		eventMessage = message
 	}
 	_ = a.ensureSelfUpdateInfoRow()
 	_, _ = a.DB.Exec(`update update_info set current_version=?,latest_version=?,has_update=?,status='checked',phase=?,progress=0,message=?,error_message='',download_url=?,release_notes=?,last_check_time=?,updated_at=? where component='msf'`,
@@ -407,22 +420,26 @@ func (a *App) handleUpdateDownload(w http.ResponseWriter, r *http.Request) {
 	}
 	state := a.selfUpdateState()
 	rawURL := strings.TrimSpace(fmt.Sprint(state["download_url"]))
-	if rawURL == "" {
-		a.setSelfUpdateState("checking", "checking", 1, "正在获取最新发布信息", "", "info", "下载前获取最新发布信息")
+	expectedDigest, digestErr := canonicalSHA256Digest(a.setting(selfUpdateDownloadDigestKey, ""))
+	asset := componentDownloadAsset{URL: rawURL, Digest: expectedDigest, VerificationSource: componentVerificationSourceGitHubAssetDigest}
+	if rawURL == "" || digestErr != nil {
+		a.setSelfUpdateState("checking", "checking", 1, "正在通过 GitHub 获取可信发布信息", "", "info", "下载前获取可信发布信息")
 		release, err := a.fetchLatestRelease("scoltzero", "msf")
 		if err != nil {
 			a.setSelfUpdateState("failed", "failed", 1, "获取发布信息失败", err.Error(), "error", "获取发布信息失败: "+err.Error())
 			writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": err.Error(), "data": a.selfUpdateState()})
 			return
 		}
-		rawURL = releaseAssetURL(release, selfUpdateAssetContainsFor(runtime.GOOS, runtime.GOARCH), ".tar.gz")
+		asset, err = selfUpdateReleaseAsset(release, runtime.GOOS, runtime.GOARCH)
+		if err != nil {
+			a.setSelfUpdateState("failed", "failed", 1, "发布资产校验失败", err.Error(), "error", "发布资产校验失败: "+err.Error())
+			writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": err.Error(), "data": a.selfUpdateState()})
+			return
+		}
+		rawURL = asset.URL
 	}
-	if rawURL == "" {
-		errText := "no " + selfUpdateAssetContainsFor(runtime.GOOS, runtime.GOARCH) + " release asset found"
-		a.setSelfUpdateState("failed", "failed", 1, "未找到当前平台的更新包", errText, "error", "未找到当前平台的更新包")
-		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": errText, "data": a.selfUpdateState()})
-		return
-	}
+	a.setSetting(selfUpdateDownloadDigestKey, asset.Digest)
+	a.setSetting(selfUpdateVerifiedDigestKey, "")
 	dest := filepath.Join(a.DataDir, "data", "updates", filepath.Base(rawURL))
 	effectiveURL := a.rewriteDownloadURL(rawURL)
 	_ = a.ensureSelfUpdateInfoRow()
@@ -431,7 +448,7 @@ func (a *App) handleUpdateDownload(w http.ResponseWriter, r *http.Request) {
 	last := DownloadEvent{Status: "connecting", Progress: 3, Message: "connecting"}
 	connectedLogged := false
 	downloadingLogged := false
-	err := a.downloadFile(rawURL, dest, func(ev DownloadEvent) {
+	verifiedDigest, err := a.downloadVerifiedFile(rawURL, asset.Digest, dest, func(ev DownloadEvent) {
 		last = ev
 		message := "正在下载更新包"
 		eventMessage := ""
@@ -455,9 +472,10 @@ func (a *App) handleUpdateDownload(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": err.Error(), "data": a.selfUpdateState()})
 		return
 	}
+	a.setSetting(selfUpdateVerifiedDigestKey, verifiedDigest)
 	_, _ = a.DB.Exec(`update update_info set status='downloaded',phase='downloaded',progress=100,message='更新包已下载',error_message='',download_url=?,updated_at=? where component='msf'`, rawURL, nowString())
 	a.appendSelfUpdateEvent("info", "更新包下载完成")
-	writeJSON(w, http.StatusOK, map[string]any{"success": true, "data": map[string]any{"path": dest, "download_url": rawURL, "effective_download_url": effectiveURL, "event": last, "status": a.selfUpdateState()}})
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "data": map[string]any{"path": dest, "download_url": rawURL, "effective_download_url": effectiveURL, "download_digest": asset.Digest, "verified_digest": verifiedDigest, "verified": true, "event": last, "status": a.selfUpdateState()}})
 }
 
 func (a *App) handleUpdateInstall(w http.ResponseWriter, r *http.Request) {
@@ -488,6 +506,23 @@ func (a *App) handleUpdateInstall(w http.ResponseWriter, r *http.Request) {
 	if _, err := os.Stat(archivePath); err != nil {
 		a.setSelfUpdateState("failed", "failed", 0, "更新包不存在，请先下载更新", "更新包不存在，请先下载更新", "error", "安装失败: 更新包不存在")
 		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": "更新包不存在，请先下载更新", "data": a.selfUpdateState()})
+		return
+	}
+	expectedDigest := a.setting(selfUpdateDownloadDigestKey, "")
+	if expectedDigest == "" {
+		errText := "更新包缺少可信 SHA-256 摘要，请重新下载"
+		a.setSelfUpdateState("failed", "failed", 0, errText, errText, "error", errText)
+		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": errText, "data": a.selfUpdateState()})
+		return
+	}
+	actualDigest, verifyErr := verifySHA256File(archivePath, expectedDigest)
+	if verifyErr != nil || actualDigest != a.setting(selfUpdateVerifiedDigestKey, "") {
+		errText := "更新包 SHA-256 校验失败，请重新下载"
+		if verifyErr != nil {
+			errText += ": " + verifyErr.Error()
+		}
+		a.setSelfUpdateState("failed", "failed", 0, "更新包校验失败", errText, "error", errText)
+		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": errText, "data": a.selfUpdateState()})
 		return
 	}
 	a.setSelfUpdateState("installing", "installing", 90, "正在准备安装更新包", "", "info", "开始安装更新包")
@@ -1429,7 +1464,7 @@ func (a *App) fetchLatestRelease(owner, repo string) (githubRelease, error) {
 
 func (a *App) fetchLatestReleaseContext(ctx context.Context, owner, repo string) (githubRelease, error) {
 	var release githubRelease
-	err := a.fetchGitHubJSONContext(ctx, fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", owner, repo), &release)
+	err := a.fetchGitHubJSONContext(ctx, a.githubAPIURL(fmt.Sprintf("/repos/%s/%s/releases/latest", owner, repo)), &release)
 	return release, err
 }
 
@@ -1439,14 +1474,25 @@ func (a *App) fetchReleaseByTag(owner, repo, tag string) (githubRelease, error) 
 
 func (a *App) fetchReleaseByTagContext(ctx context.Context, owner, repo, tag string) (githubRelease, error) {
 	var release githubRelease
-	err := a.fetchGitHubJSONContext(ctx, fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/tags/%s", owner, repo, url.PathEscape(tag)), &release)
+	err := a.fetchGitHubJSONContext(ctx, a.githubAPIURL(fmt.Sprintf("/repos/%s/%s/releases/tags/%s", owner, repo, url.PathEscape(tag))), &release)
 	return release, err
 }
 
 func (a *App) fetchReleases(owner, repo string) ([]githubRelease, error) {
 	var releases []githubRelease
-	err := a.fetchGitHubJSON(fmt.Sprintf("https://api.github.com/repos/%s/%s/releases?per_page=20", owner, repo), &releases)
+	err := a.fetchGitHubJSON(a.githubAPIURL(fmt.Sprintf("/repos/%s/%s/releases?per_page=20", owner, repo)), &releases)
 	return releases, err
+}
+
+func (a *App) githubAPIURL(path string) string {
+	base := strings.TrimRight(strings.TrimSpace(a.githubAPIBaseURL), "/")
+	if base == "" {
+		base = "https://api.github.com"
+	}
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	return base + path
 }
 
 func (a *App) fetchGitHubJSON(rawURL string, dst any) error {
@@ -1454,17 +1500,35 @@ func (a *App) fetchGitHubJSON(rawURL string, dst any) error {
 }
 
 func (a *App) fetchGitHubJSONContext(ctx context.Context, rawURL string, dst any) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, a.githubDownloadRouteURL(rawURL), nil)
+	// Release metadata is the trust root for asset URLs and SHA-256 digests.
+	// It must never transit a public accelerator: a mirror able to forge both
+	// metadata and bytes could make a malicious binary pass digest validation.
+	// An operator-configured HTTP/SOCKS proxy is still safe here because TLS is
+	// terminated by api.github.com, not by the proxy.
+	token := a.githubToken()
+	via := "github"
+	if token != "" {
+		via = "token"
+	}
+	return friendlyGitHubAPIError(a.fetchGitHubJSONOnce(ctx, rawURL, false, token, dst, via))
+}
+
+func (a *App) fetchGitHubJSONOnce(ctx context.Context, finalURL string, direct bool, token string, dst any, via string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, finalURL, nil)
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("User-Agent", "msf/"+a.Version)
-	resp, err := a.downloadHTTPClient().Do(req)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := a.downloadHTTPClientFor(githubRoute{URL: finalURL, Direct: direct}).Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
+	lastGitHubRateLimit.record(resp, via)
 	if resp.StatusCode >= 300 {
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return fmt.Errorf("github api %s: %s", resp.Status, strings.TrimSpace(string(b)))
@@ -1472,23 +1536,46 @@ func (a *App) fetchGitHubJSONContext(ctx context.Context, rawURL string, dst any
 	return json.NewDecoder(resp.Body).Decode(dst)
 }
 
-func releaseAssetURL(release githubRelease, contains, suffix string) string {
-	contains = strings.ToLower(contains)
-	suffix = strings.ToLower(suffix)
+// friendlyGitHubAPIError turns anonymous quota rejections into an actionable
+// hint pointing at the token setting, keeping the original message for
+// diagnosis.
+func friendlyGitHubAPIError(err error) error {
+	if err == nil {
+		return nil
+	}
+	msg := err.Error()
+	lower := strings.ToLower(msg)
+	switch {
+	case strings.Contains(msg, "401") && strings.Contains(lower, "bad credentials"):
+		return fmt.Errorf("GitHub Token 无效或已过期（401），请在 设置→初始化配置→GitHub 加速 重新配置: %s", msg)
+	case (strings.Contains(msg, "403") || strings.Contains(msg, "429")) && strings.Contains(lower, "rate limit"):
+		return fmt.Errorf("GitHub API 匿名限流（未认证每 IP 60 次/小时）。为保持发布元数据可信，系统不会通过公共镜像绕过 API 限流；可在 设置→初始化配置→GitHub 加速 配置 Personal Access Token（提升至 5000 次/小时）: %s", msg)
+	}
+	return err
+}
+
+func selfUpdateReleaseAsset(release githubRelease, goos, goarch string) (componentDownloadAsset, error) {
+	expectedName := "msf-" + strings.ToLower(selfUpdateAssetContainsFor(goos, goarch)) + ".tar.gz"
 	for _, asset := range release.Assets {
-		name := strings.ToLower(asset.Name)
-		if contains != "" && !strings.Contains(name, contains) {
+		name := strings.ToLower(strings.TrimSpace(asset.Name))
+		if name != expectedName {
 			continue
 		}
-		if suffix != "" && !strings.HasSuffix(name, suffix) {
-			continue
+		if !isGitHubDownloadURL(asset.BrowserDownloadURL) {
+			return componentDownloadAsset{}, fmt.Errorf("self-update release asset %q has an untrusted download URL", asset.Name)
 		}
-		return asset.BrowserDownloadURL
+		digest, err := canonicalSHA256Digest(asset.Digest)
+		if err != nil {
+			return componentDownloadAsset{}, fmt.Errorf("self-update release asset %q has no valid SHA-256 digest: %w", asset.Name, err)
+		}
+		return componentDownloadAsset{
+			URL:                asset.BrowserDownloadURL,
+			Name:               asset.Name,
+			Digest:             digest,
+			VerificationSource: componentVerificationSourceGitHubAssetDigest,
+		}, nil
 	}
-	if len(release.Assets) > 0 {
-		return release.Assets[0].BrowserDownloadURL
-	}
-	return ""
+	return componentDownloadAsset{}, fmt.Errorf("no trusted %s release asset found", selfUpdateAssetContainsFor(goos, goarch))
 }
 
 func selfUpdateAssetContainsFor(goos, goarch string) string {
@@ -1625,6 +1712,20 @@ func versionDifferent(current, latest string) bool {
 	current = strings.TrimPrefix(strings.TrimSpace(strings.ToLower(current)), "v")
 	latest = strings.TrimPrefix(strings.TrimSpace(strings.ToLower(latest)), "v")
 	return current != "" && latest != "" && current != latest && !strings.Contains(current, latest) && !strings.Contains(current, "dev")
+}
+
+// devUpdateSuppressed reports whether a newer release exists but self-update
+// is held back because the running build identifies itself as a development
+// build (for example the untagged "0.1.0-dev" produced by a plain `go
+// build`). The updater keeps that protection, but the UI must neither claim
+// "already latest" nor "completed" while a release is actually newer.
+func devUpdateSuppressed(current, latest string) bool {
+	current = strings.TrimPrefix(strings.TrimSpace(strings.ToLower(current)), "v")
+	latest = strings.TrimPrefix(strings.TrimSpace(strings.ToLower(latest)), "v")
+	if current == "" || latest == "" || !strings.Contains(current, "dev") {
+		return false
+	}
+	return current != latest && !strings.Contains(current, latest)
 }
 
 // mihomoCoreSwitchResult is the response payload for a Mihomo core switch.
@@ -1989,10 +2090,9 @@ func (a *App) resolveMihomoCoreCandidate(ctx context.Context, coreType string, e
 		return mihomoCoreCandidate{}, err
 	}
 	tmp := filepath.Join(a.DataDir, "data", "mihomo-"+coreType+"-switch.download")
-	downloadURL := a.mihomoCoreSwitchDownloadURL(asset.URL)
 	_ = os.Remove(tmp)
 	defer os.Remove(tmp)
-	if _, err := a.downloadVerifiedResolvedURLContext(ctx, downloadURL, asset.Digest, tmp, emit); err != nil {
+	if _, err := a.downloadVerifiedFileContext(ctx, asset.URL, asset.Digest, tmp, emit); err != nil {
 		return mihomoCoreCandidate{}, fmt.Errorf("download %s core: %w", coreType, err)
 	}
 	extractDir, err := os.MkdirTemp(filepath.Join(a.DataDir, "data"), "mihomo-"+coreType+"-switch-*")
@@ -2008,7 +2108,7 @@ func (a *App) resolveMihomoCoreCandidate(ctx context.Context, coreType string, e
 	candidate := mihomoCoreCandidate{
 		Binary:             binaryPath,
 		ExtractDir:         extractDir,
-		AssetURL:           downloadURL,
+		AssetURL:           asset.URL,
 		AssetName:          asset.Name,
 		Digest:             asset.Digest,
 		VerificationSource: componentVerificationSourceGitHubAssetDigest,

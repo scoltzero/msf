@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestServiceStartReportsNewStdoutFailure(t *testing.T) {
@@ -53,5 +54,24 @@ func TestProcessZombieCrossHandlesSpacesAndParenthesesInComm(t *testing.T) {
 	}
 	if processZombieCross(123) {
 		t.Fatal("running process was treated as zombie")
+	}
+}
+
+func TestServiceManagerShutdownBlocksNewChildren(t *testing.T) {
+	app := newTestApp(t)
+	installTestMihomoBinary(t, app, "trap 'exit 0' TERM\nwhile :; do sleep 1; done\n")
+	if _, err := app.Services.Start(context.Background(), "mihomo"); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if err := app.Services.Shutdown(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if app.Services.Status("mihomo").Running {
+		t.Fatal("mihomo remained running after service-manager shutdown")
+	}
+	if _, err := app.Services.Start(context.Background(), "mihomo"); err == nil || !strings.Contains(err.Error(), "shutting down") {
+		t.Fatalf("service restarted during shutdown: %v", err)
 	}
 }

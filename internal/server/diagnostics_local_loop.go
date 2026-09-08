@@ -209,13 +209,13 @@ func (a *App) checkLocalSystemDNS(cfg SetupConfig) localLoopCheck {
 		return blockedCheck("entry.system_dns", "entry", "本机入口与系统 DNS", "本机 DNS 接管", "无法读取本机 resolver 配置。", cfg.DNSOn, "不可读", err.Error())
 	}
 	nameservers := resolverNameservers(string(raw))
-	want := strings.TrimSpace(cfg.DNSOn)
+	local := localDNSAddressSet()
 	for _, item := range nameservers {
-		if item == want || (isLocalDNSAddress(want) && isLocalDNSAddress(item)) {
+		if systemDNSNameserverAccepted(cfg.DNSOn, item, local) {
 			return passedCheck("entry.system_dns", "entry", "本机入口与系统 DNS", "本机 DNS 接管", "本机 resolver 已指向 MosDNS。")
 		}
 	}
-	return blockedCheck("entry.system_dns", "entry", "本机入口与系统 DNS", "本机 DNS 接管", "自动 DNS 已启用，但本机 resolver 没有进入 MosDNS。", want, strings.Join(nameservers, ", "), string(raw))
+	return blockedCheck("entry.system_dns", "entry", "本机入口与系统 DNS", "本机 DNS 接管", "自动 DNS 已启用，但本机 resolver 没有进入 MosDNS。", strings.TrimSpace(cfg.DNSOn)+" 或本机任一地址", strings.Join(nameservers, ", "), string(raw))
 }
 
 func resolverNameservers(text string) []string {
@@ -230,9 +230,43 @@ func resolverNameservers(text string) []string {
 	return out
 }
 
-func isLocalDNSAddress(value string) bool {
+// localDNSAddressSet 收集所有终止于本机的地址：回环字面量加本机各网口的实际地址。
+// MosDNS 监听全地址 :53，resolver 指向其中任一地址时查询都会本地交付给 MosDNS。
+func localDNSAddressSet() map[string]bool {
+	set := map[string]bool{"127.0.0.1": true, "::1": true, "localhost": true}
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return set
+	}
+	for _, addr := range addrs {
+		var ip net.IP
+		switch v := addr.(type) {
+		case *net.IPNet:
+			ip = v.IP
+		case *net.IPAddr:
+			ip = v.IP
+		}
+		if ip == nil {
+			continue
+		}
+		set[ip.String()] = true
+		if v4 := ip.To4(); v4 != nil {
+			set[v4.String()] = true
+		}
+	}
+	return set
+}
+
+func dnsAddressInSet(set map[string]bool, value string) bool {
 	value = strings.Trim(strings.TrimSpace(value), "[]")
-	return value == "127.0.0.1" || value == "::1" || value == "localhost"
+	return value != "" && set[value]
+}
+
+func systemDNSNameserverAccepted(want, item string, local map[string]bool) bool {
+	if strings.Trim(strings.TrimSpace(item), "[]") == strings.Trim(strings.TrimSpace(want), "[]") {
+		return true
+	}
+	return dnsAddressInSet(local, want) && dnsAddressInSet(local, item)
 }
 
 func (a *App) checkLocalDNSLoop(cfg SetupConfig) localLoopCheck {

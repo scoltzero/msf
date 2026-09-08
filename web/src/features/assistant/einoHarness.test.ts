@@ -16,8 +16,10 @@ describe("Eino assistant harness UI", () => {
   });
 
   it("resumes approval and rejection through the streaming Eino endpoint", () => {
-    expect(panel).toContain('resumeApproval("approve")');
-    expect(panel).toContain('resumeApproval("reject")');
+    expect(panel).toContain('ApprovalCard approval={state.approval}');
+    expect(panel).toContain('onDecision={(decision) => void resumeApproval(decision)}');
+    expect(panel).toContain('onDecision("approve")');
+    expect(panel).toContain('onDecision("reject")');
     expect(sse).toContain("/resume/stream");
     expect(panel).not.toContain("result.result");
   });

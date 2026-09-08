@@ -13,6 +13,9 @@ import {
   parseStoredContentPlateOpacity,
   type ContentPlateOpacity,
 } from "@/lib/content-plate-opacity";
+import { getInitialSkin, restoreCachedCustomCSS } from "@/lib/skin";
+import { restoreCachedAccentColor } from "@/lib/accent";
+import { restoreCachedSkinTint } from "@/lib/skinTint";
 import "@/app/globals.css";
 
 const root = document.documentElement;
@@ -26,6 +29,10 @@ const savedScene = localStorage.getItem("msf-glass-scene");
 const savedQuality = localStorage.getItem("msf-glass-quality");
 root.dataset.garyScene = savedScene === "static" || savedScene === "neutral" ? savedScene : "dynamic";
 root.dataset.garyQuality = savedQuality === "full" || savedQuality === "reduced" ? savedQuality : "balanced";
+root.dataset.skin = getInitialSkin();
+restoreCachedAccentColor();
+restoreCachedSkinTint();
+restoreCachedCustomCSS();
 
 function readInitialContentPlateOpacity(): ContentPlateOpacity {
   try {

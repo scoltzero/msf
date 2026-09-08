@@ -70,8 +70,11 @@ func TestIPv6GeneratedArtifactsSharePrefixAndDisableDataPlane(t *testing.T) {
 		}
 	}
 	mosdns := app.renderMosDNSYAML(disabled)
-	if count := strings.Count(mosdns, "IPv6 数据面关闭时显式返回真实 AAAA"); count != 2 {
-		t.Fatalf("real AAAA bypass count=%d, want 2", count)
+	if count := strings.Count(mosdns, "IPv6 数据面关闭时立刻返回空 AAAA"); count != 2 {
+		t.Fatalf("empty AAAA bypass count=%d, want 2", count)
+	}
+	if strings.Contains(mosdns, "$sequence_google") {
+		t.Fatal("v6-disabled AAAA fallback must not query foreign DNS directly (5s SERVFAIL black hole)")
 	}
 	if strings.Contains(mosdns, "sequence_client") || strings.Contains(mosdns, "forward_priority_core") {
 		t.Fatal("client entry must not forward through a localhost wrapper that loses the original client IP")
@@ -89,13 +92,13 @@ func TestIPv6GeneratedArtifactsSharePrefixAndDisableDataPlane(t *testing.T) {
 	}
 	priorityIndex := strings.Index(mosdns, "exec: prefer_ipv4")
 	clientExitIndex := strings.Index(mosdns, "matches: fast_mark 39")
-	bypassIndex := strings.Index(mosdns, "IPv6 数据面关闭时显式返回真实 AAAA")
+	bypassIndex := strings.Index(mosdns, "IPv6 数据面关闭时立刻返回空 AAAA")
 	cacheIndex := strings.Index(mosdns, "#web ui中选择泄露版")
 	if priorityIndex < 0 || clientExitIndex < 0 || priorityIndex > clientExitIndex {
 		t.Fatal("resolution priority must run before client-specific branches can exit")
 	}
 	if bypassIndex < clientExitIndex || cacheIndex < bypassIndex {
-		t.Fatal("real AAAA fallback must run after priority/client routing and before cache routing")
+		t.Fatal("empty AAAA fallback must run after priority/client routing and before cache routing")
 	}
 }
 
