@@ -508,6 +508,12 @@ geo-update-interval: 24
 find-process-mode: strict
 allow-lan: true
 bind-address: "*"
+# 控制器认证（secret 是与 external-controller 同级的顶层字段）：
+# 1. 配置里写了自己的 secret：优先使用你的值。
+# 2. 配置里没有这一行：默认由 MSF 生成随机值、保存并写入配置，不是每次重启都换一个。
+# 3. 配置写成 secret: ""：明确让 Mihomo 不要求控制器认证。
+# 建议保留认证，尤其是 9090 可被其他设备访问时。
+# mihomo_controller_secret 是 MSF 内部设置项；仅清空设置不会删除配置已有的 secret。
 external-controller: :9090
 external-ui: ui
 external-ui-url: https://github.com/Zephyruso/zashboard/releases/latest/download/dist.zip

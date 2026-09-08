@@ -61,7 +61,7 @@ function readLoginWavePalette(root: HTMLElement): LoginWavePalette {
   };
 }
 
-const LOGIN_ANNOUNCEMENT_ID = "2026-09-v0.6.3-performance";
+const LOGIN_ANNOUNCEMENT_ID = "2026-09-v0.6.4-skins-dns-performance";
 const LOGIN_ANNOUNCEMENT_HIDDEN_KEY = `msf-login-announcement:${LOGIN_ANNOUNCEMENT_ID}:hidden`;
 const LOGIN_ANNOUNCEMENT_SESSION_KEY = `msf-login-announcement:${LOGIN_ANNOUNCEMENT_ID}:session`;
 
@@ -235,18 +235,18 @@ export default function LoginPage() {
             <span className="msf-login-announcement-icon" aria-hidden="true"><Megaphone /></span>
             <div>
               <p>本次更新</p>
-              <h2 id="login-announcement-title">v0.6.3：大规模代理页面性能优化</h2>
+              <h2 id="login-announcement-title">v0.6.4：皮肤、DNS 与性能升级</h2>
             </div>
           </div>
 
           <ol className="msf-login-announcement-features">
             <li>
-              <strong>代理接口响应更轻</strong>
-              <span>Mihomo 代理数据移除重复字段并支持 gzip，搜索时同步过滤 provider 节点，减少首次加载的传输和解析开销。</span>
+              <strong>皮肤与页面性能升级</strong>
+              <span>新增琥珀皮肤与外观持久化，默认保留经典蓝色。Mihomo 主内容优先显示，波浪渲染移至 Worker，减少加载后的页面阻塞。</span>
             </li>
             <li>
-              <strong>大列表与概览更流畅</strong>
-              <span>代理节点和连接历史采用分批显示，概览图表按需初始化，连接拓扑更新经过调度，降低大规模数据下的页面阻塞。</span>
+              <strong>DNS 与下载可靠性</strong>
+              <span>新增 DNS 上游测速与国内 UDP 直连。GitHub 下载支持手填代理或镜像、加密 Token 与完整性校验；升级注意事项请查看更新日志。</span>
             </li>
           </ol>
 

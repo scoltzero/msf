@@ -74,6 +74,15 @@ allow-lan: true
 # 高级路由标记
 routing-mark: 1
 # 控制面板
+# 控制器认证（secret 是与 external-controller 同级的顶层字段）：
+# 1. 配置里写了自己的 secret：优先使用你的值。
+# 2. 配置里没有这一行：默认由 MSF 生成随机值、保存并写入配置，不是每次重启都换一个。
+# 3. 配置写成 secret: ""：明确让 Mihomo 不要求控制器认证。
+# 建议保留认证，尤其是 9090 可被其他设备访问时。
+# 自定义示例（仅为注释，按需填写自己的随机长字符串）：
+# secret: "your-own-random-long-secret"
+# mihomo_controller_secret 是 MSF 内部设置项，不是此 YAML 的字段名。
+# 仅清空 MSF 设置不会删除本文件已有的 secret；自动生成配置的手工修改可能被后续生成覆盖。
 external-controller: :9090
 external-ui: ui
 external-ui-url: 'https://github.com/Zephyruso/zashboard/releases/latest/download/dist.zip'

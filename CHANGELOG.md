@@ -1,21 +1,23 @@
 # 更新日志
 
-## 未发布
+## v0.6.4 - 2026-09-08
 
 ### 中文
 
-#### 国内 UDP 内核直连（游戏断线的根治性方案）
+#### 国内 UDP 内核直连
 
-- 新增「国内 UDP 直连」能力（默认开启）：目的地为国内 IP 的 UDP 流量在 nftables 内核层直接放行、不再经过代理隧道——所有国服游戏零配置免受代理隧道 60 秒 UDP 会话空闲超时导致的周期性断线影响；同时卸载了代理核心的国内 UDP 会话负担。内置数据固定来自 CC0 授权的 ipverse RIR 委派快照（IPv4 5513 段 / IPv6 2033 段），支持运行时覆盖并提供可重复生成、逐行校验脚本。
+- 新增「国内 UDP 直连」能力（默认开启）：目的地为国内 IP 的 UDP 流量在 nftables 内核层直接放行，避免这些流量受代理核心 UDP 会话空闲超时影响，并减轻核心会话负担；不代表消除所有游戏断线原因。内置数据固定来自 CC0 授权的 ipverse RIR 委派快照（IPv4 5513 段 / IPv6 2033 段），支持运行时覆盖并提供可重复生成、逐行校验脚本。
 - 设置页「系统管理 → UDP 直连」：新增总开关（即时热生效），原「游戏 UDP 直连端口」保留为补充覆盖（海外目标但需直连的场景，如自建语音服）。
 #### DNS 上游现代化（forward 迁移 + 首次测速选优）
 
-- MosDNS 上游插件从魔改版 aliapi 全面迁移到增强版 forward：不存在域名（NXDOMAIN）不再等满 5 秒（实测 ~50-90ms），裸 IP 的 UDP/TCP 上游恢复可用（实测 9-17ms），上游故障毫秒级快速失败并自动重置连接；国外上游经 socks5 代理的行为不变。
+- MosDNS 上游从 aliapi 迁移到所用 MosDNS 分支内置的增强版 forward 插件，恢复常规 UDP/TCP 上游的兼容性，并支持逐上游超时和 SOCKS5 配置。forward 是内部转发插件，不是协议下拉框里的新协议。NXDOMAIN 等无地址回答可能等待其他并发上游结束；实际耗时取决于网络和超时配置，不承诺固定毫秒级返回。
 - 国内默认池升级为跨供应商并发组合：阿里 UDP + 腾讯 UDP + 阿里 DoH（低延迟与加密兜底兼顾）；已有用户的上游配置原样保留、平滑兼容（裸 IP 自动补协议前缀，旧 aliapi 专用条目已不再支持并在保存时明确提示）。
 - 新增 DNS 上游测速：安装向导"网络与 DNS"步骤内实测主流公共 DNS（UDP 与 IP 直连 DoH）+ 本网络网关/DHCP DNS，每候选 3 轮（含不存在域探测）自动剔除不可达者；推荐组合由纯延迟排序升级为「两条最快 UDP + 一条 DoH 加密兜底」，避免低延迟网关把加密上游挤出推荐；MosDNS 系统页新增同一测速面板，可随时重测并应用为国内上游。
 - 上游编辑器移除 aliapi 协议选项；密钥字段的脱敏与保留机制不变。
 
 #### 工程修复
+
+- 更新前端构建/CLI 链的 Browserslist、postcss-selector-parser、qs 及相关锁定依赖，修复依赖审计报告的安全问题。
 
 - 修复 cloudflareredirect 包的 Windows 交叉编译：进程组设置按平台拆分（Setpgid）。
 - 修复 smart 内核资源校验测试在部分文件系统上因 mtime 粒度不足产生的间歇性失败。
@@ -47,7 +49,7 @@
 #### DNS 稳定性
 
 - 根除 AAAA 五秒黑洞：IPv6 数据面关闭时 AAAA 查询立即返回空应答（原实现送国外 DNS 直连，被墙网络下每次等满 5 秒超时）。
-- 根除冷域名五秒黑洞：aliapi 插件对裸 IP 上游的查询会挂起至超时，国内上游改为 IP 直连 DoH；Windows 搜索域（*.lan/*.local）直接本地拒答，不再发送上游。
+- 调整原 aliapi 上游路径，避免已观察到的裸 IP 查询挂起问题；国内默认使用 UDP 与 IP 直连 DoH 混合上游。Windows 搜索域（*.lan/*.local）本地拒答，并按域名边界匹配，避免误伤包含相同字样的公共域名。
 - 修复本机 DNS 接管诊断误报：resolv.conf 指向本机 LAN 地址（旁路由常见）时不再误判为"未接管"。
 
 #### 运维基础设施
@@ -60,19 +62,20 @@
 
 - **国内 UDP 直连默认开启**：若自定义了「国内 IP 的 UDP 走代理」规则（罕见，如国内中转），请在设置页关闭该开关。
 - **旧配置中的 aliapi 专用上游（阿里私享 DoH API）不再受支持**：保存时会被明确拒绝，请改用 udp/tcp/tls/https 形式的上游；普通公共 DNS 上游不受影响。
-- **Mihomo 控制器（:9090）默认启用随机 secret**：升级后直连 9090 的工具（zashboard 等）首次连接需要填一次 secret——面板「Mihomo 概览」右上角可复制；不需要认证的环境可在设置中清空 `mihomo_controller_secret` 后重启。
-- **Go 运行时默认 512MiB 软内存上限**：对内存充裕的宿主机无感（软限可超，不会 OOM）；Docker/K8s 部署可通过容器的 `GOMEMLIMIT` 环境变量自行调整或置 -1 关闭。
-- **MosDNS 国内上游默认改为阿里 IP 直连 DoH**：aliapi 插件对裸 IP 上游存在挂起问题，DoH 形式更稳；如需改回可在面板 DNS 上游设置中编辑。
+- **Mihomo 控制器（:9090）默认启用随机 secret**：配置已有自定义 `secret` 时优先使用；缺少该字段时由 MSF 生成并保存，后续重启复用；显式设置顶层 `secret: ""` 表示不要求 Mihomo 控制器认证，建议保持认证。默认配置已加入这三条注释。直连工具可从「Mihomo 概览」复制 secret；`mihomo_controller_secret` 是 MSF 内部设置，单独清空它不会删除配置文件已有的 secret。修改配置后需应用或重启 Mihomo，自动生成文件的手工修改可能被后续生成覆盖。
+- **Go 运行时默认 512MiB 软内存上限**：这是垃圾回收的软目标，不是硬性进程内存限制，也不保证避免 OOM；Docker/K8s 部署可通过 `GOMEMLIMIT` 环境变量调整或置 -1 关闭。
+- **MosDNS 国内默认池为阿里 UDP + 腾讯 UDP + 阿里 IP 直连 DoH**：已有自定义覆盖配置保留，可在面板 DNS 上游设置中编辑。并发使用 DoH 与明文 UDP 不代表所有查询都已加密。
+- **性能范围**：主内容优先加载与波浪 Worker 减少页面阻塞；不支持 Worker 时有兼容回退，地球等组件仍可能出现初始化长任务，不保证所有设备完全无卡顿。
 
 ### English
 
-#### Kernel-level CN UDP bypass (root fix for game disconnects)
+#### Kernel-level CN UDP bypass
 
 - New "CN UDP direct" capability (on by default): UDP traffic destined for
   CN IPs is released at the nftables kernel layer and never enters the proxy
-  tunnel — every domestic game is immune to the proxy core's 60s idle UDP
-  session timeout without any per-game configuration, and the core's CN UDP
-  session load is removed. The embedded snapshot is pinned to the CC0 ipverse
+  tunnel, avoiding proxy-core UDP idle-timeout effects for that traffic and
+  reducing core session load; this does not eliminate every cause of game
+  disconnects. The embedded snapshot is pinned to the CC0 ipverse
   RIR-delegation data (5513 v4 / 2033 v6), supports runtime overrides, and has
   a reproducible per-CIDR validation script.
 - Settings → System → "UDP direct": a master toggle (hot-applied), with the
@@ -81,12 +84,12 @@
 
 #### DNS upstream modernization (forward migration + first-run benchmark)
 
-- MosDNS upstream plugin migrated from the modified aliapi to the enhanced
-  forward plugin: NXDOMAIN answers no longer hang for the full 5s entry
-  timeout (measured ~50-90ms), bare-IP UDP/TCP upstreams work again
-  (measured 9-17ms), and failed upstreams are dropped within milliseconds
-  with automatic connection resets. Foreign upstreams over socks5 are
-  unchanged.
+- Migrate aliapi upstreams to the enhanced forward plugin already included
+  in the selected MosDNS fork, restoring ordinary UDP/TCP compatibility
+  with per-upstream timeouts and SOCKS5 options. Forward is an internal
+  plugin, not a new protocol in the editor. NXDOMAIN and other address-free
+  responses may wait for concurrent upstreams; latency depends on the
+  network and configured timeouts, with no fixed millisecond guarantee.
 - The default domestic pool is now a cross-vendor concurrent mix (Ali UDP +
   Tencent UDP + Ali DoH). Existing overrides are preserved and migrated
   transparently (bare IPs gain protocol prefixes; legacy aliapi-only
@@ -104,6 +107,8 @@
   redaction and preservation for stored overrides is unchanged.
 
 #### Engineering fixes
+
+- Update Browserslist, postcss-selector-parser, qs and related lockfile dependencies in the frontend build/CLI toolchain to address reported security advisories.
 
 - Windows cross-compilation of the cloudflareredirect package fixed:
   process-group setup split per platform (Setpgid).
@@ -149,7 +154,7 @@
 #### DNS stability
 
 - Killed the AAAA 5s black hole: with the IPv6 data plane off, AAAA is answered empty immediately instead of querying foreign DNS over blocked direct UDP.
-- Killed the cold-domain 5s black hole: the aliapi plugin hangs on bare-IP upstreams, domestic upstreams moved to IP-direct DoH; Windows search-suffix queries (*.lan/*.local) are rejected locally.
+- Replace the aliapi path associated with observed bare-IP query stalls; the domestic defaults mix UDP and IP-direct DoH. Windows search-suffix queries (*.lan/*.local) are rejected locally using domain boundaries, without matching unrelated public names containing similar text.
 - Fixed a local DNS-takeover diagnostic false positive when resolv.conf points at the host's own LAN address.
 
 #### Operations infrastructure
@@ -164,15 +169,25 @@
 - Legacy aliapi-specific upstreams (Ali private DoH API) are no longer
   supported and will be rejected on save; switch them to udp/tcp/tls/https
   servers. Regular public DNS upstreams are unaffected.
-- The mihomo external controller (:9090) now defaults to a generated
-  random secret; tools connecting directly (zashboard etc.) need it
-  once — copy it from the Mihomo overview page, or clear
-  `mihomo_controller_secret` and restart to disable auth.
-- A default 512MiB soft GOMEMLIMIT applies; override or disable (-1)
-  via the GOMEMLIMIT environment variable (Docker/K8s friendly).
-- MosDNS domestic upstreams default to Ali IP-direct DoH (the aliapi
-  plugin hangs on bare-IP upstreams); editable in the DNS upstream
-  settings.
+- The Mihomo controller (:9090) honors a custom top-level `secret`; when
+  absent, MSF generates and stores one for reuse across restarts. An explicit
+  `secret: ""` disables Mihomo controller authentication; keeping auth enabled
+  is recommended. All three rules are documented in the default config.
+  Direct clients can copy the secret from the Mihomo overview page.
+  `mihomo_controller_secret` is an internal MSF setting; clearing it alone
+  does not remove an existing secret from the YAML. Apply the config or
+  restart Mihomo after changes; later regeneration can overwrite manual
+  edits to generated files.
+- A default 512MiB soft GOMEMLIMIT applies; it is a garbage-collection
+  target, not a hard process limit or a guarantee against OOM. Override
+  or disable (-1) through the environment variable.
+- The domestic defaults are Ali UDP + Tencent UDP + Ali IP-direct DoH;
+  existing custom overrides are preserved and remain editable. Mixing
+  DoH and plaintext UDP does not encrypt all queries.
+- Performance scope: primary-content scheduling and the wave worker reduce
+  blocking, with a compatibility fallback when workers are unavailable.
+  Globe initialization may still cause long tasks; not all devices are
+  guaranteed to be completely jank-free.
 
 ## v0.6.3 - 2026-09-06
 

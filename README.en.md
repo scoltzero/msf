@@ -139,6 +139,7 @@ MSF thanks the following projects and maintainers for publishing implementations
 | [Solar System Scope](https://www.solarsystemscope.com/textures/) / [Three.js](https://threejs.org/) / [DB-IP](https://db-ip.com/) | Earth textures, rendering examples, and optional GeoIP data | CC BY 4.0 / MIT / CC BY 4.0 |
 | [nolangz/pixel2motion](https://github.com/nolangz/pixel2motion) | Mizar SVG fitting and brand-motion tooling | MIT |
 | [Gzh256](https://github.com/Gzh256) | Multi-release testing and validation | Acknowledgement |
+| [Timeink88](https://github.com/Timeink88) | Primary implementation of PR #13: appearance, DNS and networking improvements, GitHub downloads, and runtime operations | Code contributor |
 
 These acknowledgements describe provenance and contributions only. They do not imply affiliation, authorization, partnership, or official endorsement. See [BRAND_POLICY.md](BRAND_POLICY.md) for use of the MSF name and Mizar identity.
 
