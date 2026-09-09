@@ -98,8 +98,11 @@ func (sm *ServiceManager) Status(name string) ServiceStatus {
 			status.Uptime = metrics.Uptime
 			status.Memory = metrics.Memory
 			status.CPU = metrics.CPU
-		} else if info, err := os.Stat(spec.PIDFile); err == nil {
-			status.Uptime = int64(time.Since(info.ModTime()).Seconds())
+		}
+		if status.Uptime <= 0 {
+			if info, err := os.Stat(spec.PIDFile); err == nil {
+				status.Uptime = int64(time.Since(info.ModTime()).Seconds())
+			}
 		}
 		return status
 	}

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   mergeSystemHistory,
   normalizeDashboardService,
+  normalizeSystemMonitorPayload,
   normalizeSystemMonitorPoint,
   parseSseBlocks,
 } from "@/components/dashboard/data";
@@ -33,6 +34,22 @@ describe("system dashboard shared data", () => {
     expect(result).toHaveLength(2);
     expect(result[0].cpuPercent).toBe(9);
     expect(original.cpuPercent).toBe(1);
+  });
+
+  it("keeps the live resource value and chart point on the same monitor sample", () => {
+    const payload = normalizeSystemMonitorPayload({
+      timestamp: 1_700_000_000,
+      cpu_percent: 58.3,
+      memory_percent: 26,
+      resource: { cpu_percent: 58.3, memory_percent: 26 },
+      system: { hostname: "msf-lxc" },
+      network: { download_speed: 1024 },
+      services: [{ name: "mosdns", running: true, cpu_percent: 1.4 }],
+    });
+    expect(payload.point?.cpuPercent).toBe(58.3);
+    expect(payload.resources?.cpu_percent).toBe(payload.point?.cpuPercent);
+    expect(payload.system?.hostname).toBe("msf-lxc");
+    expect(payload.services?.[0].cpuPercent).toBe(1.4);
   });
 
   it("keeps an incomplete SSE block for the next network chunk", () => {

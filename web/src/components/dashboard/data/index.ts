@@ -4,6 +4,7 @@ export {
   SYSTEM_HISTORY_RETENTION_SECONDS,
   mergeSystemHistory,
   normalizeDashboardService,
+  normalizeSystemMonitorPayload,
   normalizeSystemMonitorPoint,
   parseSseBlocks,
   unwrapApiData,
@@ -12,6 +13,7 @@ export {
 } from "./useSystemDashboardData";
 export type {
   DashboardService,
+  NormalizedSystemMonitorPayload,
   ServiceAction,
   SystemDashboardData,
   SystemDashboardSnapshot,

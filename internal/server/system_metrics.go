@@ -29,6 +29,27 @@ type cpuTimes struct {
 	idle  uint64
 }
 
+const linuxClockTicks = 100
+
+type linuxProcessStat struct {
+	totalTicks uint64
+	startTicks uint64
+}
+
+type linuxProcessCPUSample struct {
+	at         time.Time
+	totalTicks uint64
+	startTicks uint64
+	value      float64
+}
+
+var linuxProcessCPUCache = struct {
+	sync.Mutex
+	samples map[int]linuxProcessCPUSample
+}{samples: map[int]linuxProcessCPUSample{}}
+
+const linuxProcessCPUMinSampleInterval = 250 * time.Millisecond
+
 func processResourceSnapshot(pid int) (procMetrics, bool) {
 	if pid <= 0 {
 		return procMetrics{}, false
@@ -39,33 +60,117 @@ func processResourceSnapshot(pid int) (procMetrics, bool) {
 	if runtime.GOOS != "linux" {
 		return procMetrics{}, false
 	}
-	stat, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "stat"))
+	stat, err := readLinuxProcessStat(pid)
 	if err != nil {
 		return procMetrics{}, false
 	}
-	text := string(stat)
+	now := time.Now()
+	elapsed := linuxProcessElapsedSeconds(stat.startTicks, now)
+	// The first reading seeds the sampler. CPU is reported after a second
+	// reading so it never depends on a potentially virtualized uptime clock.
+	cpuPercent := sampleLinuxProcessCPU(pid, stat, now, 0)
+	rss := readProcRSSBytes(pid)
+	return procMetrics{Uptime: int64(elapsed), Memory: int64(rss), CPU: cpuPercent}, true
+}
+
+func readLinuxProcessStat(pid int) (linuxProcessStat, error) {
+	b, err := os.ReadFile(filepath.Join(processProcRoot, strconv.Itoa(pid), "stat"))
+	if err != nil {
+		return linuxProcessStat{}, err
+	}
+	return parseLinuxProcessStat(string(b))
+}
+
+func parseLinuxProcessStat(text string) (linuxProcessStat, error) {
 	end := strings.LastIndex(text, ")")
 	if end < 0 || end+2 >= len(text) {
-		return procMetrics{}, false
+		return linuxProcessStat{}, errors.New("invalid process stat")
 	}
 	fields := strings.Fields(text[end+2:])
 	if len(fields) < 20 {
-		return procMetrics{}, false
+		return linuxProcessStat{}, errors.New("incomplete process stat")
 	}
-	utime, _ := strconv.ParseUint(fields[11], 10, 64)
-	stime, _ := strconv.ParseUint(fields[12], 10, 64)
-	startTicks, _ := strconv.ParseUint(fields[19], 10, 64)
+	utime, err := strconv.ParseUint(fields[11], 10, 64)
+	if err != nil {
+		return linuxProcessStat{}, err
+	}
+	stime, err := strconv.ParseUint(fields[12], 10, 64)
+	if err != nil {
+		return linuxProcessStat{}, err
+	}
+	startTicks, err := strconv.ParseUint(fields[19], 10, 64)
+	if err != nil {
+		return linuxProcessStat{}, err
+	}
+	return linuxProcessStat{totalTicks: utime + stime, startTicks: startTicks}, nil
+}
+
+func sampleLinuxProcessCPU(pid int, current linuxProcessStat, now time.Time, fallback float64) float64 {
+	linuxProcessCPUCache.Lock()
+	defer linuxProcessCPUCache.Unlock()
+
+	previous, ok := linuxProcessCPUCache.samples[pid]
+	if !ok || previous.startTicks != current.startTicks || current.totalTicks < previous.totalTicks {
+		linuxProcessCPUCache.samples[pid] = linuxProcessCPUSample{
+			at: now, totalTicks: current.totalTicks, startTicks: current.startTicks, value: fallback,
+		}
+		pruneLinuxProcessCPUCache(now)
+		return fallback
+	}
+	elapsed := now.Sub(previous.at)
+	if elapsed < linuxProcessCPUMinSampleInterval {
+		return previous.value
+	}
+	raw := float64(current.totalTicks-previous.totalTicks) / linuxClockTicks * 100 / elapsed.Seconds()
+	value := roundMetric(normalizeProcessCPUPercent(raw), 1)
+	linuxProcessCPUCache.samples[pid] = linuxProcessCPUSample{
+		at: now, totalTicks: current.totalTicks, startTicks: current.startTicks, value: value,
+	}
+	return value
+}
+
+func pruneLinuxProcessCPUCache(now time.Time) {
+	if len(linuxProcessCPUCache.samples) <= 64 {
+		return
+	}
+	for pid, sample := range linuxProcessCPUCache.samples {
+		if now.Sub(sample.at) > 10*time.Minute {
+			delete(linuxProcessCPUCache.samples, pid)
+		}
+	}
+}
+
+func linuxProcessElapsedSeconds(startTicks uint64, now time.Time) float64 {
+	if bootTime, ok := readLinuxBootTime(); ok {
+		startedAt := bootTime.Add(time.Duration(startTicks) * time.Second / linuxClockTicks)
+		if elapsed := now.Sub(startedAt).Seconds(); elapsed >= 0 {
+			return elapsed
+		}
+	}
 	uptime := readSystemUptimeSeconds()
-	const clockTicks = 100
-	startSeconds := float64(startTicks) / clockTicks
-	elapsed := uptime - startSeconds
-	if elapsed < 1 {
-		elapsed = 1
+	startSeconds := float64(startTicks) / linuxClockTicks
+	if uptime >= startSeconds {
+		return uptime - startSeconds
 	}
-	cpuSeconds := float64(utime+stime) / clockTicks
-	cpuPercent := roundMetric(normalizeProcessCPUPercent(cpuSeconds*100/elapsed), 1)
-	rss := readProcRSSBytes(pid)
-	return procMetrics{Uptime: int64(elapsed), Memory: int64(rss), CPU: cpuPercent}, true
+	return 0
+}
+
+func readLinuxBootTime() (time.Time, bool) {
+	b, err := os.ReadFile(filepath.Join(processProcRoot, "stat"))
+	if err != nil {
+		return time.Time{}, false
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 2 || fields[0] != "btime" {
+			continue
+		}
+		seconds, err := strconv.ParseInt(fields[1], 10, 64)
+		if err == nil && seconds > 0 {
+			return time.Unix(seconds, 0), true
+		}
+	}
+	return time.Time{}, false
 }
 
 func processResourceSnapshotDarwin(pid int) (procMetrics, bool) {
@@ -143,11 +248,11 @@ func parseElapsedTime(value string) (float64, error) {
 }
 
 func normalizeProcessCPUPercent(raw float64) float64 {
-	capacity := runtime.NumCPU()
-	if capacity < 1 {
-		capacity = 1
+	capacity := float64(max(runtime.NumCPU(), 1))
+	if runtime.GOOS == "linux" {
+		capacity = effectiveLinuxCPUCapacity()
 	}
-	return clampPercentFloat(raw / float64(capacity))
+	return clampPercentFloat(raw / capacity)
 }
 
 func clampPercentFloat(value float64) float64 {
@@ -194,7 +299,7 @@ func readSystemUptimeSeconds() float64 {
 		}
 		return parseDarwinSystemUptime(string(out), time.Now())
 	}
-	b, err := os.ReadFile("/proc/uptime")
+	b, err := os.ReadFile(filepath.Join(processProcRoot, "uptime"))
 	if err != nil {
 		return 0
 	}
@@ -225,7 +330,7 @@ func parseDarwinSystemUptime(text string, now time.Time) float64 {
 }
 
 func readCPUTimes() (cpuTimes, error) {
-	b, err := os.ReadFile("/proc/stat")
+	b, err := os.ReadFile(filepath.Join(processProcRoot, "stat"))
 	if err != nil {
 		return cpuTimes{}, err
 	}
@@ -249,6 +354,8 @@ func readCPUTimes() (cpuTimes, error) {
 	return cpuTimes{}, errors.New("cpu line not found")
 }
 
+const linuxCPUSampleInterval = 120 * time.Millisecond
+
 func sampleCPUPercent() float64 {
 	if runtime.GOOS == "darwin" {
 		return sampleDarwinCPUPercent()
@@ -256,11 +363,16 @@ func sampleCPUPercent() float64 {
 	if runtime.GOOS != "linux" {
 		return 0
 	}
+	if source, ok := currentCgroupCPUSource(); ok {
+		if value, sampled := sampleCgroupCPUPercent(source); sampled {
+			return value
+		}
+	}
 	a, err := readCPUTimes()
 	if err != nil {
 		return 0
 	}
-	time.Sleep(120 * time.Millisecond)
+	time.Sleep(linuxCPUSampleInterval)
 	b, err := readCPUTimes()
 	if err != nil || b.total <= a.total {
 		return 0

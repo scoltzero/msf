@@ -7,6 +7,7 @@ import {
   SystemDashboardDataContext,
   mergeSystemHistory,
   normalizeDashboardService,
+  normalizeSystemMonitorPayload,
   normalizeSystemMonitorPoint,
   parseSseBlocks,
   unwrapApiData,
@@ -30,6 +31,7 @@ export function DashboardDataProvider({ children }: { children: ReactNode }) {
     history: sharedHistoryCache,
   }));
   const mountedRef = useRef(true);
+  const streamConnectedRef = useRef(false);
   const requestsRef = useRef({ polling: false, history: false, services: false });
 
   const updateHistory = useCallback((points: ReturnType<typeof normalizeSystemMonitorPoint>[]) => {
@@ -54,7 +56,7 @@ export function DashboardDataProvider({ children }: { children: ReactNode }) {
     setSnapshot((previous) => ({
       ...previous,
       system: results[0].status === "fulfilled" ? unwrapApiData(results[0].value) : previous.system,
-      resources: results[1].status === "fulfilled" ? unwrapApiData(results[1].value) : previous.resources,
+      resources: results[1].status === "fulfilled" && !previous.streamConnected ? unwrapApiData(results[1].value) : previous.resources,
       network: results[2].status === "fulfilled" ? unwrapApiData(results[2].value) : previous.network,
       loading: false,
       error: failures.length === results.length ? errorMessage((failures[0] as PromiseRejectedResult).reason) : "",
@@ -78,7 +80,7 @@ export function DashboardDataProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const refreshHistory = useCallback(async () => {
-    if (requestsRef.current.history) return;
+    if (requestsRef.current.history || streamConnectedRef.current) return;
     requestsRef.current.history = true;
     try {
       const payload = await api("/api/v1/monitor/history");
@@ -137,6 +139,7 @@ export function DashboardDataProvider({ children }: { children: ReactNode }) {
             signal: controller.signal,
           });
           if (!response.ok || !response.body) throw new Error(`monitor stream ${response.status}`);
+          streamConnectedRef.current = true;
           if (mountedRef.current) setSnapshot((previous) => ({ ...previous, streamConnected: true }));
           const reader = response.body.getReader();
           const decoder = new TextDecoder();
@@ -147,16 +150,34 @@ export function DashboardDataProvider({ children }: { children: ReactNode }) {
             buffer += decoder.decode(value, { stream: true });
             const parsed = parseSseBlocks(buffer);
             buffer = parsed.rest;
-            const points = parsed.events
+            const updates = parsed.events
               .filter(({ event }) => event === "message" || event === "monitor")
               .map(({ data }) => {
-                try { return normalizeSystemMonitorPoint(JSON.parse(data)); } catch { return null; }
+                try { return normalizeSystemMonitorPayload(JSON.parse(data)); } catch { return null; }
+              })
+              .filter((update) => update !== null);
+            if (updates.length && mountedRef.current) {
+              setSnapshot((previous) => {
+                const latest = updates[updates.length - 1]!;
+                const history = mergeSystemHistory(previous.history, updates.map((update) => update!.point));
+                sharedHistoryCache = history;
+                return {
+                  ...previous,
+                  system: latest.system ?? previous.system,
+                  resources: latest.resources ?? previous.resources,
+                  network: latest.network ?? previous.network,
+                  services: latest.services ?? previous.services,
+                  history,
+                  loading: false,
+                  lastUpdatedAt: Date.now(),
+                };
               });
-            if (points.some(Boolean)) updateHistory(points);
+            }
           }
         } catch (error) {
           if (stopped || (error instanceof DOMException && error.name === "AbortError")) return;
         } finally {
+          streamConnectedRef.current = false;
           if (mountedRef.current) setSnapshot((previous) => ({ ...previous, streamConnected: false }));
         }
         if (!stopped) await new Promise<void>((resolve) => { retryTimer = window.setTimeout(resolve, STREAM_RETRY_MS); });
@@ -168,7 +189,7 @@ export function DashboardDataProvider({ children }: { children: ReactNode }) {
       controller?.abort();
       if (retryTimer !== null) window.clearTimeout(retryTimer);
     };
-  }, [updateHistory]);
+  }, []);
 
   const value = useMemo(() => ({ ...snapshot, refresh, refreshServices, runServiceAction }), [refresh, refreshServices, runServiceAction, snapshot]);
   return <SystemDashboardDataContext.Provider value={value}>{children}</SystemDashboardDataContext.Provider>;

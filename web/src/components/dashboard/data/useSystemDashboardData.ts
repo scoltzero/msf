@@ -41,6 +41,14 @@ export type SystemDashboardData = SystemDashboardSnapshot & {
   runServiceAction: (serviceKey: string, action: ServiceAction) => Promise<void>;
 };
 
+export type NormalizedSystemMonitorPayload = {
+  point: SystemMonitorPoint | null;
+  system: Record<string, any> | null;
+  resources: Record<string, any> | null;
+  network: Record<string, any> | null;
+  services: DashboardService[] | null;
+};
+
 export const EMPTY_SYSTEM_DASHBOARD_SNAPSHOT: SystemDashboardSnapshot = {
   system: {},
   resources: {},
@@ -102,6 +110,22 @@ export function normalizeSystemMonitorPoint(value: unknown): SystemMonitorPoint 
     downloadSpeed: finiteNumber(row.download_speed ?? row.downloadSpeed ?? network.download_speed ?? network.downloadSpeed),
     uploadSpeed: finiteNumber(row.upload_speed ?? row.uploadSpeed ?? network.upload_speed ?? network.uploadSpeed),
     connections: finiteNumber(row.connections ?? row.connection_count ?? network.connections ?? network.connection_count),
+  };
+}
+
+export function normalizeSystemMonitorPayload(value: unknown): NormalizedSystemMonitorPayload {
+  const outer = record(value);
+  const row = record(outer.data && !Array.isArray(outer.data) ? outer.data : outer);
+  const system = record(row.system);
+  const resources = record(row.resource ?? row.resources);
+  const network = record(row.network);
+  const services = Array.isArray(row.services) ? row.services.map(normalizeDashboardService) : null;
+  return {
+    point: normalizeSystemMonitorPoint(row),
+    system: Object.keys(system).length ? system : null,
+    resources: Object.keys(resources).length ? resources : null,
+    network: Object.keys(network).length ? network : null,
+    services,
   };
 }
 

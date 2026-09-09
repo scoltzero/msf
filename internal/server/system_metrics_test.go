@@ -72,6 +72,86 @@ func TestParseDarwinProcessMetrics(t *testing.T) {
 	}
 }
 
+func TestParseLinuxProcessStatHandlesParenthesesInName(t *testing.T) {
+	stat, err := parseLinuxProcessStat("123 (worker name)) S 1 2 3 4 5 6 7 8 9 10 120 30 14 15 16 17 18 19 123450")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stat.totalTicks != 150 || stat.startTicks != 123450 {
+		t.Fatalf("unexpected process stat: %#v", stat)
+	}
+}
+
+func TestLinuxProcessCPUUsesDeltasAndKeepsNearConcurrentValue(t *testing.T) {
+	pid := 9_876_543
+	linuxProcessCPUCache.Lock()
+	delete(linuxProcessCPUCache.samples, pid)
+	linuxProcessCPUCache.Unlock()
+	t.Cleanup(func() {
+		linuxProcessCPUCache.Lock()
+		delete(linuxProcessCPUCache.samples, pid)
+		linuxProcessCPUCache.Unlock()
+	})
+
+	started := time.Unix(1_800_000_000, 0)
+	first := linuxProcessStat{totalTicks: 100, startTicks: 50}
+	if got := sampleLinuxProcessCPU(pid, first, started, 3.5); got != 3.5 {
+		t.Fatalf("first sample should use fallback: %v", got)
+	}
+	second := linuxProcessStat{totalTicks: 150, startTicks: 50}
+	want := roundMetric(normalizeProcessCPUPercent(50), 1)
+	if got := sampleLinuxProcessCPU(pid, second, started.Add(time.Second), 0); got != want {
+		t.Fatalf("delta sample=%v want=%v", got, want)
+	}
+	if got := sampleLinuxProcessCPU(pid, second, started.Add(time.Second+time.Millisecond), 0); got != want {
+		t.Fatalf("near-concurrent read should keep last value: %v", got)
+	}
+	if got := sampleLinuxProcessCPU(pid, linuxProcessStat{totalTicks: 1, startTicks: 99}, started.Add(2*time.Second), 2.5); got != 2.5 {
+		t.Fatalf("PID reuse should reset the sampler: %v", got)
+	}
+}
+
+func TestCgroupV2PathAndMountResolution(t *testing.T) {
+	cgroupPath, ok := parseCgroupV2Path("0::/lxc/101\n")
+	if !ok || cgroupPath != "/lxc/101" {
+		t.Fatalf("unexpected cgroup path: %q ok=%v", cgroupPath, ok)
+	}
+	mountInfo := "36 25 0:32 / /sys/fs/cgroup rw,nosuid,nodev,noexec,relatime - cgroup2 cgroup rw\n"
+	dir, mountPoint, ok := resolveCgroupV2Dir(cgroupPath, mountInfo)
+	if !ok || dir != "/sys/fs/cgroup/lxc/101" || mountPoint != "/sys/fs/cgroup" {
+		t.Fatalf("unexpected cgroup mount resolution: dir=%q mount=%q ok=%v", dir, mountPoint, ok)
+	}
+
+	namespacedMount := "36 25 0:32 /lxc/101 /sys/fs/cgroup rw,nosuid,nodev,noexec,relatime - cgroup2 cgroup rw\n"
+	dir, mountPoint, ok = resolveCgroupV2Dir("/", namespacedMount)
+	if !ok || dir != "/sys/fs/cgroup" || mountPoint != "/sys/fs/cgroup" {
+		t.Fatalf("unexpected namespaced cgroup mount: dir=%q mount=%q ok=%v", dir, mountPoint, ok)
+	}
+	dir, mountPoint, ok = resolveCgroupV2Dir("/system.slice/msf.service", namespacedMount)
+	if !ok || dir != "/sys/fs/cgroup/system.slice/msf.service" || mountPoint != "/sys/fs/cgroup" {
+		t.Fatalf("unexpected namespaced child cgroup mount: dir=%q mount=%q ok=%v", dir, mountPoint, ok)
+	}
+}
+
+func TestParseCgroupCPUCapacityInputs(t *testing.T) {
+	capacity, limited, ok := parseCgroupCPUMax("200000 100000\n")
+	if !ok || !limited || capacity != 2 {
+		t.Fatalf("unexpected cpu.max parse: capacity=%v limited=%v ok=%v", capacity, limited, ok)
+	}
+	if _, limited, ok = parseCgroupCPUMax("max 100000\n"); !ok || limited {
+		t.Fatalf("unlimited cpu.max parse: limited=%v ok=%v", limited, ok)
+	}
+	if count, ok := countCPUSet("0-1,4,6-7"); !ok || count != 5 {
+		t.Fatalf("unexpected cpuset parse: count=%d ok=%v", count, ok)
+	}
+	if usage, err := parseCgroupCPUUsage("usage_usec 123456\nuser_usec 100000\nsystem_usec 23456\n"); err != nil || usage != 123456 {
+		t.Fatalf("unexpected cpu.stat parse: usage=%d err=%v", usage, err)
+	}
+	if percent, ok := cgroupCPUPercent(1_000_000, 2_000_000, time.Second, 2); !ok || percent != 50 {
+		t.Fatalf("two-core cgroup should report one busy core as 50%%: percent=%v ok=%v", percent, ok)
+	}
+}
+
 func TestDarwinCollectorsReturnLiveValues(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("Darwin collector integration test")
