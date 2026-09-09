@@ -80,6 +80,19 @@ final class DaemonServiceModel: ObservableObject {
       detail = "LaunchDaemon 正在 127.0.0.1:7777 提供服务"
       return
     }
+    #if !MSF_SIGNED_RELEASE
+      let legacyLoaded = await Self.legacyLaunchDaemonLoaded()
+      if FileManager.default.fileExists(atPath: Self.helperPath), !legacyLoaded {
+        state = .failed("后台文件已安装，但 LaunchDaemon 未加载")
+        detail = "后台文件已安装，但系统服务未加载；请点击“修复后台”重新安装"
+        return
+      }
+      if legacyLoaded {
+        state = .installed
+        detail = "LaunchDaemon 已加载，但端口 7777 尚未就绪；请查看 /Library/Logs/MSF/msf-daemon.err.log"
+        return
+      }
+    #endif
     if FileManager.default.fileExists(atPath: Self.helperPath) {
       state = .installed
       detail = "后台文件已安装，但端口 7777 尚未就绪"
@@ -185,6 +198,24 @@ final class DaemonServiceModel: ObservableObject {
     } catch {
       return false
     }
+  }
+
+  private nonisolated static func legacyLaunchDaemonLoaded() async -> Bool {
+    await Task.detached(priority: .utility) {
+      let label = "io.github.scoltzero.msf.daemon"
+      let process = Process()
+      process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+      process.arguments = ["print", "system/\(label)"]
+      process.standardOutput = Pipe()
+      process.standardError = Pipe()
+      do {
+        try process.run()
+        process.waitUntilExit()
+        return process.terminationStatus == 0
+      } catch {
+        return false
+      }
+    }.value
   }
 
   private nonisolated static func runLegacyInstaller(action: String) async throws -> String {
