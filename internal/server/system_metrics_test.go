@@ -167,7 +167,8 @@ func TestMihomoTrafficCacheReturnsStaleValueWhileRefreshing(t *testing.T) {
 	app := newTestApp(t)
 	app.setSetting("mihomo_controller_endpoint", controller.URL)
 	app.mihomoTrafficCache = map[string]any{"up": float64(90), "down": float64(120), "upload": float64(90), "download": float64(120)}
-	app.mihomoTrafficAt = time.Now().Add(-mihomoTrafficCacheTTL - time.Second)
+	// The menu bar polls once per second, so a 1.5-second-old sample must refresh.
+	app.mihomoTrafficAt = time.Now().Add(-1500 * time.Millisecond)
 
 	got := app.mihomoTrafficCachedPayload()
 	if numericMapValue(got, "up") != 90 || numericMapValue(got, "down") != 120 {

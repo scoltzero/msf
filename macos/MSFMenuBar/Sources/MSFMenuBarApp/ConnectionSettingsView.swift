@@ -30,7 +30,11 @@ struct ConnectionSettingsView: View {
 
         HStack {
           Button(daemon.canUninstall ? "修复后台" : "安装后台") {
-            daemon.install()
+            Task {
+              if let token = await daemon.install() {
+                await bindLocalToken(token)
+              }
+            }
           }
           .disabled(!daemon.canInstall)
 
@@ -67,6 +71,17 @@ struct ConnectionSettingsView: View {
           Button("保存地址") {
             _ = model.saveBaseURL(serverURL)
           }
+
+          #if !MSF_SIGNED_RELEASE
+            Button(model.hasToken ? "重新连接本机后台" : "连接本机后台") {
+              Task {
+                if let token = await daemon.issueLocalToken() {
+                  await bindLocalToken(token)
+                }
+              }
+            }
+            .disabled(daemon.isBusy)
+          #endif
         }
       }
 
@@ -141,5 +156,12 @@ struct ConnectionSettingsView: View {
       serverURL = model.baseURLString
       Task { await daemon.refresh() }
     }
+  }
+
+  @MainActor
+  private func bindLocalToken(_ token: String) async {
+    let localURL = MSFEndpoint.defaultURLString
+    serverURL = localURL
+    _ = await model.saveManualToken(baseURL: localURL, token: token)
   }
 }

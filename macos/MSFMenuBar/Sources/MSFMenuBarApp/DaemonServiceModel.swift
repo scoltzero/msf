@@ -119,32 +119,80 @@ final class DaemonServiceModel: ObservableObject {
     #endif
   }
 
-  func install() {
-    guard !isBusy else { return }
+  func install() async -> String? {
+    guard !isBusy else { return nil }
     isBusy = true
     detail = "正在请求管理员权限…"
-    Task {
-      defer { isBusy = false }
-      do {
-        #if MSF_SIGNED_RELEASE
-          if service.status == .enabled {
-            try await service.unregister()
-          }
-          try service.register()
-          if service.status == .requiresApproval {
-            SMAppService.openSystemSettingsLoginItems()
-          }
-        #else
-          let output = try await Self.runLegacyInstaller(action: "install")
-          detail = output.isEmpty ? "后台安装完成，正在等待启动" : output
-        #endif
-        await waitForBackend()
-        await refresh()
-      } catch {
-        state = .failed(error.localizedDescription)
-        detail = error.localizedDescription
+    defer { isBusy = false }
+    do {
+      var localToken: String?
+      #if MSF_SIGNED_RELEASE
+        if service.status == .enabled {
+          try await service.unregister()
+        }
+        try service.register()
+        if service.status == .requiresApproval {
+          SMAppService.openSystemSettingsLoginItems()
+        }
+      #else
+        let output = try await Self.runLegacyInstaller(action: "install")
+        let result = Self.parseLegacyInstallerOutput(output)
+        localToken = result.token
+        detail = result.message.isEmpty ? "后台安装完成，正在等待启动" : result.message
+      #endif
+      await waitForBackend()
+      await refresh()
+      return localToken
+    } catch {
+      state = .failed(error.localizedDescription)
+      detail = error.localizedDescription
+      return nil
+    }
+  }
+
+  func issueLocalToken() async -> String? {
+    guard !isBusy else { return nil }
+    isBusy = true
+    detail = "正在请求管理员权限以连接本机后台…"
+    defer { isBusy = false }
+    do {
+      #if MSF_SIGNED_RELEASE
+        throw DaemonServiceError("签名版本请通过系统后台授权连接")
+      #else
+        let output = try await Self.runLegacyInstaller(action: "pair")
+        let result = Self.parseLegacyInstallerOutput(output)
+        guard let token = result.token else {
+          throw DaemonServiceError("后台没有返回本机菜单栏凭据")
+        }
+        detail = "本机后台凭据已生成"
+        return token
+      #endif
+    } catch {
+      state = .failed(error.localizedDescription)
+      detail = error.localizedDescription
+      return nil
+    }
+  }
+
+  private nonisolated static func parseLegacyInstallerOutput(
+    _ output: String
+  ) -> (message: String, token: String?) {
+    let tokenPrefix = "menu-bar-token:"
+    var messages: [String] = []
+    var token: String?
+    for rawLine in output.components(separatedBy: .newlines) {
+      let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !line.isEmpty else { continue }
+      if line.hasPrefix(tokenPrefix) {
+        let value = String(line.dropFirst(tokenPrefix.count))
+        if value.hasPrefix("msf_local_") {
+          token = value
+        }
+      } else {
+        messages.append(line)
       }
     }
+    return (messages.joined(separator: "\n"), token)
   }
 
   func uninstall() {

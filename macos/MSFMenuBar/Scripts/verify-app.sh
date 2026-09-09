@@ -55,6 +55,8 @@ done
   || fail "legacy installer does not clear helper quarantine"
 /usr/bin/grep -Fq 'remove_quarantine "$plist_path"' "$installer" \
   || fail "legacy installer does not clear LaunchDaemon plist quarantine"
+/usr/bin/grep -Fq 'menu-bar-token --config "$data_path"' "$installer" \
+  || fail "legacy installer does not provision the local menu bar credential"
 
 icon_width="$(/usr/bin/sips -g pixelWidth "$app_icon" 2>/dev/null | /usr/bin/awk '/pixelWidth/ { print $2 }')"
 [[ "$icon_width" == <-> ]] || fail "cannot read AppIcon.icns dimensions"

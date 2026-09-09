@@ -62,7 +62,10 @@ func (a *App) authenticateRequest(r *http.Request) (*AuthIdentity, error) {
 	if identity, err := a.authenticateJWT(tokenStr); err == nil {
 		return identity, nil
 	}
-	return a.authenticateAPIToken(tokenStr)
+	if identity, err := a.authenticateAPIToken(tokenStr); err == nil {
+		return identity, nil
+	}
+	return a.authenticateLocalMenuBarToken(tokenStr, r.RemoteAddr)
 }
 
 func (a *App) authenticateJWT(tokenStr string) (*AuthIdentity, error) {
@@ -274,6 +277,9 @@ func (a *App) authorizeRequest(identity *AuthIdentity, r *http.Request) bool {
 	u := identity.User
 	if !roleAllows(u.Role, r.Method, r.URL.Path) {
 		return false
+	}
+	if identity.AuthType == "local_menubar" {
+		return localMenuBarAllows(r.Method, r.URL.Path)
 	}
 	if identity.AuthType != "api_token" {
 		return true

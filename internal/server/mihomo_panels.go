@@ -421,7 +421,7 @@ func mihomoPortsFromConfig(cfg map[string]any) map[string]int {
 	return ports
 }
 
-const mihomoTrafficCacheTTL = 2 * time.Second
+const mihomoTrafficCacheTTL = time.Second
 
 const mihomoTrafficMinSampleInterval = 750 * time.Millisecond
 

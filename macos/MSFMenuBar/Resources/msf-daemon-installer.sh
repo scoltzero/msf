@@ -69,6 +69,16 @@ remove_quarantine() {
   fi
 }
 
+issue_local_menu_bar_token() {
+  local output
+  output="$("$helper_path" menu-bar-token --config "$data_path")"
+  if [[ "$output" != menu-bar-token:msf_local_* ]]; then
+    echo "background returned an invalid local menu bar credential" >&2
+    return 1
+  fi
+  echo "$output"
+}
+
 case "$action" in
   install|repair)
     if [[ -z "$app_bundle" ]]; then
@@ -102,6 +112,7 @@ case "$action" in
     remove_quarantine "$plist_path"
     /usr/bin/codesign --verify --strict "$helper_path" >/dev/null
     /usr/bin/plutil -lint "$plist_path" >/dev/null
+    local_menu_bar_token="$(issue_local_menu_bar_token)"
     if ! /bin/launchctl bootstrap system "$plist_path"; then
       print_launchd_diagnostics
       exit 1
@@ -114,6 +125,14 @@ case "$action" in
       exit 1
     fi
     echo "installed:$label"
+    echo "$local_menu_bar_token"
+    ;;
+  pair)
+    if [[ ! -x "$helper_path" ]]; then
+      echo "installed daemon is missing: $helper_path" >&2
+      exit 1
+    fi
+    issue_local_menu_bar_token
     ;;
   uninstall)
     stop_service
@@ -121,7 +140,7 @@ case "$action" in
     echo "uninstalled:$label:data-preserved:$data_path"
     ;;
   *)
-    echo "usage: $0 install|repair|uninstall [app-bundle]" >&2
+    echo "usage: $0 install|repair|pair|uninstall [app-bundle]" >&2
     exit 2
     ;;
 esac

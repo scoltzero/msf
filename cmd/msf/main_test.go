@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"io"
 	"os"
 	"os/exec"
@@ -13,6 +14,31 @@ import (
 
 	"github.com/scoltzero/msf/internal/cloudflareredirect"
 )
+
+func TestMenuBarTokenCommandRequiresRootAndEmitsCredential(t *testing.T) {
+	oldEUID, oldOut := currentEUID, menuBarTokenStdout
+	var output bytes.Buffer
+	menuBarTokenStdout = &output
+	t.Cleanup(func() {
+		currentEUID = oldEUID
+		menuBarTokenStdout = oldOut
+	})
+
+	currentEUID = func() int { return 501 }
+	if err := run([]string{"menu-bar-token", "--config", t.TempDir()}); err == nil || !strings.Contains(err.Error(), "must run as root") {
+		t.Fatalf("non-root menu-bar-token error = %v", err)
+	}
+
+	currentEUID = func() int { return 0 }
+	t.Setenv("MSF_RUNTIME", "macos")
+	if err := run([]string{"menu-bar-token", "--config", t.TempDir()}); err != nil {
+		t.Fatal(err)
+	}
+	credential := strings.TrimSpace(output.String())
+	if !strings.HasPrefix(credential, "menu-bar-token:msf_local_") {
+		t.Fatal("menu-bar-token did not emit the expected credential marker")
+	}
+}
 
 func TestStopRuntimeTerminatesPIDAndRemovesPIDFiles(t *testing.T) {
 	if _, err := exec.LookPath("sleep"); err != nil {

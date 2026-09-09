@@ -46,6 +46,7 @@ var (
 	systemdServiceDir                  = "/etc/systemd/system"
 	uninstallStdin           io.Reader = os.Stdin
 	uninstallStdout          io.Writer = os.Stdout
+	menuBarTokenStdout       io.Writer = os.Stdout
 	uninstallInputIsTerminal           = defaultInputIsTerminal
 	procRoot                           = "/proc"
 )
@@ -156,6 +157,8 @@ func run(args []string) error {
 		}
 		fmt.Printf("admin password reset to: %s\n", password)
 		return nil
+	case "menu-bar-token":
+		return issueMenuBarToken(*configDir)
 	case "status":
 		return printStatus(*configDir, *serviceName)
 	case "stop":
@@ -214,6 +217,7 @@ func printUsage() {
   msf uninstall [--config /opt/msf] [--prefix /usr/local] [--service-name msf] [--purge --yes|--keep-data]
   msf migrate [--config /opt/msf]
   msf reset-password [--config /opt/msf] [password]
+  msf menu-bar-token [--config /Library/Application Support/MSF]
   msf service install|uninstall [--config /opt/msf]
   msf license status|fingerprint
   msf version
@@ -225,6 +229,26 @@ Notes:
   uninstall is for Linux tarball/systemd installs. Docker, Unraid, and fnOS FPK installs must be removed from their platform manager.
   uninstall asks whether to remove the data directory on interactive terminals. In automation, pass --purge --yes to remove it or --keep-data to retain it.
 `)
+}
+
+func issueMenuBarToken(dataDir string) error {
+	if currentEUID() != 0 {
+		return errors.New("menu-bar-token must run as root")
+	}
+	if runtime.GOOS != "darwin" && !strings.EqualFold(strings.TrimSpace(os.Getenv("MSF_RUNTIME")), "macos") {
+		return errors.New("menu-bar-token is only available for the macOS runtime")
+	}
+	app, err := server.New(serverOptions(dataDir))
+	if err != nil {
+		return err
+	}
+	defer app.Close()
+	token, err := app.IssueLocalMenuBarToken()
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintln(menuBarTokenStdout, "menu-bar-token:"+token)
+	return err
 }
 
 // applyDefaultGoMemoryLimit sets a soft GC memory ceiling so the Go runtime
