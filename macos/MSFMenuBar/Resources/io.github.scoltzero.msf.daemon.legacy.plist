@@ -4,6 +4,10 @@
 <dict>
   <key>Label</key>
   <string>io.github.scoltzero.msf.daemon</string>
+  <key>AssociatedBundleIdentifiers</key>
+  <array>
+    <string>io.github.scoltzero.msf.menubar</string>
+  </array>
   <key>ProgramArguments</key>
   <array>
     <string>/Library/PrivilegedHelperTools/io.github.scoltzero.msf.daemon</string>

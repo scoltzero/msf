@@ -38,6 +38,12 @@ wait_until_unloaded() {
 
 print_launchd_diagnostics() {
   echo "launchd failed to load $label" >&2
+  echo "--- installed files and extended attributes ---" >&2
+  /bin/ls -lO@ "$helper_path" "$plist_path" >&2 2>/dev/null || true
+  echo "--- launchd plist ---" >&2
+  /usr/bin/plutil -p "$plist_path" >&2 2>/dev/null || true
+  echo "--- helper signature ---" >&2
+  /usr/bin/codesign --verify --strict --verbose=4 "$helper_path" >&2 2>/dev/null || true
   echo "--- launchctl print system/$label ---" >&2
   /bin/launchctl print "system/$label" >&2 2>/dev/null || true
   echo "--- tcp port 7777 listeners ---" >&2
@@ -45,6 +51,21 @@ print_launchd_diagnostics() {
   if [[ -f "$stderr_log" ]]; then
     echo "--- $stderr_log tail ---" >&2
     /usr/bin/tail -n 40 "$stderr_log" >&2 2>/dev/null || true
+  fi
+  echo "--- recent launchd messages ---" >&2
+  /usr/bin/log show \
+    --last 5m \
+    --style compact \
+    --predicate "process == 'launchd' AND eventMessage CONTAINS[c] '$label'" \
+    2>/dev/null | /usr/bin/tail -n 80 >&2 || true
+}
+
+remove_quarantine() {
+  local installed_path="$1"
+  /usr/bin/xattr -d com.apple.quarantine "$installed_path" >/dev/null 2>&1 || true
+  if /usr/bin/xattr -p com.apple.quarantine "$installed_path" >/dev/null 2>&1; then
+    echo "failed to remove quarantine attribute: $installed_path" >&2
+    return 1
   fi
 }
 
@@ -76,8 +97,10 @@ case "$action" in
     /usr/bin/install -d -o root -g wheel -m 0755 "$log_path"
     /usr/bin/install -o root -g wheel -m 0755 "$source_helper" "$helper_path"
     /usr/bin/install -o root -g wheel -m 0644 "$source_plist" "$plist_path"
-    /usr/bin/xattr -d com.apple.quarantine "$helper_path" >/dev/null 2>&1 || true
     /usr/bin/codesign --force --sign - "$helper_path" >/dev/null 2>&1
+    remove_quarantine "$helper_path"
+    remove_quarantine "$plist_path"
+    /usr/bin/codesign --verify --strict "$helper_path" >/dev/null
     /usr/bin/plutil -lint "$plist_path" >/dev/null
     if ! /bin/launchctl bootstrap system "$plist_path"; then
       print_launchd_diagnostics

@@ -49,6 +49,12 @@ done
   || fail "CFBundleIconName must reference AppIcon"
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :BundleProgram' "$service_plist")" == "Contents/Library/HelperTools/$helper_name" ]] \
   || fail "SMAppService BundleProgram does not point at the embedded daemon"
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :AssociatedBundleIdentifiers:0' "$legacy_plist")" == "io.github.scoltzero.msf.menubar" ]] \
+  || fail "legacy LaunchDaemon is not associated with the menu bar app"
+/usr/bin/grep -Fq 'remove_quarantine "$helper_path"' "$installer" \
+  || fail "legacy installer does not clear helper quarantine"
+/usr/bin/grep -Fq 'remove_quarantine "$plist_path"' "$installer" \
+  || fail "legacy installer does not clear LaunchDaemon plist quarantine"
 
 icon_width="$(/usr/bin/sips -g pixelWidth "$app_icon" 2>/dev/null | /usr/bin/awk '/pixelWidth/ { print $2 }')"
 [[ "$icon_width" == <-> ]] || fail "cannot read AppIcon.icns dimensions"
