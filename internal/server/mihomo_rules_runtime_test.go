@@ -261,27 +261,40 @@ func TestMihomoRulePatchExactDisconnectAndUnsupportedCapability(t *testing.T) {
 	}
 }
 
-func TestMihomoRuleProviderUpdateUsesEscapedSinglePathAndStaleCache(t *testing.T) {
+func TestMihomoRuleProviderUpdateUsesCollectionSnapshotAfterNoContent(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()
 	var mu sync.Mutex
 	var calls []string
+	updated := false
 	controller := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		calls = append(calls, r.Method+" "+r.URL.EscapedPath())
+		wasUpdated := updated
+		if r.URL.Path == "/providers/rules/机场/规则" && r.Method == http.MethodPut {
+			updated = true
+		}
 		mu.Unlock()
 		if r.URL.Path == "/providers/rules" && r.Method == http.MethodGet {
+			updatedAt := "old"
+			size := 99
+			ruleCount := 12
+			if wasUpdated {
+				updatedAt = "new"
+				size = 101
+				ruleCount = 13
+			}
 			_ = json.NewEncoder(w).Encode(map[string]any{"providers": map[string]any{
-				"机场/规则": map[string]any{"name": "机场/规则", "vehicleType": "HTTP", "size": 99, "ruleCount": 12, "updatedAt": "old"},
+				"机场/规则": map[string]any{"name": "机场/规则", "vehicleType": "HTTP", "size": size, "ruleCount": ruleCount, "updatedAt": updatedAt},
 			}})
 			return
 		}
 		if r.URL.Path == "/providers/rules/机场/规则" && r.Method == http.MethodPut {
-			_ = json.NewEncoder(w).Encode(map[string]any{"updated": true})
+			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 		if r.URL.Path == "/providers/rules/机场/规则" && r.Method == http.MethodGet {
-			_ = json.NewEncoder(w).Encode(map[string]any{"name": "机场/规则", "vehicleType": "HTTP", "size": 101, "ruleCount": 13, "updatedAt": "new", "rules": []any{"x"}})
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		http.NotFound(w, r)
@@ -290,11 +303,18 @@ func TestMihomoRuleProviderUpdateUsesEscapedSinglePathAndStaleCache(t *testing.T
 	app.setSetting("mihomo_controller_endpoint", controller.URL)
 	result := app.updateMihomoRuleProviderRuntime("机场/规则")
 	if !result.Success || intAny(result.Data["size"], 0) != 101 || intAny(result.Data["rule_count"], 0) != 13 {
-		t.Fatalf("single provider update mismatch: %#v", result)
+		t.Fatalf("provider update via collection snapshot mismatch: %#v", result)
 	}
 	mu.Lock()
-	if len(calls) == 0 || !strings.Contains(strings.Join(calls, "\n"), "/providers/rules/%E6%9C%BA%E5%9C%BA%2F%E8%A7%84%E5%88%99") {
+	joinedCalls := strings.Join(calls, "\n")
+	if len(calls) == 0 || !strings.Contains(joinedCalls, "PUT /providers/rules/%E6%9C%BA%E5%9C%BA%2F%E8%A7%84%E5%88%99") {
 		t.Fatalf("provider path was not escaped: %v", calls)
+	}
+	if strings.Contains(joinedCalls, "GET /providers/rules/%E6%9C%BA%E5%9C%BA%2F%E8%A7%84%E5%88%99") {
+		t.Fatalf("provider update must not use unsupported single-provider GET: %v", calls)
+	}
+	if strings.Count(joinedCalls, "GET /providers/rules") != 1 {
+		t.Fatalf("provider update should read the collection exactly once: %v", calls)
 	}
 	mu.Unlock()
 	if err := validateMihomoProviderName(".."); err == nil {

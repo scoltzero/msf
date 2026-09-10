@@ -328,32 +328,57 @@ func (a *App) updateMihomoRuleProviderRuntime(name string) mihomoRuleProviderUpd
 	if !ok {
 		return a.mihomoRuleProviderUpdateFailure(name, err)
 	}
-	// Mihomo commonly acknowledges with an empty 204 body.  Re-read this
-	// provider and validate that snapshot before reporting success, preserving
-	// the previous cache if the response is missing or malformed.
-	updated, readOK, readErr := a.mihomoControllerJSON(http.MethodGet, path, nil)
+	// Mihomo acknowledges provider updates with an empty 204 body and exposes
+	// runtime state through the collection endpoint. GET on the per-provider
+	// update path is not part of the controller API and returns 405 on current
+	// Mihomo releases.
+	collection, readOK, readErr := a.mihomoControllerJSON(http.MethodGet, "/providers/rules", nil)
+	updated := mihomoRuleProviderRuntimeFromCollection(collection, name)
 	if !readOK || !validMihomoRuleProviderRuntime(updated) {
-		if readErr == nil && !validMihomoRuleProviderRuntime(raw) {
-			readErr = errors.New("mihomo rule provider update returned empty or invalid runtime data")
+		// Keep compatibility with controllers that return the refreshed provider
+		// directly from PUT even when their collection endpoint is unavailable.
+		if validMihomoRuleProviderRuntime(raw) {
+			updated = unwrapMihomoProviderRuntime(raw)
+			readOK = true
+			readErr = nil
 		}
+	}
+	if !readOK || !validMihomoRuleProviderRuntime(updated) {
 		if readErr == nil {
-			readErr = errors.New("mihomo rule provider runtime snapshot invalid")
+			readErr = errors.New("mihomo rule provider update returned empty or invalid runtime data")
 		}
 		return a.mihomoRuleProviderUpdateFailure(name, readErr)
 	}
-	item := a.mihomoRuleProviderItem(name)
-	if item == nil {
-		item = map[string]any{"name": name, "provider_type": "rule"}
-	}
 	runtime := unwrapMihomoProviderRuntime(updated)
-	item["runtime"] = runtime
-	mergeMihomoProviderRuntimeFields(item, runtime)
-	item["source"] = "config+controller"
+	item := a.mihomoRuleProviderItemWithRuntime(name, runtime)
 	item["updated"] = true
 	item["using_stale_cache"] = false
 	item["last_update_error"] = ""
 	clearMihomoRuleProviderRuntimeState(a, name)
 	return mihomoRuleProviderUpdateResult{Success: true, Data: item}
+}
+
+func mihomoRuleProviderRuntimeFromCollection(raw any, name string) map[string]any {
+	collection, _ := raw.(map[string]any)
+	if collection == nil {
+		return nil
+	}
+	return normalizeProviderMap(collection["providers"])[name]
+}
+
+func (a *App) mihomoRuleProviderItemWithRuntime(name string, runtime map[string]any) map[string]any {
+	item := map[string]any{"name": name, "provider_type": "rule"}
+	source := "controller"
+	if configured, ok := normalizeConfigProviders(a.mihomoConfigMap()["rule-providers"])[name]; ok {
+		for key, value := range configured {
+			item[key] = value
+		}
+		source = "config+controller"
+	}
+	item["runtime"] = runtime
+	mergeMihomoProviderRuntimeFields(item, runtime)
+	item["source"] = source
+	return item
 }
 
 func validMihomoRuleProviderRuntime(raw any) bool {
