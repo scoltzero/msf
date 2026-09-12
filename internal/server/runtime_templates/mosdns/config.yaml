@@ -317,16 +317,18 @@ plugins:
           - exit
       - exec: tag_setter sing-box国内
 
+  # 当前改用 11101，避免占用系统常见的 111/rpcbind 端口。
+  # TODO(Sing-box): 后续启用 Sing-box 时，记得将其 DNS 地址同步改为 127.0.0.1:11101。
   - tag: udp_singbox                               #给sing-box回家用的dns服务器
     type: udp_server
     args:
       entry: sequence_for_singbox
-      listen: ":111"
+      listen: ":11101"
       enable_audit: true
 
   - tag: tcp_singbox
     type: tcp_server
     args:
       entry: sequence_for_singbox
-      listen: ":111"
+      listen: ":11101"
       enable_audit: true
