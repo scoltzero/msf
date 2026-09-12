@@ -706,7 +706,7 @@ export default function MosdnsSystemPage() {
 
   const clearDNSCache = async () => {
     if (cacheActionSaving) return;
-    if (!window.confirm("确定清空全部 MosDNS DNS 缓存吗？\n\n不会删除规则、订阅、配置或 Mihomo Fake-IP 数据库。清空后首次 DNS 查询可能稍慢。")) return;
+    if (!window.confirm("确定清空全部 MosDNS DNS 缓存吗？\n\n将同时清除自动学习的 FakeIP 规则，不会删除手工规则、订阅、配置或 Mihomo Fake-IP 数据库。清空后首次 DNS 查询可能稍慢。")) return;
     setCacheActionSaving(true);
     try {
       const payload = await api<any>("/api/v1/mosdns/cache/clear", { method: "POST" });

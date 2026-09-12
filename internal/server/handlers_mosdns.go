@@ -229,6 +229,11 @@ func (a *App) handleMosDNSCacheClear(w http.ResponseWriter, r *http.Request) {
 		"failed_count":  len(failed),
 		"total":         len(mosDNSCachePluginTags),
 	}
+	learningCleared, learningErr := a.clearMosDNSFakeIPLearning()
+	data["fakeip_learning_cleared"] = learningCleared
+	if learningErr != nil {
+		data["fakeip_learning_error"] = learningErr.Error()
+	}
 	if len(failed) > 0 {
 		failedTags := make([]string, 0, len(failed))
 		for tag := range failed {
@@ -243,9 +248,22 @@ func (a *App) handleMosDNSCacheClear(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	if learningErr != nil {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"success": false,
+			"error":   "mosdns_cache_learning_clear_failed",
+			"message": fmt.Sprintf("DNS 缓存已清理，但 FakeIP 学习记忆清理失败：%s", learningErr),
+			"data":    data,
+		})
+		return
+	}
+	message := fmt.Sprintf("已清理全部 %d 个 MosDNS 缓存", len(cleared))
+	if learningCleared {
+		message += "，并同步清除 FakeIP 学习记忆"
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"success": true,
-		"message": fmt.Sprintf("已清理全部 %d 个 MosDNS 缓存", len(cleared)),
+		"message": message,
 		"data":    data,
 	})
 }

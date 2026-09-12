@@ -202,6 +202,9 @@ func (a *App) EnsureBaseLayout() error {
 	if err := a.ensureDefaultConfigs(); err != nil {
 		return err
 	}
+	if err := a.ensureMosDNSCacheSafety(); err != nil {
+		return err
+	}
 	if err := cloudflareredirect.EnsureDefaultConfig(a.DataDir); err != nil {
 		return err
 	}

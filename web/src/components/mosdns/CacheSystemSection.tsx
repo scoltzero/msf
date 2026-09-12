@@ -460,7 +460,7 @@ function OperationsBar({
             <path d="M12 16v-4" /><path d="M12 8h.01" />
           </svg>
           <p className="text-xs leading-relaxed text-muted-foreground">
-            提示：清空 DNS 缓存只清理 MosDNS 运行时解析缓存；清空生成规则会清空自动生成的 FakeIP、RealIP 和高频域名文件。两项操作都不会删除订阅、配置或 Mihomo Fake-IP 数据库。
+            提示：清空 DNS 缓存会同时清除自动学习的 FakeIP 规则，避免旧分流记忆再次命中；清空生成规则会额外清空 RealIP 和高频域名文件。两项操作都不会删除手工规则、订阅、配置或 Mihomo Fake-IP 数据库。
           </p>
         </div>
       </div>

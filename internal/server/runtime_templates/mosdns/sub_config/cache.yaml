@@ -4,10 +4,14 @@ plugins:
     type: cache
     args:
       size: 20000000
-      lazy_cache_ttl: 259200000
-#      exclude_ip:
-#        - 28.0.0.0/8
-#        - f2b0::/18
+      # Keep stale responses for at most one day.  A multi-year lazy TTL can
+      # resurrect an incorrect routing answer from a persisted dump.
+      lazy_cache_ttl: 86400
+      # Never persist Fake-IP answers in either front cache.  They are
+      # generated routing artifacts, not authoritative DNS answers.
+      exclude_ip:
+        - 28.0.0.0/8
+        - f2b0::/18
       dump_file: cache/cache_all.dump
       dump_interval: 36000
 
@@ -16,10 +20,10 @@ plugins:
     type: cache
     args:
       size: 20000000
-      lazy_cache_ttl: 259200000
+      lazy_cache_ttl: 86400
       exclude_ip:
-#        - 28.0.0.0/8
-#        - f2b0::/18
+        - 28.0.0.0/8
+        - f2b0::/18
       dump_file: cache/cache_all_noleak.dump
       dump_interval: 36000
 
@@ -28,7 +32,7 @@ plugins:
     type: cache
     args:
       size: 20000000
-      lazy_cache_ttl: 259200000
+      lazy_cache_ttl: 86400
       dump_file: cache/cache_cn.dump
       dump_interval: 36000
 
@@ -37,7 +41,7 @@ plugins:
     type: cache
     args:
       size: 20000000
-      lazy_cache_ttl: 259200000
+      lazy_cache_ttl: 86400
       dump_file: cache/cache_google.dump
       dump_interval: 36000
 
@@ -45,7 +49,7 @@ plugins:
     type: cache
     args:
       size: 20000000
-      lazy_cache_ttl: 259200000
+      lazy_cache_ttl: 86400
       enable_ecs: true
       dump_file: cache/cache_google_node.dump
       dump_interval: 36000
@@ -55,7 +59,7 @@ plugins:
     type: cache
     args:
       size: 20000000
-      lazy_cache_ttl: 259200000
+      lazy_cache_ttl: 86400
       dump_file: cache/cache_node.dump
       dump_interval: 36000
 
@@ -64,6 +68,6 @@ plugins:
     type: cache
     args:
       size: 20000000
-      lazy_cache_ttl: 259200000
+      lazy_cache_ttl: 86400
       dump_file: cache/cache_cnmihomo.dump
       dump_interval: 36000

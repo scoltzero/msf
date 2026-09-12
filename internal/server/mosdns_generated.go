@@ -10,6 +10,11 @@ import (
 
 func (a *App) renderMosDNSManagedFiles(cfg SetupConfig) (map[string]string, error) {
 	files := map[string]string{}
+	cache, err := renderMosDNSCacheTemplate(cfg)
+	if err != nil {
+		return nil, err
+	}
+	files["configs/mosdns/sub_config/cache.yaml"] = cache
 	overrides := a.jsonSettingWithFileFallback("mosdns_upstream_overrides", "configs/mosdns/upstream_overrides.json", map[string]any{})
 	groups, err := normalizeMosDNSUpstreamGroups(overrides)
 	if err != nil {
