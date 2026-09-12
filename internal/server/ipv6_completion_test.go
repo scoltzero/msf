@@ -91,7 +91,7 @@ func TestIPv6GeneratedArtifactsSharePrefixAndDisableDataPlane(t *testing.T) {
 		t.Fatal("IPv4/IPv6 preference must execute inline in both primary MosDNS sequences")
 	}
 	priorityIndex := strings.Index(mosdns, "exec: prefer_ipv4")
-	clientExitIndex := strings.Index(mosdns, "matches: fast_mark 39")
+	clientExitIndex := strings.Index(mosdns, "matches: fast_mark 29")
 	bypassIndex := strings.Index(mosdns, "IPv6 数据面关闭时立刻返回空 AAAA")
 	cacheIndex := strings.Index(mosdns, "#web ui中选择泄露版")
 	if priorityIndex < 0 || clientExitIndex < 0 || priorityIndex > clientExitIndex {
@@ -99,6 +99,31 @@ func TestIPv6GeneratedArtifactsSharePrefixAndDisableDataPlane(t *testing.T) {
 	}
 	if bypassIndex < clientExitIndex || cacheIndex < bypassIndex {
 		t.Fatal("empty AAAA fallback must run after priority/client routing and before cache routing")
+	}
+}
+
+func TestLegacyMosDNSConfigMigratesReservedDirectClientFastMark(t *testing.T) {
+	app := newTestApp(t)
+	template, ok := runtimeTemplateText("mosdns/config.yaml")
+	if !ok {
+		t.Fatal("missing MosDNS config template")
+	}
+	legacy := strings.ReplaceAll(template, "fast_mark 29", "fast_mark 39")
+	if strings.Count(legacy, "fast_mark 39") != 6 {
+		t.Fatalf("legacy fixture should contain six direct-client markers, got %d", strings.Count(legacy, "fast_mark 39"))
+	}
+	if err := app.writeTextFile("configs/mosdns/config.yaml", legacy); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.migrateLegacyMosDNSConfig(); err != nil {
+		t.Fatal(err)
+	}
+	got, err := app.readTextFile("configs/mosdns/config.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(got, "fast_mark 39") || strings.Count(got, "fast_mark 29") != 6 {
+		t.Fatalf("reserved direct-client marker was not migrated:\n%s", got)
 	}
 }
 

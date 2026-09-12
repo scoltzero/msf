@@ -977,6 +977,10 @@ func (a *App) migrateLegacyMosDNSConfig() error {
 		return err
 	}
 	next := content
+	// MosDNS reserves fast_mark bits 32-47 for GlobalSwitchMask. Configs
+	// generated before the direct-client marker moved to bit 29 used bit 39,
+	// which is set by switch8 by default and made the branch always match.
+	next = strings.ReplaceAll(next, "fast_mark 39", "fast_mark 29")
 	if strings.Contains(next, "tag: forward_priority_core") || strings.Contains(next, "entry: sequence_client") {
 		next = removeMosDNSClientPriorityWrapper(next)
 		next = strings.ReplaceAll(next, "entry: sequence_client", "entry: sequence_6666")

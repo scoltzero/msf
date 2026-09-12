@@ -96,13 +96,13 @@ plugins:
         - switch2 'A'
         - switch12 'B'
         - "!client_ip $client_ip"
-        exec: fast_mark 39
+        exec: fast_mark 29
       - matches:                            #当mosdns占用53直面客户端，client_ip.txt中指定的IP不科学
         - switch2 'B'
         - switch12 'A'
         - "client_ip $client_ip"
-        exec: fast_mark 39
-      - matches: fast_mark 39
+        exec: fast_mark 29
+      - matches: fast_mark 29
         exec:
           - $sequence_local
           - tag_setter 指定客户端直连
@@ -204,13 +204,13 @@ plugins:
         - switch2 'A'
         - switch12 'B'
         - "!client_ip $client_ip"
-        exec: fast_mark 39
+        exec: fast_mark 29
       - matches:                            #当mosdns占用53直面客户端，client_ip.txt中指定的IP不科学
         - switch2 'B'
         - switch12 'A'
         - "client_ip $client_ip"
-        exec: fast_mark 39
-      - matches: fast_mark 39
+        exec: fast_mark 29
+      - matches: fast_mark 29
         exec:
           - $sequence_local
           - tag_setter 指定客户端直连

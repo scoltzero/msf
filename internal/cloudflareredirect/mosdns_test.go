@@ -21,7 +21,7 @@ plugins:
     type: sequence
     args:
       - exec: $rewrite
-      - matches: fast_mark 39
+      - matches: fast_mark 29
         exec:
           - $sequence_local
           - tag_setter 指定客户端直连
@@ -33,7 +33,7 @@ plugins:
     type: sequence
     args:
       - exec: $rewrite
-      - matches: fast_mark 39
+      - matches: fast_mark 29
         exec:
           - $sequence_local
           - tag_setter 指定客户端直连
@@ -90,6 +90,35 @@ func TestApplyInjectsOnlyDirectClientBranch(t *testing.T) {
 	}
 	if strings.Contains(text, "$sequence_cloudflare_redirect\n      - matches: qtype") {
 		t.Fatalf("cloudflare redirect leaked into non-direct branch:\n%s", text)
+	}
+}
+
+func TestApplyMigratesLegacyDirectClientFastMark(t *testing.T) {
+	dataDir := t.TempDir()
+	legacy := strings.ReplaceAll(testMosDNSConfig, "fast_mark 29", "fast_mark 39")
+	path := MosDNSConfigPath(dataDir)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(legacy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := Config{
+		Enabled: true,
+		Scan:    ScanConfig{IPv6: FamilyScanConfig{Enabled: TriFalse}},
+		Rules:   RulesConfig{Manual: []string{"example.com"}},
+		Apply:   ApplyConfig{RewriteA: true, RewriteAAAA: TriFalse, RestartMosDNS: TriFalse},
+	}
+	st := State{BestIPv4: []ScanResult{{IP: "1.1.1.1", Family: "ipv4"}}}
+	if _, err := Apply(testContext(t), dataDir, cfg, st); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(got), "fast_mark 39") || strings.Count(string(got), "fast_mark 29") != 2 {
+		t.Fatalf("legacy direct-client marker was not migrated:\n%s", got)
 	}
 }
 

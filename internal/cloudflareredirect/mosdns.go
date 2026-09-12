@@ -19,6 +19,12 @@ const (
 	includeEnd   = "# msf-cloudflare-redirect include end"
 	directBegin  = "# msf-cloudflare-redirect direct begin"
 	directEnd    = "# msf-cloudflare-redirect direct end"
+
+	// MosDNS reserves fast_mark bits 32-47 for GlobalSwitchMask. Keep the
+	// direct-client marker in the user-configurable 0-31 range instead.
+	directClientFastMarkLine       = "- matches: fast_mark 29"
+	legacyDirectClientFastMarkText = "fast_mark 39"
+	directClientFastMarkText       = "fast_mark 29"
 )
 
 type ApplyResult struct {
@@ -197,6 +203,10 @@ func injectMosDNSConfig(dataDir string) error {
 	}
 	content := removeMarkedBlock(string(b), includeBegin, includeEnd)
 	content = removeMarkedBlock(content, directBegin, directEnd)
+	// Upgrade configs generated before the marker moved out of MosDNS's
+	// GlobalSwitchMask range. This also keeps the standalone cloudflare-redirect
+	// CLI usable before the main service has performed its startup migration.
+	content = strings.ReplaceAll(content, legacyDirectClientFastMarkText, directClientFastMarkText)
 	content, err = injectInclude(content)
 	if err != nil {
 		return err
@@ -228,7 +238,7 @@ func injectDirectCall(content string) (string, error) {
 	lines := strings.Split(content, "\n")
 	inserted := 0
 	for i := 0; i < len(lines); i++ {
-		if strings.TrimSpace(lines[i]) != "- matches: fast_mark 39" {
+		if strings.TrimSpace(lines[i]) != directClientFastMarkLine {
 			continue
 		}
 		for j := i + 1; j < len(lines) && j < i+12; j++ {
@@ -247,7 +257,7 @@ func injectDirectCall(content string) (string, error) {
 		}
 	}
 	if inserted == 0 {
-		return "", errors.New("cannot find fast_mark39 direct client branch in MosDNS config")
+		return "", errors.New("cannot find fast_mark29 direct client branch in MosDNS config")
 	}
 	return strings.Join(lines, "\n"), nil
 }
