@@ -1,11 +1,46 @@
 package server
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestMihomoControllerProxyReplacesMSFSessionAuthorization(t *testing.T) {
+	app := newTestApp(t)
+	const controllerSecret = "controller-secret"
+	var gotAuth string
+	var gotPath string
+	controller := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		gotPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"mode": "global"})
+	}))
+	t.Cleanup(controller.Close)
+	app.setSetting("mihomo_controller_endpoint", controller.URL)
+	if err := app.writeTextFileDirect(mihomoActiveConfigRelPath, "external-controller: :9090\nsecret: "+controllerSecret+"\n"); err != nil {
+		t.Fatal(err)
+	}
+	msfToken := tokenForRole(t, app, "admin")
+	res := requestJSON(t, app, http.MethodPatch, "/api/v1/mihomo/controller/configs", msfToken, map[string]any{"mode": "global"})
+	if res.Code != http.StatusOK {
+		t.Fatalf("controller proxy status=%d body=%s", res.Code, res.Body.String())
+	}
+	if gotPath != "/configs" {
+		t.Fatalf("controller proxy path=%q, want /configs", gotPath)
+	}
+	if gotAuth != "Bearer "+controllerSecret {
+		t.Fatalf("controller proxy authorization=%q, want controller secret", gotAuth)
+	}
+	if gotAuth == "Bearer "+msfToken {
+		t.Fatal("MSF session token must not be forwarded to Mihomo controller")
+	}
+}
 
 func TestMihomoSecretPrefersActiveCustomConfig(t *testing.T) {
 	app := newTestApp(t)

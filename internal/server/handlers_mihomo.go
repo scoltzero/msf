@@ -540,7 +540,13 @@ func (a *App) handleMihomoControllerProxy(w http.ResponseWriter, r *http.Request
 		query.Del("token") // MSF WebSocket authentication; never forward the session JWT upstream.
 		req.URL.RawQuery = query.Encode()
 		req.Host = target.Host
-		if secret := a.mihomoSecret(); secret != "" && req.Header.Get("Authorization") == "" {
+		// The incoming Authorization header is the MSF session token. It is
+		// valid for this handler, but not for Mihomo's controller. Always replace
+		// it with the controller secret (or remove it when authentication is
+		// disabled) so a controller 401 cannot be mistaken for an MSF 401 by the
+		// frontend and trigger an unintended logout.
+		req.Header.Del("Authorization")
+		if secret := a.mihomoSecret(); secret != "" {
 			req.Header.Set("Authorization", "Bearer "+secret)
 		}
 	}
