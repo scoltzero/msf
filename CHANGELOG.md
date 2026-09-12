@@ -1,5 +1,47 @@
 # 更新日志
 
+## v0.6.5 - 2026-09-13
+
+### 中文
+
+#### MosDNS 缓存与分流稳定性
+
+- 修复 FakeIP 响应长期滞留在 MosDNS 前置缓存的问题：`cache_all` 与 `cache_all_noleak` 不再持久化 FakeIP 网段，lazy 缓存保留期从约 3000 天调整为 1 天。
+- 升级时会识别旧版缓存模板，清理旧的前置缓存 dump 和自动生成的 FakeIP 学习记忆；面板“清空 DNS 缓存”也会同步清理 `my_fakeiplist`，避免错误的 FakeIP 分流规则再次命中。
+- 修复 MosDNS `fast_mark` 与全局开关位冲突导致指定客户端分支误匹配的问题。
+- 将 MosDNS 预留给 Sing-box 的 DNS 端口从 `111` 调整为 `11101`，避免占用系统常见的 `rpcbind` 端口；当前版本仍未启用 Sing-box 管理能力。
+
+#### Mihomo 与运行可靠性
+
+- 修复 Mihomo Rule Provider 更新后访问不支持的单 Provider GET 接口而报 HTTP 405 的问题，改用 Provider 集合快照确认更新结果。
+- 修复 MSF 会话 Authorization 头被转发到 Mihomo 控制器、导致控制器 401 被误判为 MSF 会话失效的问题。
+- 修复容器环境 CPU 使用率计算不准确的问题，按 cgroup 限制和实际使用量计算监控指标。
+
+#### 升级注意事项
+
+- 已有安装升级后会自动修复旧 MosDNS 缓存模板并清理前置缓存与 FakeIP 学习记忆；首次相关查询需要重新建立缓存和分流记忆。
+- 如果手工配置或外部 Sing-box 配置仍引用 `127.0.0.1:111`，请改为 `127.0.0.1:11101`；UDP 和 TCP 端口需要保持一致。
+
+### English
+
+#### MosDNS cache and routing stability
+
+- Fixed Fake-IP answers remaining in MosDNS front caches indefinitely: `cache_all` and `cache_all_noleak` no longer persist the Fake-IP ranges, and the lazy-cache retention window is reduced from roughly 3000 days to one day.
+- Upgrades detect the legacy cache template and clear old front-cache dumps and generated Fake-IP learning state. The WebUI "Clear DNS cache" action also flushes `my_fakeiplist`, preventing an incorrect Fake-IP routing rule from being reused.
+- Fixed a `fast_mark` collision with the global switch bits that could make the designated-client branch match incorrectly.
+- Moved the DNS port reserved for Sing-box in MosDNS from `111` to `11101` to avoid the system's commonly used `rpcbind` port. Sing-box management remains unavailable in this release.
+
+#### Mihomo and runtime reliability
+
+- Fixed Mihomo Rule Provider updates failing with HTTP 405 after MSF queried an unsupported single-provider GET endpoint; updates are now confirmed from the provider collection snapshot.
+- Fixed the MSF session Authorization header being forwarded to the Mihomo controller, which could turn a controller 401 into an unintended MSF session logout.
+- Fixed inaccurate container CPU usage by calculating monitoring metrics from cgroup limits and actual usage.
+
+#### Upgrade notes
+
+- Existing installations automatically repair the legacy MosDNS cache template and clear front-cache dumps and Fake-IP learning state during upgrade; the first related queries will rebuild cache and routing memory.
+- If a manual configuration or external Sing-box configuration still references `127.0.0.1:111`, change it to `127.0.0.1:11101`; keep the UDP and TCP ports aligned.
+
 ## v0.6.4 - 2026-09-08
 
 ### 中文
