@@ -16,6 +16,8 @@ export interface ProxyNodeView {
   hidden?: boolean;
   icon?: string;
   providerName?: string;
+  testUrl?: string;
+  staleDelay?: boolean;
 }
 
 export interface ProxyGroupView {

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strings"
 )
 
@@ -32,7 +31,13 @@ var proxyPageEnums = map[string][]string{
 
 func validateProxyPageSettings(value map[string]any) error {
 	// A complete v3 snapshot avoids partial writes dropping unrelated fields.
-	if len(value) != 1+len(proxyPageBooleans)+len(proxyPageNumbers)+len(proxyPageEnums)+3 {
+	optional := 0
+	for _, key := range []string{"delayTestOverrideEnabled", "delayTestOverrideUrl"} {
+		if _, ok := value[key]; ok {
+			optional++
+		}
+	}
+	if len(value) != 1+len(proxyPageBooleans)+len(proxyPageNumbers)+len(proxyPageEnums)+3+optional {
 		return fmt.Errorf("expected a complete v3 proxy page settings snapshot")
 	}
 	if value["version"] != float64(3) {
@@ -56,9 +61,22 @@ func validateProxyPageSettings(value map[string]any) error {
 		}
 	}
 	testURL, ok := value["delayTestUrl"].(string)
-	parsed, err := url.Parse(testURL)
-	if !ok || err != nil || len(testURL) > 2048 || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+	if !ok || !validMihomoTestURL(testURL) {
 		return fmt.Errorf("delayTestUrl must be an HTTP(S) URL")
+	}
+	if raw, exists := value["delayTestOverrideEnabled"]; exists {
+		if _, ok := raw.(bool); !ok {
+			return fmt.Errorf("delayTestOverrideEnabled must be a boolean")
+		}
+	}
+	if raw, exists := value["delayTestOverrideUrl"]; exists {
+		u, ok := raw.(string)
+		if !ok || (u != "" && !validMihomoTestURL(u)) {
+			return fmt.Errorf("delayTestOverrideUrl must be an HTTP(S) URL or empty")
+		}
+	}
+	if boolMapValue(value, "delayTestOverrideEnabled", false) && !validMihomoTestURL(stringMapValue(value, "delayTestOverrideUrl")) {
+		return fmt.Errorf("开启全局覆盖前请填写有效的 HTTP(S) 测速 URL")
 	}
 	for _, key := range []string{"groupOrder", "hiddenGroups"} {
 		items, ok := value[key].([]any)
@@ -110,8 +128,8 @@ func (a *App) handleProxyPageSettingsPut(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "bad_request", "proxy page settings too large")
 		return
 	}
-	if err := a.writeSettingsAtomic(map[string]string{proxyPageSettingsKey: string(value)}); err != nil {
-		writeError(w, http.StatusInternalServerError, "settings_error", "failed to save proxy page settings")
+	if err := a.saveProxyPageSettings(r.Context(), settings, false); err != nil {
+		writeError(w, http.StatusConflict, "settings_error", err.Error())
 		return
 	}
 	a.audit(currentUser(r), "settings.proxy_page.update", "settings", "", true, "")
@@ -140,9 +158,8 @@ func (a *App) handleProxyPageSettingsImport(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusBadRequest, "bad_request", "proxy page settings too large")
 		return
 	}
-	_, err := a.DB.Exec(`insert or ignore into settings(key,value,updated_at) values(?,?,CURRENT_TIMESTAMP)`, proxyPageSettingsKey, string(value))
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "settings_error", "failed to import proxy page settings")
+	if err := a.saveProxyPageSettings(r.Context(), settings, true); err != nil {
+		writeError(w, http.StatusConflict, "settings_error", err.Error())
 		return
 	}
 	a.handleProxyPageSettingsGet(w, r)

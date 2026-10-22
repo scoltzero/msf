@@ -128,6 +128,11 @@ func (sm *ServiceManager) Start(ctx context.Context, name string) (ServiceStatus
 	if _, err := os.Stat(spec.Binary); err != nil {
 		return sm.Status(name), fmt.Errorf("%s binary not installed at %s", name, spec.Binary)
 	}
+	if name == "mihomo" || name == "proxy" {
+		if err := sm.app.prepareMihomoRuntimeConfig(); err != nil {
+			return sm.Status(name), fmt.Errorf("prepare Mihomo runtime policy: %w", err)
+		}
+	}
 	if name == "mosdns" {
 		dns53 := setupDNS53Preflight(ctx, collectSetupPortListeners(ctx, []int{53}), true)
 		if dns53.Status == "blocked" {
@@ -438,7 +443,7 @@ func (sm *ServiceManager) spec(name string) (serviceSpec, error) {
 	switch name {
 	case "mihomo", "proxy":
 		bin := sm.app.currentMihomoBinaryPath()
-		cfg := filepath.Join(root, "configs/mihomo/config.yaml")
+		cfg := mihomoRuntimeConfigPath(root)
 		return serviceSpec{
 			DisplayName: "Mihomo",
 			Binary:      bin,

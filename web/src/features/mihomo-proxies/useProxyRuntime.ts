@@ -1,3 +1,4 @@
+import { proxyTestRequestKey } from "./speedtestPlan";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { mergeProxyStore, patchProxyDelayKeys, patchProxySelection, createEmptyProxyStore } from "./proxyStore";
 import {
@@ -31,6 +32,7 @@ export type ProxyRuntimeOptions = {
   autoRefreshMs?: number;
   initialStore?: ProxyStore;
   pageFallback?: ProxyPolicySource;
+  globalOverride?: string;
   systemDefault?: ProxyPolicySource;
   settings?: Pick<ProxyPageSettings, "autoDisconnectOnSwitch">;
 };
@@ -62,7 +64,7 @@ export type ProxyRuntime = Omit<ProxyRuntimeSnapshot, "testingJobs"> & {
 
 type JobControllers = Map<string, AbortController>;
 type PlannedTargetResult = {
-  key: ProxyKey;
+  key: string;
   value?: {
     target: ProxySpeedtestPlan["targets"][number];
     result: Awaited<ReturnType<ProxyApi["delayProxy"]>>;
@@ -106,8 +108,9 @@ export function useProxyRuntime(options: ProxyRuntimeOptions = {}): ProxyRuntime
   const localRevisionRef = useRef(0);
   const settingsRef = useRef(options.settings);
   const pageFallbackRef = useRef(options.pageFallback);
+  const globalOverrideRef = useRef(options.globalOverride);
   const systemDefaultRef = useRef(options.systemDefault);
-  const pendingDelayResultsRef = useRef(new Map<ProxyKey, PendingProxyDelayResult>());
+  const pendingDelayResultsRef = useRef(new Map<string, PendingProxyDelayResult>());
   const delayFlushTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
@@ -117,8 +120,9 @@ export function useProxyRuntime(options: ProxyRuntimeOptions = {}): ProxyRuntime
   useEffect(() => {
     settingsRef.current = options.settings;
     pageFallbackRef.current = options.pageFallback;
+    globalOverrideRef.current = options.globalOverride;
     systemDefaultRef.current = options.systemDefault;
-  }, [options.pageFallback, options.settings, options.systemDefault]);
+  }, [options.pageFallback, options.globalOverride, options.settings, options.systemDefault]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -207,9 +211,12 @@ export function useProxyRuntime(options: ProxyRuntimeOptions = {}): ProxyRuntime
         ...createProxyTestJob(scope, total),
         scopeKey,
         ...(plan ? {
-          physicalKeys: plan.targets.map((target) => target.physicalKey),
+          physicalKeys: Array.from(new Set(plan.targets.map((target) => target.physicalKey))),
           displayKeys: Array.from(new Set(plan.targets.flatMap((target) => target.displayKeys))),
-          targetDisplayKeys: Object.fromEntries(plan.targets.map((target) => [target.physicalKey, [...target.displayKeys]])),
+          targetDisplayKeys: plan.targets.reduce<Record<string, ProxyKey[]>>((keys, target) => {
+            keys[target.physicalKey] = Array.from(new Set([...(keys[target.physicalKey] ?? []), ...target.displayKeys]));
+            return keys;
+          }, {}),
         } : {}),
       };
       const controller = new AbortController();
@@ -230,12 +237,12 @@ export function useProxyRuntime(options: ProxyRuntimeOptions = {}): ProxyRuntime
     [updateJob],
   );
 
-  /** Run one request per unique physical leaf using the scoped controller API. */
+  /** Run one request per physical leaf, URL and timeout using the scoped API. */
   const runPlannedTargets = useCallback(
     async (plan: ProxySpeedtestPlan, signal: AbortSignal, onProgress?: (result: PlannedTargetResult) => void) => {
-      const targets = new Map(plan.targets.map((target) => [target.key, target]));
+      const targets = new Map(plan.targets.map((target) => [proxyTestRequestKey(target), target]));
       return runControlledTests(
-        plan.targets.map((target) => target.key),
+        plan.targets.map(proxyTestRequestKey),
         async (key, requestSignal) => {
           const target = targets.get(key);
           if (!target) throw new Error("测速目标不存在");
@@ -268,7 +275,7 @@ export function useProxyRuntime(options: ProxyRuntimeOptions = {}): ProxyRuntime
   }, []);
 
   const commitDelayResult = useCallback((target: ProxySpeedtestPlan["targets"][number], delay: number, sample?: Parameters<typeof patchProxyDelayKeys>[3]) => {
-    pendingDelayResultsRef.current.set(target.key, { target, delay, sample });
+    pendingDelayResultsRef.current.set(proxyTestRequestKey(target), { target, delay, sample });
     if (delayFlushTimerRef.current !== undefined) return;
     delayFlushTimerRef.current = setTimeout(flushDelayResults, 100);
   }, [flushDelayResults]);
@@ -327,6 +334,7 @@ export function useProxyRuntime(options: ProxyRuntimeOptions = {}): ProxyRuntime
       const plan = planProxyNodeTest(current, key, {
         groupKey: testOptions.groupKey,
         pageFallback: pageFallbackRef.current ?? current.pageTestPolicy,
+        globalOverride: globalOverrideRef.current,
         systemDefault: systemDefaultRef.current,
         temporary: testOptions.temporary,
       });
@@ -336,7 +344,7 @@ export function useProxyRuntime(options: ProxyRuntimeOptions = {}): ProxyRuntime
       let job = updateProxyTestJob(started.job, { status: "running", startedAt: Date.now() });
       updateJob(job);
       const recordResult = (result: PlannedTargetResult) => {
-        const target = result.value?.target ?? plan.targets.find((item) => item.key === result.key);
+        const target = result.value?.target ?? plan.targets.find((item) => proxyTestRequestKey(item) === result.key);
         if (!target) return;
         const delay = result.value?.result.delay ?? 0;
         const success = Boolean(result.value && delay > 0);
@@ -376,6 +384,7 @@ export function useProxyRuntime(options: ProxyRuntimeOptions = {}): ProxyRuntime
       if (!group || group.kind !== "group") throw new Error("代理组不存在");
       const plan = planProxyGroupTests(current, groupKey, {
         pageFallback: pageFallbackRef.current ?? current.pageTestPolicy,
+        globalOverride: globalOverrideRef.current,
         systemDefault: systemDefaultRef.current,
         temporary: testOptions.temporary,
       });
@@ -385,7 +394,7 @@ export function useProxyRuntime(options: ProxyRuntimeOptions = {}): ProxyRuntime
       let job = updateProxyTestJob(started.job, { status: "running", startedAt: Date.now() });
       updateJob(job);
       const recordResult = (result: PlannedTargetResult) => {
-        const target = result.value?.target ?? plan.targets.find((item) => item.key === result.key);
+        const target = result.value?.target ?? plan.targets.find((item) => proxyTestRequestKey(item) === result.key);
         if (!target) return;
         const delay = result.value?.result.delay ?? 0;
         const success = Boolean(result.value && delay > 0);
@@ -433,6 +442,7 @@ export function useProxyRuntime(options: ProxyRuntimeOptions = {}): ProxyRuntime
           pageFallbackRef.current ?? current.pageTestPolicy,
           systemDefaultRef.current,
           testOptions.temporary,
+          globalOverrideRef.current ?? current.globalTestOverride,
         );
         await client.healthcheckProvider(provider.id, policy, started.controller.signal);
         await refresh({ silent: true });
@@ -450,6 +460,7 @@ export function useProxyRuntime(options: ProxyRuntimeOptions = {}): ProxyRuntime
       const current = storeRef.current;
       const plan = planAllProxyTests(current, {
         pageFallback: pageFallbackRef.current ?? current.pageTestPolicy,
+        globalOverride: globalOverrideRef.current,
         systemDefault: systemDefaultRef.current,
         temporary: testOptions.temporary,
       });
@@ -458,7 +469,7 @@ export function useProxyRuntime(options: ProxyRuntimeOptions = {}): ProxyRuntime
       let job = updateProxyTestJob(started.job, { status: "running", startedAt: Date.now() });
       updateJob(job);
       const recordResult = (result: PlannedTargetResult) => {
-        const target = result.value?.target ?? plan.targets.find((item) => item.key === result.key);
+        const target = result.value?.target ?? plan.targets.find((item) => proxyTestRequestKey(item) === result.key);
         if (!target) return;
         const delay = result.value?.result.delay ?? 0;
         const success = Boolean(result.value && delay > 0);

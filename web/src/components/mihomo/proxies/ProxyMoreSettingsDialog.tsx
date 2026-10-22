@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { GlassDialog } from "@/components/liquid-glass/GlassDialog";
 import { GlassField } from "@/components/liquid-glass/GlassField";
@@ -93,6 +93,29 @@ export function ProxyMoreSettingsDialog({
   onClose: () => void;
 }) {
   const closeRef = useRef<HTMLButtonElement | null>(null);
+  const [fallbackUrl, setFallbackUrl] = useState(settings.delayTestUrl);
+  const [overrideUrl, setOverrideUrl] = useState(settings.delayTestOverrideUrl);
+  const [overrideEnabled, setOverrideEnabled] = useState(settings.delayTestOverrideEnabled);
+  const [policyMessage, setPolicyMessage] = useState("");
+
+  useEffect(() => {
+    setFallbackUrl(settings.delayTestUrl);
+    setOverrideUrl(settings.delayTestOverrideUrl);
+    setOverrideEnabled(settings.delayTestOverrideEnabled);
+  }, [open, settings.delayTestUrl, settings.delayTestOverrideUrl, settings.delayTestOverrideEnabled]);
+
+  const applyTestPolicy = () => {
+    const valid = (value: string) => {
+      try { const url = new URL(value); return ["http:", "https:"].includes(url.protocol) && Boolean(url.hostname) && !url.username && !url.password; }
+      catch { return false; }
+    };
+    if (!valid(fallbackUrl.trim()) || (overrideUrl.trim() && !valid(overrideUrl.trim())) || (overrideEnabled && !valid(overrideUrl.trim()))) {
+      setPolicyMessage("请填写有效的 HTTP(S) 测速网址");
+      return;
+    }
+    onChange({ ...settings, delayTestUrl: fallbackUrl.trim(), delayTestOverrideUrl: overrideUrl.trim(), delayTestOverrideEnabled: overrideEnabled });
+    setPolicyMessage("已提交测速设置；保存或生效失败时页面会提示并恢复");
+  };
 
   useEffect(() => {
     if (!open) return undefined;
@@ -122,7 +145,7 @@ export function ProxyMoreSettingsDialog({
               代理页面更多设置
             </h2>
             <p className="mt-1 text-xs leading-5 text-muted-foreground">
-              外观与测速兜底。Provider 或策略组自己的配置始终优先。
+              外观与测速设置。策略组单独设置优先，其次是全局覆盖、Provider 配置和兜底。
             </p>
           </div>
           <button
@@ -235,15 +258,15 @@ export function ProxyMoreSettingsDialog({
           </section>
 
           <section className="space-y-2">
-            <h3 className="text-xs font-semibold tracking-wide text-foreground/80">测速兜底</h3>
+            <h3 className="text-xs font-semibold tracking-wide text-foreground/80">测速设置</h3>
             <div className="grid gap-3 rounded-2xl bg-background/35 px-3 py-3 sm:grid-cols-[minmax(0,1fr)_10rem]">
               <label className="min-w-0 text-xs text-muted-foreground">
                 默认测速 URL（仅兜底）
                 <GlassField
                   type="url"
-                  value={settings.delayTestUrl}
+                  value={fallbackUrl}
                   aria-label="默认测速 URL"
-                  onChange={(event) => patch("delayTestUrl", event.target.value)}
+                  onChange={(event) => setFallbackUrl(event.target.value)}
                   className="mt-1 h-9 w-full"
                 />
               </label>
@@ -259,8 +282,18 @@ export function ProxyMoreSettingsDialog({
               </label>
             </div>
             <p className="px-1 text-[11px] leading-5 text-muted-foreground">
-              Provider 或策略组配置了测速 URL/超时后，会覆盖这里的页面兜底值；低/高延迟颜色阈值由内部语义保持，不在此处重复配置。
+              仅在没有可用配置时使用兜底网址。测速失败会直接报告，不会自动换网址重试。
             </p>
+            <SettingRow label="全局覆盖测速 URL" description="作用于手动测速和后台健康检查；策略组单独设置仍优先。关闭后恢复原配置。">
+              <Switch checked={overrideEnabled} onChange={setOverrideEnabled} label="全局覆盖测速 URL" />
+            </SettingRow>
+            <label className="block text-xs text-muted-foreground">
+              全局覆盖网址
+              <GlassField type="url" value={overrideUrl} aria-label="全局覆盖网址" placeholder="https://example.com/generate_204" onChange={(event) => setOverrideUrl(event.target.value)} className="mt-1 h-9 w-full" />
+            </label>
+            <p className="text-xs leading-5 text-muted-foreground">应用后，运行中的 Mihomo 会在需要时重启；原配置中的网址、健康检查开关和周期都会保留。</p>
+            <GlassButton type="button" onClick={applyTestPolicy} className="h-9 px-4 text-xs">应用测速设置</GlassButton>
+            {policyMessage ? <p role="status" className="text-xs leading-5 text-foreground">{policyMessage}</p> : null}
           </section>
 
           <footer className="flex justify-end border-t border-border/35 pt-4">

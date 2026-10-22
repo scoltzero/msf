@@ -7,8 +7,9 @@ import { AppShell } from "@/components/AppShell";
 import { GlassButton } from "@/components/liquid-glass/GlassButton";
 import { useToaster, ToastStack } from "@/components/Toaster";
 import { api, apiData, formatBytes } from "@/lib/api";
+import { planProxyNodeTest } from "@/features/mihomo-proxies/speedtestPlan";
 import { useProxyRuntime } from "@/features/mihomo-proxies/useProxyRuntime";
-import { selectGroupNodes, selectVisibleGroups, searchProxyStore } from "@/features/mihomo-proxies/selectors";
+import { proxyDelayForTestURL, selectGroupNodes, selectVisibleGroups, searchProxyStore } from "@/features/mihomo-proxies/selectors";
 import { parseProxyKey } from "@/features/mihomo-proxies/normalize";
 import { mergeStableOrder } from "@/features/mihomo-proxies/ordering";
 import { compileSafeSearch } from "@/features/mihomo-proxies/search";
@@ -46,8 +47,12 @@ function useProxyScenePerformanceProfile() {
   }, []);
 }
 
-function nodeView(entity: ProxyEntity, finalEntity?: ProxyEntity): ProxyNodeView { return { key: entity.key, name: entity.name, type: entity.type, kind: entity.kind, delay: finalEntity?.delay ?? entity.delay, alive: finalEntity?.alive ?? entity.alive, hidden: entity.hidden, icon: entity.icon, providerName: entity.providerName }; }
-function providerView(store: ProxyStore, provider: ProxyProvider, keys: Set<ProxyKey>): ProxyProviderView { const nodes = provider.proxyKeys.map((key) => store.entities[key]).filter((entity): entity is ProxyEntity => Boolean(entity && keys.has(entity.key))).map((entity) => nodeView(entity)); const subscription = provider.subscription; const used = subscription?.used ?? provider.used ?? 0; const quota = subscription?.total ?? provider.quota ?? 0; return { id: provider.id, name: provider.name, vehicleType: provider.vehicleType, nodes, alive: provider.alive, total: provider.total ?? nodes.length, used: used ? formatBytes(used) : "-", quota: quota ? formatBytes(quota) : "-", percent: provider.percent ?? (quota ? (used / quota) * 100 : 0), updated: provider.updatedAt || "未更新", expire: subscription?.expire }; }
+function nodeView(entity: ProxyEntity, finalEntity?: ProxyEntity, expectedUrl?: string): ProxyNodeView {
+  const measured = finalEntity ?? entity;
+  const view = proxyDelayForTestURL(measured, expectedUrl);
+  return { key: entity.key, name: entity.name, type: entity.type, kind: entity.kind, delay: view.delay, alive: view.stale ? true : view.sample?.url ? (view.sample.success ?? view.sample.delay > 0) : measured.alive, hidden: entity.hidden, icon: entity.icon, providerName: entity.providerName, testUrl: view.sample?.url, staleDelay: view.stale };
+}
+function providerView(store: ProxyStore, provider: ProxyProvider, keys: Set<ProxyKey>, expectedUrl?: string): ProxyProviderView { const nodes = provider.proxyKeys.map((key) => store.entities[key]).filter((entity): entity is ProxyEntity => Boolean(entity && keys.has(entity.key))).map((entity) => nodeView(entity, undefined, expectedUrl)); const subscription = provider.subscription; const used = subscription?.used ?? provider.used ?? 0; const quota = subscription?.total ?? provider.quota ?? 0; return { id: provider.id, name: provider.name, vehicleType: provider.vehicleType, nodes, alive: provider.alive, total: provider.total ?? nodes.length, used: used ? formatBytes(used) : "-", quota: quota ? formatBytes(quota) : "-", percent: provider.percent ?? (quota ? (used / quota) * 100 : 0), updated: provider.updatedAt || "未更新", expire: subscription?.expire }; }
 function asRecord(value: unknown): Record<string, unknown> { return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
 function validationMessage(payload: unknown) { const row = asRecord(apiData(payload, payload)); if (row.success === false || row.valid === false) throw new Error(String(row.message || row.error || "配置校验失败，未写入")); return String(row.message || "配置校验通过，可保存"); }
 
@@ -57,7 +62,7 @@ export default function MihomoProxiesPage() {
   const { settings, setSettings, resetSettings, canEditSettings, saveError } = useProxySettings();
   const [search, setSearch] = useState(""); const [searchMode, setSearchMode] = useState<ProxySearchMode>("groups"); const [regex, setRegex] = useState(false); const deferredSearch = useDeferredValue(search); const [typeFilter, setTypeFilter] = useState("all"); const [autoRefresh, setAutoRefresh] = useState(true); const [reorderEnabled, setReorderEnabled] = useState(false); const [settingsOpen, setSettingsOpen] = useState(false); const [chainGroup, setChainGroup] = useState<ProxyGroupView | null>(null); const [editor, setEditor] = useState<"provider" | "group" | "manual" | null>(null); const [groupManagerOpen, setGroupManagerOpen] = useState(false); const [providerManagerOpen, setProviderManagerOpen] = useState(false);
   const [providerDraft, setProviderDraft] = useState<ProxyProviderDraft>(); const [groupDraft, setGroupDraft] = useState<ProxyGroupDraftView>(); const [groupConfigLoading, setGroupConfigLoading] = useState(false); const [manualDraft, setManualDraft] = useState<ProxyManualNodeDraft>(); const [editorKey, setEditorKey] = useState(""); const [editorBusy, setEditorBusy] = useState<string | null>(null); const [testingTarget, setTestingTarget] = useState<string | null>(null); const [updatingProvider, setUpdatingProvider] = useState<string | null>(null);
-  const runtime = useProxyRuntime({ enabled: true, autoRefreshMs: autoRefresh ? 30_000 : 0, pageFallback: { url: settings.delayTestUrl, timeoutMs: settings.delayTimeoutMs }, settings: { autoDisconnectOnSwitch: settings.autoDisconnectOnSwitch } }); const { store, loading, refreshing, error, testingJobs } = runtime; const resolveChain = runtime.resolveChain;
+  const runtime = useProxyRuntime({ enabled: true, autoRefreshMs: autoRefresh ? 30_000 : 0, pageFallback: { url: settings.delayTestUrl, timeoutMs: settings.delayTimeoutMs }, globalOverride: settings.delayTestOverrideEnabled ? settings.delayTestOverrideUrl : "", settings: { autoDisconnectOnSwitch: settings.autoDisconnectOnSwitch } }); const { store, loading, refreshing, error, testingJobs } = runtime; const resolveChain = runtime.resolveChain;
   usePageReady(!loading);
   const { groupTraffic } = useProxyGroupTraffic({ enabled: !loading, intervalMs: 2_000 });
   useEffect(() => { if (error) showToast(error); }, [error, showToast]);
@@ -77,7 +82,8 @@ export default function MihomoProxiesPage() {
         const nodes = members.map((node) => {
           const nodeChain = node.kind === "group" ? resolveChain(node.key) : undefined;
           const nodeFinal = nodeChain?.finalKey ? store.entities[nodeChain.finalKey] : undefined;
-          return nodeView(node, nodeFinal);
+          const policy = planProxyNodeTest(store, node.key, { groupKey, pageFallback: { url: settings.delayTestUrl, timeoutMs: settings.delayTimeoutMs }, globalOverride: settings.delayTestOverrideEnabled ? settings.delayTestOverrideUrl : "" }).targets[0]?.policy;
+          return nodeView(node, nodeFinal, policy?.url);
         });
         const chain = resolveChain(groupKey);
         const finalNode = chain.finalKey ? store.entities[chain.finalKey] : undefined;
@@ -108,7 +114,7 @@ export default function MihomoProxiesPage() {
     const trafficSpeed = groupTraffic[group.name]?.total ?? 0;
     return trafficSpeed === group.trafficSpeed ? group : { ...group, trafficSpeed };
   }), [baseGroups, groupTraffic]);
-  const providers = useMemo(() => { const matcher = compileSafeSearch(deferredSearch, { regex }); const all = Object.values(store.providers); return all.map((provider) => { const keys = new Set(provider.proxyKeys.filter((key) => { const entity = store.entities[key]; return entity && (settings.showHiddenProxies || !entity.hidden) && matcher.valid && (!deferredSearch || matcher.test([entity.name, entity.type, entity.providerName].filter(Boolean).join(" "))); })); return providerView(store, provider, keys); }).filter((provider) => provider.nodes.length > 0 || !deferredSearch); }, [deferredSearch, regex, settings.showHiddenProxies, store]);
+  const providers = useMemo(() => { const matcher = compileSafeSearch(deferredSearch, { regex }); const all = Object.values(store.providers); return all.map((provider) => { const keys = new Set(provider.proxyKeys.filter((key) => { const entity = store.entities[key]; return entity && (settings.showHiddenProxies || !entity.hidden) && matcher.valid && (!deferredSearch || matcher.test([entity.name, entity.type, entity.providerName].filter(Boolean).join(" "))); })); return providerView(store, provider, keys, settings.delayTestOverrideEnabled ? settings.delayTestOverrideUrl : provider.testPolicy?.url || settings.delayTestUrl); }).filter((provider) => provider.nodes.length > 0 || !deferredSearch); }, [deferredSearch, regex, settings, store]);
   const typeOptions = useMemo(() => ["all", ...Array.from(new Set(groups.map((group) => group.type).filter(Boolean)))], [groups]);
   const visibleGroups = useMemo(() => typeFilter === "all" ? groups : groups.filter((group) => group.type === typeFilter), [groups, typeFilter]);
   const disclosure = useProxyDisclosure({ groupKeys: visibleGroups.map((group) => group.key), providerKeys: providers.map((provider) => provider.id) });
@@ -153,7 +159,9 @@ export default function MihomoProxiesPage() {
     void api("/api/v1/mihomo/proxy-groups-config").then((payload) => {
       const latest = proxyGroupRows(payload).find((row) => String(row.name || "") === group.name);
       if (!latest) throw new Error(`静态配置中未找到策略组 ${group.name}`);
-      setGroupDraft(proxyGroupDraft(latest));
+      const draft = proxyGroupDraft(latest);
+      if (!status.canEditGroups && !latest["x-msf-test-url-mode"]) draft.testUrlMode = store.entities[group.key as ProxyKey]?.testPolicy?.inherit ? "inherit" : draft.testUrlMode;
+      setGroupDraft(draft);
     }).catch((cause) => {
       showToast(cause instanceof Error ? cause.message : "读取代理组配置失败");
       setEditor(null);
@@ -174,6 +182,7 @@ export default function MihomoProxiesPage() {
   };
   const validateDraft = async (scope: string, draft: unknown) => {
     const row = asRecord(draft);
+    if (scope === "proxy-groups" && !status.canEditGroups) { buildProxyGroupRow(row as unknown as ProxyGroupDraftView); return "测速网址校验通过；分组结构保持不变"; }
     const candidate = scope === "manual-proxies" ? { content: row.mode === "yaml" ? row.yaml : row.links } : scope === "proxy-groups" ? await groupMutationPayload(draft) : draft;
     const payload = await api("/api/v1/mihomo/proxy-config/validate", { method: "POST", body: JSON.stringify({ scope, draft: candidate }) });
     return validationMessage(payload);
@@ -194,7 +203,13 @@ export default function MihomoProxiesPage() {
         body = { ...advanced, name, type: row.type, url: row.url, path: row.path, interval: row.interval, "health-check": { ...asRecord(advanced["health-check"]), enable: Boolean(row.healthCheckEnable), url: row.healthCheckUrl, interval: row.healthCheckInterval, lazy: Boolean(row.healthCheckLazy) } };
       }
       if (scope === "group") {
-        body = await groupMutationPayload(draft);
+        if (status.canEditGroups) body = await groupMutationPayload(draft);
+        else {
+          const row = asRecord(draft);
+          buildProxyGroupRow(row as unknown as ProxyGroupDraftView);
+          path = `/api/v1/mihomo/proxy-groups/${encodeURIComponent(parseProxyKey(editorKey as ProxyKey).name)}/test-policy`;
+          body = { mode: row.testUrlMode || "inherit", url: row.url };
+        }
       }
       if (scope === "manual") {
         const row = asRecord(draft);
@@ -218,7 +233,7 @@ export default function MihomoProxiesPage() {
   const chain = chainGroup ? runtime.resolveChain(chainGroup.key as ProxyKey) : undefined;
   const chainView = chain ? { path: chain.path.map((key) => store.entities[key]?.name || parseProxyKey(key).name), finalKey: chain.finalKey ? store.entities[chain.finalKey]?.name : undefined, cycleDetected: chain.cycleDetected, missing: chain.missingKey ? [parseProxyKey(chain.missingKey).name] : undefined } : undefined;
   const settingsView: ProxySettingsView = settings;
-  const groupManagerItems: ProxyCollectionItem[] = groups.map((group) => ({ id: group.key, name: group.name, subtitle: `${group.type} · ${group.nodes.length} 个节点`, readOnly: !status.canEditGroups, generated: !status.canEditGroups, readOnlyReason: "当前为默认/生成配置，策略组由 MSF 管理；切换到自定义配置后才能修改。" }));
+  const groupManagerItems: ProxyCollectionItem[] = groups.map((group) => ({ id: group.key, name: group.name, subtitle: `${group.type} · ${group.nodes.length} 个节点`, readOnly: !status.canEditGroups, generated: !status.canEditGroups, canEditTestPolicy: canEditSettings && !status.canEditGroups, readOnlyReason: "默认分组结构由 MSF 管理，只可调整测速网址与继承模式。" }));
   const providerManagerItems: ProxyCollectionItem[] = providers.map((provider) => ({ id: provider.id, name: provider.name, subtitle: `${provider.vehicleType || "Provider"} · ${provider.total ?? provider.nodes.length} 个节点`, readOnly: !status.canEditProviders, readOnlyReason: "当前配置不允许修改订阅供应商。" }));
   const testingAll = Boolean(activeJob?.scope === "all" && (activeJob.status === "queued" || activeJob.status === "running"));
 
@@ -269,7 +284,7 @@ export default function MihomoProxiesPage() {
           <>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-sm font-medium text-foreground">策略组</p>
-              <GlassButton type="button" variant="tool" className="h-9 px-3 text-xs" onClick={openGroupManager} title={status.canEditGroups ? "新增、编辑或删除策略组" : "当前为生成配置，可查看策略组但不能修改"}>
+              <GlassButton type="button" variant="tool" className="h-9 px-3 text-xs" onClick={openGroupManager} title={status.canEditGroups ? "新增、编辑或删除策略组" : "当前为生成配置，可修改测速网址；分组结构保持只读"}>
                 <Settings2 className="h-4 w-4" />管理策略组
               </GlassButton>
             </div>
@@ -341,7 +356,7 @@ export default function MihomoProxiesPage() {
       <ProxyCollectionManagerDialog open={groupManagerOpen} kind="group" items={groupManagerItems} canCreate={status.canEditGroups} onClose={() => setGroupManagerOpen(false)} onCreate={createGroup} onEdit={(item) => { const group = groups.find((candidate) => candidate.key === item.id); if (group) chooseGroupForEditing(group); }} onDelete={deleteGroup} />
       <ProxyCollectionManagerDialog open={providerManagerOpen} kind="provider" items={providerManagerItems} canCreate={status.canEditProviders} onClose={() => setProviderManagerOpen(false)} onCreate={createProvider} onEdit={(item) => { const provider = providers.find((candidate) => candidate.id === item.id); if (provider) { setProviderManagerOpen(false); openProvider(provider); } }} onDelete={deleteProvider} />
       <ProxyProviderEditorDialog open={editor === "provider"} value={providerDraft} onClose={() => setEditor(null)} onValidate={(draft) => validateDraft("proxy-providers", draft)} onSave={(draft) => saveEditor("provider", draft)} />
-      <ProxyGroupEditorDialog open={editor === "group"} readOnly={!status.canEditGroups} loading={groupConfigLoading} value={groupDraft} onClose={() => setEditor(null)} onValidate={(draft) => validateDraft("proxy-groups", draft)} onSave={(draft) => saveEditor("group", draft)} />
+      <ProxyGroupEditorDialog open={editor === "group"} readOnly={!canEditSettings} testPolicyOnly={!status.canEditGroups} loading={groupConfigLoading} value={groupDraft} onClose={() => setEditor(null)} onValidate={(draft) => validateDraft("proxy-groups", draft)} onSave={(draft) => saveEditor("group", draft)} />
       <ProxyManualNodeEditorDialog open={editor === "manual"} value={manualDraft} onClose={() => setEditor(null)} onValidate={(draft) => validateDraft("manual-proxies", draft)} onSave={(draft) => saveEditor("manual", draft)} />
       <ToastStack toasts={toasts} />
     </AppShell>

@@ -52,6 +52,7 @@ export type ProxySpeedtestPlan = {
 export type ProxySpeedtestPlanOptions = {
   temporary?: ProxyPolicySource;
   pageFallback?: ProxyPolicySource;
+  globalOverride?: string;
   systemDefault?: ProxyPolicySource;
   /** Parent group for a node rendered inside a group card. */
   groupKey?: ProxyKey;
@@ -65,7 +66,7 @@ type ExitResolution = {
 };
 
 type PlanBuilder = {
-  targets: Map<ProxyKey, ProxySpeedtestTarget>;
+  targets: Map<string, ProxySpeedtestTarget>;
   skipped: Map<string, ProxySpeedtestSkippedTarget>;
   cycles: ProxyKey[][];
   cycleKeys: Set<string>;
@@ -143,10 +144,15 @@ function addSkipped(builder: PlanBuilder, entry: ProxySpeedtestSkippedTarget): v
   if (entry.path && (!existing.path || existing.path.length < entry.path.length)) existing.path = [...entry.path];
 }
 
+export function proxyTestRequestKey(target: ProxySpeedtestTarget): string {
+  return `${target.physicalKey}\u0000${target.policy.url}\u0000${target.policy.timeoutMs}`;
+}
+
 function addTarget(builder: PlanBuilder, target: ProxySpeedtestTarget): void {
-  const existing = builder.targets.get(target.physicalKey);
+  const requestKey = proxyTestRequestKey(target);
+  const existing = builder.targets.get(requestKey);
   if (!existing) {
-    builder.targets.set(target.physicalKey, {
+    builder.targets.set(requestKey, {
       ...target,
       key: target.physicalKey,
       displayKeys: uniqueKeys(target.displayKeys),
@@ -194,7 +200,7 @@ export function resolveCurrentPhysicalExit(store: ProxyStore, rootKey: ProxyKey,
 function nearestConfiguredGroup(store: ProxyStore, path: readonly ProxyKey[]): ProxyEntity | undefined {
   for (let index = path.length - 1; index >= 0; index -= 1) {
     const entity = store.entities[path[index]];
-    if (entity?.kind === "group" && entity.testPolicy) return entity;
+    if (entity?.kind === "group" && entity.testPolicy && !entity.testPolicy.inherit) return entity;
   }
   return undefined;
 }
@@ -214,6 +220,7 @@ function policyForPath(
     options.pageFallback ?? store.pageTestPolicy,
     options.systemDefault,
     options.temporary,
+    options.globalOverride ?? store.globalTestOverride,
   );
   return { policy, group, provider };
 }
@@ -373,9 +380,8 @@ export function planProxyGroupTests(store: ProxyStore, groupKey: ProxyKey, optio
 }
 
 /**
- * Plan every unique physical node exposed by provider and custom sources.
- * Group direct members are visited first so an applicable group policy wins;
- * provider/custom roots then fill in every physical node not currently selected.
+ * Plan unique physical-node/URL/timeout requests across all scopes. A shared
+ * node may need several requests when its groups use different test URLs.
  */
 export function planAllProxyTests(store: ProxyStore, options: ProxySpeedtestPlanOptions = {}): ProxySpeedtestPlan {
   const builder = createBuilder();

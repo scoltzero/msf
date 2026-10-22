@@ -211,12 +211,13 @@ function normalizePolicy(value: unknown, source: ProxyTestPolicy["source"], sour
   const row = asRecord(value);
   if (!row) return undefined;
   const url = text(row.url, text(row["health-check-url"], "")).trim();
-  if (!url) return undefined;
+  if (!url || (source !== "page-fallback" && row.source === "page-fallback")) return undefined;
   return {
     url,
-    timeoutMs: Math.max(1, numberValue(row.timeoutMs, numberValue(row.timeout, DEFAULT_PROXY_TIMEOUT_MS))),
-    source,
+    timeoutMs: Math.max(1, numberValue(row.timeoutMs, numberValue(row.timeout_ms, numberValue(row.timeout, DEFAULT_PROXY_TIMEOUT_MS)))),
+    source: row.source === "global-override" ? "global-override" : source,
     sourceName,
+    inherit: row.inherit === true,
     persisted: source !== "temporary" && source !== "page-fallback",
   };
 }
@@ -554,6 +555,7 @@ export function normalizeProxySnapshot(payload: unknown, previous?: ProxyStore, 
     stats,
     authority,
     pageTestPolicy: pagePolicy,
+    globalTestOverride: text(asRecord(data.test_policy ?? data.testPolicy)?.global_override_url, ""),
     groupPolicies,
   };
 }

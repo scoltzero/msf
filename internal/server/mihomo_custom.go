@@ -568,7 +568,7 @@ func normalizeMihomoUserConfigName(name string) (string, error) {
 		return "", fmt.Errorf("config name must end with .yaml or .yml")
 	}
 	switch strings.ToLower(name) {
-	case "config.yaml", "phone_config.yaml", "msf_generated.backup.yaml", "config.yaml.backup":
+	case "config.yaml", "phone_config.yaml", "msf_runtime.yaml", "msf_generated.backup.yaml", "config.yaml.backup":
 		return "", fmt.Errorf("%s is a reserved config name", name)
 	}
 	return name, nil
@@ -595,7 +595,8 @@ func (a *App) mihomoConfigModePayload() map[string]any {
 		"active_path":             activePath,
 		"active_name":             activeName,
 		"is_default":              !hasActive && mode == "generated",
-		"runtime_path":            mihomoActiveConfigRelPath,
+		"runtime_path":            mihomoRuntimeConfigRelPath,
+		"source_path":             mihomoActiveConfigRelPath,
 		"can_edit_groups":         mode == "custom",
 		"can_edit_rules":          mode == "custom",
 		"can_edit_rule_providers": mode == "custom",

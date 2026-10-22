@@ -19,6 +19,7 @@ export type ResolveProxyTestPolicyInput = {
   group?: ProxyPolicySource;
   provider?: ProxyPolicySource;
   pageFallback?: ProxyPolicySource;
+  globalOverride?: string;
   systemDefault?: ProxyPolicySource;
   sourceName?: string;
 };
@@ -42,13 +43,13 @@ function toPolicy(value: ProxyPolicySource, source: ProxyTestPolicy["source"], s
   const row = valueRecord(value);
   if (!row) return undefined;
   const url = typeof row.url === "string" ? row.url.trim() : "";
-  if (!url) return undefined;
+  if (!url || row.inherit === true) return undefined;
   const timeoutRaw = row.timeoutMs ?? row.timeout;
   const timeoutMs = typeof timeoutRaw === "number" && Number.isFinite(timeoutRaw) ? Math.max(1, timeoutRaw) : DEFAULT_PROXY_TIMEOUT_MS;
   return { url, timeoutMs, source, sourceName: typeof row.sourceName === "string" ? row.sourceName : sourceName, persisted: source !== "temporary" && source !== "page-fallback" };
 }
 
-/** Resolve the four-layer policy in one place. */
+/** Resolve explicit group, global overlay, provider and fallback in one place. */
 export function resolveProxyTestPolicy(input: ResolveProxyTestPolicyInput): ProxyTestPolicy;
 export function resolveProxyTestPolicy(
   temporary?: ProxyPolicySource,
@@ -83,9 +84,11 @@ export function resolveProxyTestPolicy(
   const page = toPolicy(input.pageFallback, "page-fallback", sourceName);
   const system = toPolicy(input.systemDefault, "system-default", sourceName);
   if (temporary) return temporary;
-  if (scope === "provider-healthcheck" && provider) return provider;
-  if (scope === "provider" || scope === "provider-healthcheck") return provider ?? page ?? system ?? fallbackPolicy();
-  return group ?? provider ?? page ?? system ?? fallbackPolicy();
+  const providerScope = scope === "provider" || scope === "provider-healthcheck";
+  if (!providerScope && group) return group;
+  const base = provider ?? page ?? system ?? fallbackPolicy();
+  const override = input.globalOverride?.trim();
+  return override ? { ...base, url: override, source: "global-override", persisted: true } : base;
 }
 
 function fallbackPolicy(): ProxyTestPolicy {
@@ -99,9 +102,11 @@ export function resolveNodeTestPolicy(
   pageFallback?: ProxyPolicySource,
   systemDefault?: ProxyPolicySource,
   temporary?: ProxyPolicySource,
+  globalOverride?: string,
 ): ProxyTestPolicy {
   return resolveProxyTestPolicy({
     scope: "node",
+    globalOverride,
     temporary,
     group: group?.testPolicy,
     provider: provider?.testPolicy ?? node?.testPolicy,
@@ -117,13 +122,17 @@ export function resolveGroupTestPolicy(
   pageFallback?: ProxyPolicySource,
   systemDefault?: ProxyPolicySource,
   temporary?: ProxyPolicySource,
+  globalOverride?: string,
 ): ProxyTestPolicy {
-  const firstProvider = providerPolicies.find((provider) => provider.testPolicy);
+  const candidates = providerPolicies.map((provider) => provider.testPolicy);
+  const common = candidates[0];
+  const sharedPolicy = common && candidates.every((policy) => policy?.url === common.url && policy?.timeoutMs === common.timeoutMs) ? common : undefined;
   return resolveProxyTestPolicy({
     scope: "group",
     temporary,
     group: group?.testPolicy,
-    provider: firstProvider?.testPolicy,
+    provider: sharedPolicy,
+    globalOverride,
     pageFallback,
     systemDefault,
     sourceName: group?.name,
@@ -153,6 +162,7 @@ export function bucketProxyTests(
   pageFallback?: ProxyPolicySource,
   systemDefault?: ProxyPolicySource,
   temporary?: ProxyPolicySource,
+  globalOverride?: string,
 ): ProxyTestBucket[] {
   const group = store.entities[groupKey as ProxyKey];
   if (!group || group.kind !== "group") return [];
@@ -161,7 +171,7 @@ export function bucketProxyTests(
     const node = store.entities[key];
     if (!node) continue;
     const provider = node.providerName ? store.providers[node.providerName] ?? Object.values(store.providers).find((item) => item.name === node.providerName) : undefined;
-    const policy = resolveNodeTestPolicy(node, group, provider, pageFallback ?? store.pageTestPolicy, systemDefault, temporary);
+    const policy = resolveNodeTestPolicy(node, group, provider, pageFallback ?? store.pageTestPolicy, systemDefault, temporary, globalOverride ?? store.globalTestOverride);
     // Bucket by the effective request, not by where the URL came from. A
     // mixed group with the same URL can still use one native group-delay call.
     const bucketKey = `${policy.url}\u0000${policy.timeoutMs}`;

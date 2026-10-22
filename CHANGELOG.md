@@ -1,5 +1,19 @@
 # 更新日志
 
+## 未发布 / Unreleased
+
+### 中文
+
+- 修复 [#22](https://github.com/scoltzero/msf/issues/22)：启动及配置重新生成时保留 Provider 的独立测速 URL、健康检查开关、周期、过滤器及自定义 Provider；向导只调整明确变更的订阅项。
+- 代理页面更多设置新增可关闭的全局测速 URL 覆盖，策略组支持继承或单独设置，默认分组仅放开测速字段；优先级为单组设置 → 全局覆盖 → Provider → 页面兜底。覆盖只写入运行副本，关闭后恢复原配置，应用失败自动回滚。
+- 不同测速网址的结果分别保留并标注来源，避免混用延迟。完整规则及内核自动测速边界见[说明文档](docs/reference/mihomo-test-url-policy.md)。
+
+### English
+
+- Fix [#22](https://github.com/scoltzero/msf/issues/22): preserve per-provider test URLs, health-check switches, intervals, filters and custom providers across startup and config regeneration. Setup edits update only explicitly changed subscriptions.
+- Add a reversible global test URL override and explicit group inheritance, including URL-only editing for generated groups. Precedence: group override → global override → provider → page fallback. Runtime overlays leave editable configs intact and roll back on apply failure.
+- Keep test results separate by URL and show their origin. See the [policy documentation](docs/reference/mihomo-test-url-policy.md) for automatic health-check scope and compatibility details.
+
 ## v0.6.7.1 - 2026-10-11
 
 ### 中文

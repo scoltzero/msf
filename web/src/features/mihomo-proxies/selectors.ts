@@ -36,6 +36,14 @@ export function selectProxyByKey(store: ProxyStore, key: ProxyKey | undefined): 
   return key ? store.entities[key] : undefined;
 }
 
+/** A delay measured at another URL must not look like a sample of this policy. */
+export function proxyDelayForTestURL(entity: ProxyEntity, expectedUrl?: string) {
+  const latest = entity.history.at(-1);
+  const matching = expectedUrl ? entity.history.findLast((sample) => sample.url === expectedUrl) : latest;
+  const stale = Boolean(expectedUrl && latest?.url && !matching);
+  return { delay: matching?.delay ?? (stale ? undefined : entity.delay), sample: matching ?? latest, stale };
+}
+
 export function proxyDelay(entity: ProxyEntity | undefined): number {
   if (!entity) return 0;
   if (entity.delay && entity.delay > 0) return entity.delay;

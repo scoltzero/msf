@@ -353,6 +353,7 @@ PUT /api/v1/mihomo/controller/{path...}
 PUT /api/v1/mihomo/manual-proxies
 PUT /api/v1/mihomo/proxies/{name}
 PUT /api/v1/mihomo/proxy-groups-config
+PUT /api/v1/mihomo/proxy-groups/{name}/test-policy
 PUT /api/v1/mihomo/proxy-providers
 PUT /api/v1/mihomo/proxy-providers/{name}
 PUT /api/v1/mihomo/rule-providers

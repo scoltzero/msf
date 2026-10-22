@@ -10,6 +10,7 @@ export interface ProxyGroupDraftView {
   icon: string;
   proxies: string;
   url: string;
+  testUrlMode?: "inherit" | "override";
   interval: number;
   lazy: boolean;
   tolerance: number;
@@ -71,7 +72,7 @@ function smartResourcePayload(payload: unknown): SmartResourcePayload {
   };
 }
 
-export function ProxyGroupEditorDialog({ open, readOnly = false, loading = false, value, onClose, onValidate, onSave }: { open: boolean; readOnly?: boolean; loading?: boolean; value?: Partial<ProxyGroupDraftView> | null; onClose: () => void; onValidate: (draft: ProxyGroupDraftView) => Promise<string | void> | string | void; onSave: (draft: ProxyGroupDraftView) => Promise<void> | void }) {
+export function ProxyGroupEditorDialog({ open, readOnly = false, testPolicyOnly = false, loading = false, value, onClose, onValidate, onSave }: { open: boolean; readOnly?: boolean; testPolicyOnly?: boolean; loading?: boolean; value?: Partial<ProxyGroupDraftView> | null; onClose: () => void; onValidate: (draft: ProxyGroupDraftView) => Promise<string | void> | string | void; onSave: (draft: ProxyGroupDraftView) => Promise<void> | void }) {
   const [draft, setDraft] = useState<ProxyGroupDraftView>(EMPTY);
   const [initial, setInitial] = useState(EMPTY);
   const [busy, setBusy] = useState<"save" | "validate" | null>(null);
@@ -104,7 +105,7 @@ export function ProxyGroupEditorDialog({ open, readOnly = false, loading = false
     return next;
   }, []);
   useEffect(() => {
-    if (!open) return;
+    if (!open || testPolicyOnly) return;
     let active = true;
     let timer: number | undefined;
     const refresh = async () => {
@@ -145,7 +146,7 @@ export function ProxyGroupEditorDialog({ open, readOnly = false, loading = false
       active = false;
       if (timer) window.clearTimeout(timer);
     };
-  }, [draft.preferAsn, draft.type, draft.uselightgbm, open, resourcePollNonce]);
+  }, [draft.preferAsn, draft.type, draft.uselightgbm, open, resourcePollNonce, testPolicyOnly]);
 
   const startSmartResourceDownload = async (key: SmartResourceView["key"]) => {
     if (smartCoreType !== "smart") {
@@ -225,10 +226,11 @@ export function ProxyGroupEditorDialog({ open, readOnly = false, loading = false
       setBusy(null);
     }
   };
-  const disabled = readOnly || loading;
+  const policyDisabled = readOnly || loading;
+  const disabled = policyDisabled || testPolicyOnly;
   const healthChecked = ["url-test", "fallback", "load-balance"].includes(draft.type);
   const isSmart = draft.type === "smart";
-  const resourceBlocked = isSmart && (
+  const resourceBlocked = !testPolicyOnly && isSmart && (
     smartCoreType !== "smart" ||
     (draft.uselightgbm && smartResources.lightgbm?.status !== "ready")
     || (draft.preferAsn && smartResources.asn?.status !== "ready")
@@ -273,13 +275,13 @@ export function ProxyGroupEditorDialog({ open, readOnly = false, loading = false
   return (
     <ProxyEditorShell
       open={open}
-      title={readOnly ? "查看代理组" : "编辑代理组"}
-      description={loading ? "正在读取静态配置…" : readOnly ? "默认配置的代理组由 MSF 管理，此处只读。" : "仅 custom 模式可保存代理组；未知字段继续原样保存。"}
-      dirty={!disabled && dirty}
+      title={testPolicyOnly ? "代理组测速设置" : readOnly ? "查看代理组" : "编辑代理组"}
+      description={loading ? "正在读取静态配置…" : testPolicyOnly ? "默认分组仅可修改测速网址与继承模式；类型、成员和其他字段保持只读。" : readOnly ? "默认配置的代理组由 MSF 管理，此处只读。" : "仅 custom 模式可保存代理组；未知字段继续原样保存。"}
+      dirty={!policyDisabled && dirty}
       saving={busy === "save"}
       validating={busy === "validate"}
       validationMessage={message}
-      disabled={disabled}
+      disabled={policyDisabled}
       actionDisabled={resourceBlocked}
       onClose={onClose}
       onValidate={() => void validate()}
@@ -287,6 +289,8 @@ export function ProxyGroupEditorDialog({ open, readOnly = false, loading = false
     >
       <div className="space-y-5">
         <section className="grid gap-3 sm:grid-cols-2">
+          {testPolicyOnly ? <p className="text-sm font-medium sm:col-span-2">策略组：{draft.name}</p> : null}
+          {!testPolicyOnly ? <>
           <label className="text-xs text-muted-foreground">
             名称
             <GlassField disabled={disabled} value={draft.name} onChange={(event) => patch("name", event.target.value)} className="mt-1 h-9 w-full" />
@@ -315,12 +319,22 @@ export function ProxyGroupEditorDialog({ open, readOnly = false, loading = false
             静态节点/策略组（每行一个）
             <textarea disabled={disabled} value={draft.proxies} onChange={(event) => patch("proxies", event.target.value)} placeholder="订阅节点请通过 use / include-all / filter 引入，不要填写运行时展开的节点名" className="mt-1 min-h-28 w-full rounded-2xl bg-background/50 px-3 py-2 font-mono text-xs outline-none focus:ring-2 focus:ring-primary/30" />
           </label>
-          {healthChecked ? (
+          </> : null}
+          <label className="text-xs text-muted-foreground">
+            测速网址来源
+            <select disabled={policyDisabled} value={draft.testUrlMode ?? (draft.url ? "override" : "inherit")} onChange={(event) => patch("testUrlMode", event.target.value as "inherit" | "override")} className="mt-1 h-9 w-full rounded-xl bg-background/50 px-3 text-foreground" aria-label="测速网址来源">
+              <option value="inherit">继承全局规则</option>
+              <option value="override">此策略组单独设置</option>
+            </select>
+          </label>
+          {(draft.testUrlMode ?? (draft.url ? "override" : "inherit")) === "override" ? (
+            <label className="text-xs text-muted-foreground">
+              策略组测速 URL（优先于全局覆盖）
+              <GlassField disabled={policyDisabled} value={draft.url} onChange={(event) => patch("url", event.target.value)} className="mt-1 h-9 w-full" />
+            </label>
+          ) : <p className="text-xs leading-5 text-muted-foreground">页面测速依次使用全局覆盖、节点所属 Provider、页面兜底；不会改写原配置中的网址。</p>}
+          {healthChecked && !testPolicyOnly ? (
             <>
-              <label className="text-xs text-muted-foreground">
-                测速 URL
-                <GlassField disabled={disabled} value={draft.url} onChange={(event) => patch("url", event.target.value)} className="mt-1 h-9 w-full" />
-              </label>
               <label className="text-xs text-muted-foreground">
                 间隔（秒）
                 <GlassField disabled={disabled} type="number" min={0} value={draft.interval} onChange={(event) => patch("interval", Number(event.target.value) || 0)} className="mt-1 h-9 w-full" />
@@ -331,19 +345,19 @@ export function ProxyGroupEditorDialog({ open, readOnly = false, loading = false
               </label>
             </>
           ) : null}
-          {draft.type === "url-test" ? (
+          {draft.type === "url-test" && !testPolicyOnly ? (
             <label className="text-xs text-muted-foreground">
               容差（ms）
               <GlassField disabled={disabled} type="number" min={0} value={draft.tolerance} onChange={(event) => patch("tolerance", Number(event.target.value) || 0)} className="mt-1 h-9 w-full" />
             </label>
           ) : null}
-          {draft.type === "load-balance" ? (
+          {draft.type === "load-balance" && !testPolicyOnly ? (
             <label className="text-xs text-muted-foreground">
               策略
               <GlassField disabled={disabled} value={draft.strategy} onChange={(event) => patch("strategy", event.target.value)} className="mt-1 h-9 w-full" />
             </label>
           ) : null}
-          {isSmart ? (
+          {isSmart && !testPolicyOnly ? (
             <>
               <label className="text-xs text-muted-foreground">
                 策略优先级
@@ -386,7 +400,7 @@ export function ProxyGroupEditorDialog({ open, readOnly = false, loading = false
             </>
           ) : null}
         </section>
-        {isSmart && draft.collectdata ? (
+        {isSmart && draft.collectdata && !testPolicyOnly ? (
           <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300" role="status" aria-live="polite">
             <p className="font-medium">隐私与磁盘占用提醒</p>
             <p className="mt-1 leading-relaxed">
@@ -394,10 +408,10 @@ export function ProxyGroupEditorDialog({ open, readOnly = false, loading = false
             </p>
           </div>
         ) : null}
-        <label className="block text-xs text-muted-foreground">
+        {!testPolicyOnly ? <label className="block text-xs text-muted-foreground">
           高级配置（JSON）
           <textarea disabled={disabled} value={draft.advanced} onChange={(event) => patch("advanced", event.target.value)} className="mt-1 min-h-36 w-full rounded-2xl bg-background/50 px-3 py-2 font-mono text-xs outline-none focus:ring-2 focus:ring-primary/30" spellCheck={false} />
-        </label>
+        </label> : null}
       </div>
     </ProxyEditorShell>
   );

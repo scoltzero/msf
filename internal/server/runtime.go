@@ -42,6 +42,9 @@ func (a *App) RestoreConfiguredRuntime(ctx context.Context) RuntimeRestoreReport
 		report.Errors = append(report.Errors, "initialized setup config is missing")
 		return report
 	}
+	// Read authoritative provider fields before any network compatibility repair
+	// can regenerate the config from an older setup snapshot.
+	a.applyMihomoProviderFieldsFromEffectiveConfig(&cfg)
 	if err := a.migrateLegacyMosDNSConfig(); err != nil {
 		report.Errors = append(report.Errors, "failed to migrate legacy MosDNS entries: "+err.Error())
 		return report
@@ -197,5 +200,5 @@ func boolSetting(ok bool) string {
 }
 
 func (a *App) ensureSetupProviderArtifacts(cfg SetupConfig) error {
-	return a.syncMihomoProxyProvidersFromSetupConfig(cfg, "system")
+	return a.syncMihomoSetupProviders(cfg, nil, "system")
 }

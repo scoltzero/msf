@@ -15,6 +15,7 @@ export type ProxyCollectionItem = {
   name: string;
   subtitle?: ReactNode;
   readOnly?: boolean;
+  canEditTestPolicy?: boolean;
   /** Generated rows are treated as read-only even when readOnly was omitted. */
   generated?: boolean;
   readOnlyReason?: string;
@@ -195,8 +196,8 @@ export function ProxyCollectionManagerDialog({
                       {locked ? <p className="mt-1 text-[11px] leading-4 text-muted-foreground">{reason}</p> : null}
                     </div>
                     <div className="flex shrink-0 items-center gap-1.5">
-                      <GlassButton type="button" variant="tool" onClick={() => onEdit?.(item)} disabled={locked || !onEdit} title={locked ? reason : `编辑${item.name}`} aria-label={locked ? `${item.name} 为只读项目` : `编辑 ${item.name}`} className="h-8 px-2.5 text-xs">
-                        <Pencil className="h-3.5 w-3.5" />编辑
+                      <GlassButton type="button" variant="tool" onClick={() => onEdit?.(item)} disabled={(locked && !item.canEditTestPolicy) || !onEdit} title={item.canEditTestPolicy ? "设置测速网址（分组结构只读）" : locked ? reason : `编辑${item.name}`} aria-label={locked && !item.canEditTestPolicy ? `${item.name} 为只读项目` : `编辑 ${item.name}`} className="h-8 px-2.5 text-xs">
+                        <Pencil className="h-3.5 w-3.5" />{item.canEditTestPolicy ? "测速设置" : "编辑"}
                       </GlassButton>
                       <GlassButton type="button" variant="danger" onClick={() => requestDelete(item, key)} disabled={locked || !onDelete} title={locked ? reason : `删除${item.name}`} aria-label={locked ? `${item.name} 为只读项目，不能删除` : `删除 ${item.name}`} className="h-8 px-2.5 text-xs">
                         <Trash2 className="h-3.5 w-3.5" />删除

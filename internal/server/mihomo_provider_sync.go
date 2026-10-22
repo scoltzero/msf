@@ -1,8 +1,10 @@
 package server
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -10,6 +12,15 @@ import (
 )
 
 func (a *App) syncMihomoProxyProvidersFromSetupConfig(cfg SetupConfig, username string) error {
+	previous, ok := a.latestSetupConfig()
+	var before *SetupConfig
+	if ok {
+		before = &previous
+	}
+	return a.syncMihomoSetupProviders(cfg, before, username)
+}
+
+func (a *App) syncMihomoSetupProviders(cfg SetupConfig, previous *SetupConfig, username string) error {
 	cfg.defaults()
 	if manual := renderMihomoManualProviderYAML(cfg.MihomoProxies); strings.TrimSpace(manual) != "" {
 		rel := "configs/mihomo/proxy_providers/msf_manual.yaml"
@@ -28,8 +39,62 @@ func (a *App) syncMihomoProxyProvidersFromSetupConfig(cfg SetupConfig, username 
 			return err
 		}
 	}
-	providersYAML := renderProxyProvidersYAML(parseSubscriptionProviders(cfg.SubscriptionURLs), hasMihomoManualProxies(cfg.MihomoProxies))
+	content, _, err := a.mihomoEffectiveConfigContent()
+	if err != nil {
+		return err
+	}
+	providersYAML, err := reconcileMihomoSetupProviders(content, cfg, previous)
+	if err != nil {
+		return err
+	}
 	return a.syncMihomoProxyProvidersYAML(providersYAML, username, false)
+}
+
+// Only explicit setup differences own existing HTTP subscriptions. All other
+// provider fields (including false/zero values and unknown extensions) are user
+// configuration. Startup passes no previous setup and never removes providers.
+func reconcileMihomoSetupProviders(content string, cfg SetupConfig, previous *SetupConfig) (string, error) {
+	var current, defaults map[string]any
+	if err := yaml.Unmarshal([]byte(content), &current); err != nil {
+		return "", err
+	}
+	if err := yaml.Unmarshal([]byte(renderProxyProvidersYAML(parseSubscriptionProviders(cfg.SubscriptionURLs), hasMihomoManualProxies(cfg.MihomoProxies))), &defaults); err != nil {
+		return "", err
+	}
+	providers := normalizeConfigProviders(current["proxy-providers"])
+	desired := normalizeConfigProviders(defaults["proxy-providers"])
+	oldURLs := map[string]string{}
+	if previous != nil {
+		oldURLs = parseSubscriptionProviders(previous.SubscriptionURLs)
+	}
+	for name, definition := range desired {
+		if existing, ok := providers[name]; ok {
+			if previous != nil && name != "msf_manual" && oldURLs[name] != stringMapValue(definition, "url") {
+				// A setup edit must not convert a user-owned file/inline provider.
+				if kind := strings.ToLower(stringMapValue(existing, "type")); kind == "http" || kind == "" {
+					existing["url"] = definition["url"]
+				}
+			}
+			continue
+		}
+		providers[name] = definition
+	}
+	if previous != nil {
+		for name, oldURL := range oldURLs {
+			if _, keep := desired[name]; keep {
+				continue
+			}
+			p := providers[name]
+			if p != nil && strings.EqualFold(stringMapValue(p, "type"), "http") && stringMapValue(p, "url") == oldURL {
+				delete(providers, name)
+			}
+		}
+		if hasMihomoManualProxies(previous.MihomoProxies) && !hasMihomoManualProxies(cfg.MihomoProxies) {
+			delete(providers, "msf_manual")
+		}
+	}
+	b, err := yaml.Marshal(map[string]any{"proxy-providers": providerConfigMap(providers)})
+	return string(b), err
 }
 
 func (a *App) writeMihomoProxyProvidersSection(raw any, username string, syncSetup bool) error {
@@ -51,14 +116,39 @@ func (a *App) syncMihomoProxyProvidersYAML(providersYAML, username string, syncS
 	if err := a.ensureMihomoGeneratedBackup(); err != nil {
 		return err
 	}
-	runtimeContent, err := a.patchMihomoProxyProvidersInFile(mihomoActiveConfigRelPath, providersYAML, username, false)
-	if err != nil {
-		return err
-	}
+	rels := []string{mihomoActiveConfigRelPath}
 	if rel, ok := a.appliedMihomoUserConfigRel(); ok {
-		if _, err := a.patchMihomoProxyProvidersInFile(rel, providersYAML, username, true); err != nil {
+		rels = append(rels, rel)
+	}
+	files := map[string]string{}
+	originals := map[string]string{}
+	runtimeContent := ""
+	for index, rel := range rels {
+		content, err := a.readTextFile(rel)
+		if index > 0 && os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
 			return err
 		}
+		patched, err := mihomoProxyProvidersPatch(content, providersYAML)
+		if err != nil {
+			return fmt.Errorf("prepare provider update in %s: %w", rel, err)
+		}
+		if index == 0 {
+			runtimeContent = patched
+		}
+		if patched != content {
+			files[rel] = patched
+			originals[rel] = content
+		}
+	}
+	// Validate every target before changing either the active or applied source.
+	for rel, original := range originals {
+		a.createConfigHistory("mihomo", rel, original, "auto backup before Mihomo proxy providers sync", firstNonEmpty(username, "system"))
+	}
+	if err := a.replaceGeneratedConfigFiles(files, nil); err != nil {
+		return err
 	}
 	if syncSetup {
 		return a.syncLatestSetupProviderFieldsFromMihomoContent(runtimeContent)
@@ -66,23 +156,20 @@ func (a *App) syncMihomoProxyProvidersYAML(providersYAML, username string, syncS
 	return nil
 }
 
-func (a *App) patchMihomoProxyProvidersInFile(rel, providersYAML, username string, missingOK bool) (string, error) {
-	content, err := a.readTextFile(rel)
-	if err != nil {
-		if missingOK && os.IsNotExist(err) {
-			return "", nil
-		}
+func mihomoProxyProvidersPatch(content, providersYAML string) (string, error) {
+	var current, desired map[string]any
+	if err := yaml.Unmarshal([]byte(content), &current); err != nil {
 		return "", err
 	}
+	if err := yaml.Unmarshal([]byte(providersYAML), &desired); err != nil {
+		return "", err
+	}
+	if reflect.DeepEqual(normalizeConfigProviders(current["proxy-providers"]), normalizeConfigProviders(desired["proxy-providers"])) {
+		return content, nil // Preserve comments, anchors and formatting on startup.
+	}
 	patched := moveTopLevelYAMLBlockToEnd(replaceMihomoProxyProviders(content, providersYAML), "proxy-providers")
-	if patched == content {
-		return patched, nil
-	}
-	if username == "" {
-		username = "system"
-	}
-	a.createConfigHistory("mihomo", rel, content, "auto backup before Mihomo proxy providers sync", username)
-	if err := a.writeTextFileDirect(rel, patched); err != nil {
+	var validated map[string]any
+	if err := yaml.Unmarshal([]byte(patched), &validated); err != nil {
 		return "", err
 	}
 	return patched, nil

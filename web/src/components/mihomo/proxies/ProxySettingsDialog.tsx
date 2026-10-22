@@ -108,7 +108,7 @@ export function ProxySettingsDialog({
                 代理页面设置
               </h2>
               <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                常用显示和运行控制；Provider、策略组测速配置优先于页面兜底。
+                常用显示和运行控制；更多设置中可配置测速兜底和全局覆盖。
               </p>
             </div>
             <button

@@ -19,6 +19,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 func TestSetupInitializeLoginAndGeneratedConfigs(t *testing.T) {
@@ -167,9 +169,13 @@ func TestSetupConfigNormalizesSubscriptionInputs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	text := string(cfg)
-	if strings.Contains(text, `url: "[]"`) || !strings.Contains(text, `url: "https://example.com/a.yaml"`) || !strings.Contains(text, `url: "https://example.com/b.yaml"`) {
-		t.Fatalf("mihomo providers should contain valid subscription URLs:\n%s", text)
+	var parsed map[string]any
+	if err := yaml.Unmarshal(cfg, &parsed); err != nil {
+		t.Fatal(err)
+	}
+	providers := normalizeConfigProviders(parsed["proxy-providers"])
+	if stringMapValue(providers["机场A"], "url") != "https://example.com/a.yaml" || stringMapValue(providers["机场1"], "url") != "https://example.com/b.yaml" {
+		t.Fatalf("mihomo providers should contain valid subscription URLs: %#v", providers)
 	}
 
 	bad := requestJSON(t, app, http.MethodPut, "/api/v1/setup/config", token, map[string]any{

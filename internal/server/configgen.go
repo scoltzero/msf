@@ -197,7 +197,28 @@ func (a *App) writeGeneratedConfigs(cfg SetupConfig) error {
 		files["configs/network/network.nft"] = a.renderNFT(cfg)
 	}
 	if a.mihomoConfigMode() != "custom" {
-		files["configs/mihomo/config.yaml"] = a.renderMihomoYAML(cfg)
+		content := a.renderMihomoYAML(cfg)
+		current, err := a.readTextFile(mihomoActiveConfigRelPath)
+		if err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		if err == nil {
+			previous, exists := a.latestSetupConfig()
+			var before *SetupConfig
+			if exists {
+				before = &previous
+			}
+			providers, mergeErr := reconcileMihomoSetupProviders(current, cfg, before)
+			if mergeErr != nil {
+				return mergeErr
+			}
+			content = replaceMihomoProxyProviders(content, providers)
+			content, mergeErr = preserveGeneratedMihomoGroupTestPolicies(current, content)
+			if mergeErr != nil {
+				return mergeErr
+			}
+		}
+		files[mihomoActiveConfigRelPath] = content
 	}
 	if manual := renderMihomoManualProviderYAML(cfg.MihomoProxies); strings.TrimSpace(manual) != "" {
 		files["configs/mihomo/proxy_providers/msf_manual.yaml"] = manual

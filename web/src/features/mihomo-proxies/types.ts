@@ -82,6 +82,7 @@ export type ProxyTestUrlSource =
   | "temporary"
   | "group-config"
   | "provider-config"
+  | "global-override"
   | "page-fallback"
   | "system-default";
 
@@ -91,6 +92,8 @@ export type ProxyTestPolicy = {
   source: ProxyTestUrlSource;
   sourceName?: string;
   persisted: boolean;
+  /** An inherited template URL must not act as a per-group override. */
+  inherit?: boolean;
 };
 
 export type ProxyTestJobScope = "node" | "group" | "provider" | "all";
@@ -145,6 +148,8 @@ export type ProxyPageSettings = {
   doubleColumn: boolean;
   /** Default URL only; provider/group policies take precedence. */
   delayTestUrl: string;
+  delayTestOverrideEnabled: boolean;
+  delayTestOverrideUrl: string;
   delayTimeoutMs: number;
   /** Compatibility values retained for delay colour semantics; not user-facing settings. */
   delayLowMs: number;
@@ -171,6 +176,7 @@ export type ProxyStore = {
   stats: ProxyRuntimeStats;
   authority: ProxyConfigAuthority;
   pageTestPolicy?: ProxyTestPolicy;
+  globalTestOverride?: string;
   /** Group policy metadata returned by the API. */
   groupPolicies: Record<string, ProxyGroupTestPolicy>;
 };

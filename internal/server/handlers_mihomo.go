@@ -51,6 +51,7 @@ func (a *App) registerMihomoRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/mihomo/user-configs/apply", a.handleMihomoUserConfigApply)
 	mux.HandleFunc("DELETE /api/v1/mihomo/user-configs/{name...}", a.handleMihomoUserConfigDelete)
 	mux.HandleFunc("GET /api/v1/mihomo/proxy-groups-config", a.handleMihomoProxyGroupsConfig)
+	mux.HandleFunc("PUT /api/v1/mihomo/proxy-groups/{name}/test-policy", a.handleMihomoProxyGroupTestPolicyPut)
 	mux.HandleFunc("PUT /api/v1/mihomo/proxy-groups-config", a.handleMihomoProxyGroupsConfigPut)
 	mux.HandleFunc("GET /api/v1/mihomo/rule-providers-config", a.handleMihomoProviderConfig)
 	mux.HandleFunc("PUT /api/v1/mihomo/rule-providers-config", a.handleMihomoProviderConfigPut)

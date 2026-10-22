@@ -595,7 +595,8 @@ func mihomoMapValueMap(value any) map[string]any {
 }
 
 func (a *App) mihomoTestPolicyData() (map[string]any, map[string]map[string]any, map[string]map[string]any) {
-	page := map[string]any{"url": defaultMihomoProxyTestURL, "timeout_ms": defaultMihomoProxyTimeout, "source": "page-fallback", "persisted": false}
+	settings := a.mihomoTestURLSettings()
+	page := map[string]any{"url": settings.Fallback, "timeout_ms": defaultMihomoProxyTimeout, "source": "page-fallback", "persisted": false, "global_override_url": settings.Override}
 	groups := map[string]map[string]any{}
 	providers := map[string]map[string]any{}
 	cfg := a.mihomoConfigMap()
@@ -608,7 +609,7 @@ func (a *App) mihomoTestPolicyData() (map[string]any, map[string]map[string]any,
 		if name == "" {
 			continue
 		}
-		policy := map[string]any{"url": defaultMihomoProxyTestURL, "timeout_ms": defaultMihomoProxyTimeout, "source": "page-fallback", "persisted": false}
+		policy := map[string]any{"url": settings.Fallback, "timeout_ms": defaultMihomoProxyTimeout, "source": "page-fallback", "persisted": false, "inherit": a.mihomoGroupTestURLMode(group) == "inherit"}
 		if u := strings.TrimSpace(stringMapValue(group, "url")); u != "" {
 			policy["url"], policy["source"], policy["source_name"], policy["persisted"] = u, "group-config", name, true
 		}
@@ -623,7 +624,7 @@ func (a *App) mihomoTestPolicyData() (map[string]any, map[string]map[string]any,
 		groups[name] = policy
 	}
 	for name, provider := range normalizeConfigProviders(cfg["proxy-providers"]) {
-		policy := map[string]any{"url": defaultMihomoProxyTestURL, "timeout_ms": defaultMihomoProxyTimeout, "source": "page-fallback", "persisted": false}
+		policy := map[string]any{"url": settings.Fallback, "timeout_ms": defaultMihomoProxyTimeout, "source": "page-fallback", "persisted": false}
 		if health := mihomoMapValueMap(provider["health-check"]); health != nil {
 			if u := strings.TrimSpace(stringMapValue(health, "url")); u != "" {
 				policy["url"], policy["source"], policy["source_name"], policy["persisted"] = u, "provider-config", name, true
@@ -906,6 +907,15 @@ func validateMihomoCandidateStructure(cfg map[string]any) error {
 		groups[name] = group
 	}
 	for name, group := range groups {
+		if raw, exists := group[mihomoGroupTestURLModeKey]; exists {
+			mode, ok := raw.(string)
+			if !ok || (mode != "inherit" && mode != "override") {
+				return fmt.Errorf("proxy group %s: invalid test URL mode", name)
+			}
+			if mode == "override" && !validMihomoTestURL(strings.TrimSpace(stringMapValue(group, "url"))) {
+				return fmt.Errorf("proxy group %s: 单独设置时请填写有效的 HTTP(S) 测速 URL", name)
+			}
+		}
 		for _, member := range stringSlice(group["proxies"]) {
 			if proxies[member] || mihomoBuiltinProxyName(member) {
 				continue

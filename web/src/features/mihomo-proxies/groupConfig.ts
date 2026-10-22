@@ -4,6 +4,7 @@ export interface ProxyGroupDraftInput {
   icon: string;
   proxies: string;
   url: string;
+  testUrlMode?: "inherit" | "override";
   interval: number;
   lazy: boolean;
   tolerance: number;
@@ -63,6 +64,7 @@ export function proxyGroupDraft(row: Record<string, unknown>): ProxyGroupDraftIn
     // provider nodes that cannot be referenced directly in static YAML.
     proxies: Array.isArray(row.proxies) ? row.proxies.map(String).join("\n") : "",
     url: String(row.url || ""),
+    testUrlMode: row["x-msf-test-url-mode"] === "inherit" || !row.url ? "inherit" : "override",
     interval: Number(row.interval || 300),
     lazy: Boolean(row.lazy),
     tolerance: row.tolerance == null ? (type === "smart" ? 0 : 50) : Number(row.tolerance),
@@ -97,6 +99,16 @@ export function buildProxyGroupRow(draft: ProxyGroupDraftInput): Record<string, 
   if (members.length) next.proxies = members;
 
   const healthChecked = ["url-test", "fallback", "load-balance"].includes(type);
+  if (healthChecked || isSmart || draft.testUrlMode) {
+    const mode = draft.testUrlMode ?? (draft.url.trim() ? "override" : "inherit");
+    if (mode === "override" && !draft.url.trim()) throw new Error("单独设置时请填写测速 URL");
+    if (mode === "override") {
+      const parsed = new URL(draft.url.trim());
+      if (!["http:", "https:"].includes(parsed.protocol) || !parsed.hostname || parsed.username || parsed.password) throw new Error("请填写有效的 HTTP(S) 测速 URL");
+    }
+    next["x-msf-test-url-mode"] = mode;
+    if (draft.url.trim()) next.url = draft.url.trim();
+  }
   if (healthChecked) {
     if (draft.url.trim()) next.url = draft.url.trim();
     if (draft.interval > 0) next.interval = draft.interval;

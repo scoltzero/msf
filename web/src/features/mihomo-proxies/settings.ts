@@ -37,6 +37,8 @@ export const DEFAULT_PROXY_SETTINGS: ProxyPageSettings = {
   minProxyCardWidth: DEFAULT_MIN_PROXY_CARD_WIDTH,
   doubleColumn: true,
   delayTestUrl: DEFAULT_PROXY_TEST_URL,
+  delayTestOverrideEnabled: false,
+  delayTestOverrideUrl: "",
   delayTimeoutMs: DEFAULT_PROXY_TIMEOUT_MS,
   // These values colour delay badges for existing cards. They are retained for
   // compatibility with v2, but are deliberately not exposed as form controls.
@@ -69,6 +71,8 @@ const CANONICAL_KEYS: CanonicalSettingKey[] = [
   "minProxyCardWidth",
   "doubleColumn",
   "delayTestUrl",
+  "delayTestOverrideEnabled",
+  "delayTestOverrideUrl",
   "delayTimeoutMs",
   "delayLowMs",
   "delayHighMs",
@@ -226,6 +230,8 @@ export function normalizeProxySettings(input: unknown): ProxyPageSettings {
     ),
     doubleColumn: bool(source.doubleColumn, defaults.doubleColumn),
     delayTestUrl: httpUrl(oldUrl, defaults.delayTestUrl),
+    delayTestOverrideEnabled: bool(source.delayTestOverrideEnabled, false) && Boolean(httpUrl(source.delayTestOverrideUrl, "")),
+    delayTestOverrideUrl: httpUrl(source.delayTestOverrideUrl, ""),
     delayTimeoutMs: numeric(
       firstDefined(source, "delayTimeoutMs", "delay_timeout_ms", "timeoutMs"),
       defaults.delayTimeoutMs,
