@@ -12,6 +12,7 @@ import { ResolutionPolicySection } from "@/components/mosdns/ResolutionPolicySec
 import { CacheSystemSection } from "@/components/mosdns/CacheSystemSection";
 import { useToaster, ToastStack } from "@/components/Toaster";
 import { api, apiData, apiList } from "@/lib/api";
+import { reorderUpstreamServers } from "@/lib/mosdns-upstream-order";
 import {
   type GlobalSettings,
   type RunMode,
@@ -382,6 +383,7 @@ export default function MosdnsSystemPage() {
   const [cacheDomains, setCacheDomains] = useState<Partial<Record<"realIp" | "fakeIp" | "noV4" | "noV6", CacheDomainRow[]>>>({});
   const [taskEvents, setTaskEvents] = useState<string[]>([]);
   const [groups, setGroups] = useState<UpstreamGroup[]>([]);
+  const [upstreamSaving, setUpstreamSaving] = useState(false);
   const [upstreamDialog, setUpstreamDialog] = useState<UpstreamDialogState | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -460,6 +462,7 @@ export default function MosdnsSystemPage() {
   };
 
   const persistGroups = async (nextGroups: UpstreamGroup[], message = "上游 DNS 已保存") => {
+    setUpstreamSaving(true);
     const payload = groupsToPayload(nextGroups, globalSettings.socks5);
     setGroups(sortUpstreamGroups(redactLocalUpstreamSecrets(nextGroups)));
     try {
@@ -471,7 +474,15 @@ export default function MosdnsSystemPage() {
     } catch (error) {
       showToast(error instanceof Error ? error.message : "上游 DNS 保存失败");
       await loadSystem();
+    } finally {
+      setUpstreamSaving(false);
     }
+  };
+
+  const handleReorderServer = (groupId: string, sourceId: string, targetId: string) => {
+    if (upstreamSaving || saving) return;
+    const next = reorderUpstreamServers(groups, groupId, sourceId, targetId);
+    if (next !== groups) void persistGroups(next, "上游顺序已保存，点击「保存并重启」应用");
   };
 
   const handleApplyBenchmark = (recommended: DnsBenchmarkCandidate[]) => {
@@ -779,7 +790,7 @@ export default function MosdnsSystemPage() {
   return (
     <AppShell>
       <div className="space-y-4 pb-4">
-        <SystemHeader onSave={saveAndRestart} saving={saving} />
+        <SystemHeader onSave={saveAndRestart} saving={saving || upstreamSaving} />
 
         <GlobalSettingsCard
           settings={globalSettings}
@@ -816,6 +827,8 @@ export default function MosdnsSystemPage() {
               onEditServer={handleEditServer}
               onDeleteServer={handleDeleteServer}
               onAddServer={handleAddServer}
+              onReorderServer={handleReorderServer}
+              reorderDisabled={upstreamSaving || saving}
             />
             <DnsBenchmarkPanel
               onApply={handleApplyBenchmark}

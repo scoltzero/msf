@@ -83,3 +83,51 @@ func TestMosDNSUpstreamOverridesRejectALIAPIOnlyGroup(t *testing.T) {
 		t.Fatalf("rejection message should explain aliapi removal: %s", res.Body.String())
 	}
 }
+
+func TestMosDNSUpstreamReorderPreservesSecretsAndGeneratedOrder(t *testing.T) {
+	app := newTestApp(t)
+	token := tokenForRole(t, app, "admin")
+	initial := map[string]any{"domestic": []any{
+		map[string]any{"tag": "private", "enabled": true, "protocol": "https", "addr": "https://223.5.5.5/dns-query", "access_key_secret": "saved-secret", "dial_addr": "223.5.5.5"},
+		map[string]any{"tag": "disabled", "enabled": false, "protocol": "udp", "addr": "1.2.4.8"},
+		map[string]any{"tag": "public", "enabled": true, "protocol": "udp", "addr": "119.29.29.29"},
+	}}
+	if res := requestJSON(t, app, http.MethodPost, "/api/v1/mosdns/system/upstream-overrides", token, initial); res.Code != http.StatusOK {
+		t.Fatalf("initial save status=%d", res.Code)
+	}
+	get := requestJSON(t, app, http.MethodGet, "/api/v1/mosdns/system/upstream-overrides", token, nil)
+	var payload map[string]any
+	if err := json.Unmarshal(get.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	data := payload["data"].(map[string]any)
+	items := data["domestic"].([]any)
+	data["domestic"] = []any{items[2], items[1], items[0]}
+	if res := requestJSON(t, app, http.MethodPost, "/api/v1/mosdns/system/upstream-overrides", token, data); res.Code != http.StatusOK || strings.Contains(res.Body.String(), "saved-secret") {
+		t.Fatalf("reorder status=%d or secret exposed", res.Code)
+	}
+	get = requestJSON(t, app, http.MethodGet, "/api/v1/mosdns/system/upstream-overrides", token, nil)
+	if err := json.Unmarshal(get.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	items = payload["data"].(map[string]any)["domestic"].([]any)
+	for i, want := range []string{"public", "disabled", "private"} {
+		if items[i].(map[string]any)["tag"] != want {
+			t.Fatalf("saved order[%d] differs from requested order", i)
+		}
+	}
+	stored := app.jsonSetting("mosdns_upstream_overrides", nil).(map[string]any)["domestic"].([]any)
+	private := stored[2].(map[string]any)
+	if private["access_key_secret"] != "saved-secret" || private["dial_addr"] != "223.5.5.5" || stored[1].(map[string]any)["enabled"] != false {
+		t.Fatal("reorder changed upstream fields")
+	}
+	files, err := app.renderMosDNSManagedFiles(SetupConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	local := files["configs/mosdns/sub_config/forward_local.yaml"]
+	publicIndex, privateIndex := strings.Index(local, "tag: public"), strings.Index(local, "tag: private")
+	if publicIndex < 0 || privateIndex <= publicIndex || strings.Contains(local, "tag: disabled") {
+		t.Fatal("generated upstream order differs from enabled saved order")
+	}
+}
