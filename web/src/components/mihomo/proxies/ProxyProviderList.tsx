@@ -11,6 +11,7 @@ export function ProxyProviderList({
   testing,
   testingKeys,
   updating,
+  updatingAll,
   hideUnavailable,
   nodeDisplay,
   minCardWidth,
@@ -30,6 +31,7 @@ export function ProxyProviderList({
   testing?: string | null;
   testingKeys?: ReadonlySet<string>;
   updating?: string | null;
+  updatingAll?: boolean;
   hideUnavailable?: boolean;
   nodeDisplay?: ProxyNodeDisplay;
   minCardWidth?: number;
@@ -55,7 +57,7 @@ export function ProxyProviderList({
       collapsed={collapsed(provider.id)}
       testing={testing}
       testingKeys={testingKeys}
-      updating={updating === provider.id}
+      updating={updatingAll || updating === provider.id}
       hideUnavailable={hideUnavailable}
       nodeDisplay={nodeDisplay}
       minCardWidth={minCardWidth}

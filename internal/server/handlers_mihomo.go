@@ -198,7 +198,11 @@ func (a *App) handleMihomoConfig(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "read_failed", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"success": true, "path": path, "content": content})
+	response := map[string]any{"success": true, "path": path, "content": content}
+	if normalizeConfigRel(path) == mihomoActiveConfigRelPath {
+		response["controller_secret"] = a.mihomoSecret()
+	}
+	writeJSON(w, http.StatusOK, response)
 }
 
 func (a *App) handleMihomoConfigPut(w http.ResponseWriter, r *http.Request) {

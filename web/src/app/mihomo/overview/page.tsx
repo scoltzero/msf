@@ -42,6 +42,8 @@ function DeferredRules() {
 }
 import { apiData, formatBytes, formatPercent } from "@/lib/api";
 import { useApiPath } from "@/lib/use-api";
+import { copyText } from "@/lib/clipboard";
+import { ToastStack, useToaster } from "@/components/Toaster";
 
 type Tone = "blue" | "orange" | "purple" | "slate";
 
@@ -382,6 +384,7 @@ function ConfigGrid({ items, columns = "grid-cols-2 sm:grid-cols-3 xl:grid-cols-
 }
 
 export default function MihomoOverviewPage() {
+  const { toasts, showToast } = useToaster();
   const [trafficHistory, setTrafficHistory] = useState<OverviewTrafficHistoryPoint[]>(makeInitialTrafficHistory);
   const [connectionHistory, setConnectionHistory] = useState<OverviewConnectionHistoryPoint[]>(makeInitialConnectionHistory);
   const [secretCopied, setSecretCopied] = useState(false);
@@ -416,15 +419,15 @@ export default function MihomoOverviewPage() {
     () => buildMihomoConfigFields(fullData, data, configText),
     [fullData, data, configText]
   );
-  const controllerSecret = useMemo(() => (configField(configText, "secret") || "").trim(), [configText]);
+  const controllerSecret = String(configResponse.controller_secret ?? configField(configText, "secret") ?? "");
   const copyControllerSecret = async () => {
     if (!controllerSecret) return;
     try {
-      await navigator.clipboard.writeText(controllerSecret);
+      await copyText(controllerSecret);
       setSecretCopied(true);
       window.setTimeout(() => setSecretCopied(false), 1500);
     } catch {
-      /* clipboard unavailable */
+      showToast("复制失败，请检查浏览器剪贴板权限后重试");
     }
   };
   const domesticExit = exitInfo(networkData.ipip ?? networkData.domestic ?? networkData.china_exit);
@@ -598,6 +601,7 @@ export default function MihomoOverviewPage() {
           </details>
         </Card>
       </div>
+      <ToastStack toasts={toasts} />
     </AppShell>
   );
 }

@@ -310,8 +310,13 @@ func (a *App) mihomoSecret() string {
 	// The active configuration is the controller's source of truth. Generated
 	// configs contain the MSF-managed value, while custom configs may carry an
 	// operator-supplied secret that must win over the generated setting.
-	if secret := strings.TrimSpace(stringMapValue(a.mihomoConfigMap(), "secret")); secret != "" {
-		return secret
+	if cfg := a.mihomoConfigMap(); cfg != nil {
+		if _, exists := cfg["secret"]; exists {
+			if cfg["secret"] == nil {
+				return ""
+			}
+			return stringMapValue(cfg, "secret")
+		}
 	}
 	return strings.TrimSpace(a.setting(mihomoControllerSecretSettingKey, ""))
 }

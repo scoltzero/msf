@@ -76,6 +76,31 @@ func TestMihomoSecretFallsBackToManagedValueBeforeConfigExists(t *testing.T) {
 	}
 }
 
+func TestMihomoConfigReturnsEffectiveControllerSecret(t *testing.T) {
+	app := newTestApp(t)
+	token := tokenForRole(t, app, "admin")
+	for _, test := range []struct{ name, config, want string }{
+		{"generated", "external-controller: :9090\n", app.mihomoControllerSecret()},
+		{"custom", "secret: 'operator''s # secret'\n", "operator's # secret"},
+		{"disabled", "secret: \"\"\n", ""},
+		{"null", "secret:\n", ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if err := app.writeTextFileDirect(mihomoActiveConfigRelPath, app.injectMihomoControllerSecret(test.config)); err != nil {
+				t.Fatal(err)
+			}
+			res := requestJSON(t, app, http.MethodGet, "/api/v1/mihomo/config", token, nil)
+			var payload map[string]any
+			if res.Code != http.StatusOK || json.Unmarshal(res.Body.Bytes(), &payload) != nil {
+				t.Fatalf("config response status=%d", res.Code)
+			}
+			if payload["controller_secret"] != test.want || app.mihomoSecret() != test.want {
+				t.Fatal("returned controller secret differs from the active configuration")
+			}
+		})
+	}
+}
+
 func TestMihomoDefaultSecretDocumentationKeepsAuthenticationEnabled(t *testing.T) {
 	app := newTestApp(t)
 	managed := app.mihomoControllerSecret()

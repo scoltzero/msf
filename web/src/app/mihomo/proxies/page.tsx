@@ -1,13 +1,14 @@
 "use client";
 
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
-import { Plus, Settings2 } from "lucide-react";
+import { Plus, RefreshCw, Settings2 } from "lucide-react";
 import { usePageReady } from "@/lib/page-readiness";
 import { AppShell } from "@/components/AppShell";
 import { GlassButton } from "@/components/liquid-glass/GlassButton";
 import { useToaster, ToastStack } from "@/components/Toaster";
 import { api, apiData, formatBytes } from "@/lib/api";
 import { planProxyNodeTest } from "@/features/mihomo-proxies/speedtestPlan";
+import { updateSubscriptions } from "@/features/mihomo-proxies/updateSubscriptions";
 import { useProxyRuntime } from "@/features/mihomo-proxies/useProxyRuntime";
 import { proxyDelayForTestURL, selectGroupNodes, selectVisibleGroups, searchProxyStore } from "@/features/mihomo-proxies/selectors";
 import { parseProxyKey } from "@/features/mihomo-proxies/normalize";
@@ -59,6 +60,7 @@ function validationMessage(payload: unknown) { const row = asRecord(apiData(payl
 export default function MihomoProxiesPage() {
   useProxyScenePerformanceProfile();
   const { toasts, showToast } = useToaster();
+  const [updatingAll, setUpdatingAll] = useState(false);
   const { settings, setSettings, resetSettings, canEditSettings, saveError } = useProxySettings();
   const [search, setSearch] = useState(""); const [searchMode, setSearchMode] = useState<ProxySearchMode>("groups"); const [regex, setRegex] = useState(false); const deferredSearch = useDeferredValue(search); const [typeFilter, setTypeFilter] = useState("all"); const [autoRefresh, setAutoRefresh] = useState(true); const [reorderEnabled, setReorderEnabled] = useState(false); const [settingsOpen, setSettingsOpen] = useState(false); const [chainGroup, setChainGroup] = useState<ProxyGroupView | null>(null); const [editor, setEditor] = useState<"provider" | "group" | "manual" | null>(null); const [groupManagerOpen, setGroupManagerOpen] = useState(false); const [providerManagerOpen, setProviderManagerOpen] = useState(false);
   const [providerDraft, setProviderDraft] = useState<ProxyProviderDraft>(); const [groupDraft, setGroupDraft] = useState<ProxyGroupDraftView>(); const [groupConfigLoading, setGroupConfigLoading] = useState(false); const [manualDraft, setManualDraft] = useState<ProxyManualNodeDraft>(); const [editorKey, setEditorKey] = useState(""); const [editorBusy, setEditorBusy] = useState<string | null>(null); const [testingTarget, setTestingTarget] = useState<string | null>(null); const [updatingProvider, setUpdatingProvider] = useState<string | null>(null);
@@ -150,6 +152,20 @@ export default function MihomoProxiesPage() {
   const selectNode = async (group: ProxyGroupView, node: ProxyNodeView) => { try { const result = asRecord(await runtime.selectProxy(group.key as ProxyKey, node.key as ProxyKey)); const disconnect = asRecord(result.disconnect); const closed = Number(disconnect.closed || 0); const failed = Array.isArray(disconnect.failedIds) ? disconnect.failedIds.length : 0; showToast(settings.autoDisconnectOnSwitch ? `${group.name} → ${node.name}；已关闭 ${closed} 条受影响连接${failed ? `，${failed} 条关闭失败` : ""}` : `${group.name} → ${node.name}`); } catch (cause) { showToast(cause instanceof Error ? cause.message : "切换节点失败"); } };
 
   const openProvider = (provider: ProxyProviderView) => { const original = store.providers[provider.id]?.raw; const raw = asRecord(original); const health = asRecord(raw["health-check"]); setEditorKey(provider.id); setProviderDraft({ name: provider.name, type: provider.vehicleType || "http", url: String(raw.url || ""), path: String(raw.path || ""), interval: Number(raw.interval || 86400), healthCheckEnable: Boolean(health.enable), healthCheckUrl: String(health.url || ""), healthCheckInterval: Number(health.interval || 300), healthCheckLazy: health.lazy !== false, advanced: JSON.stringify(original || {}, null, 2) }); setEditor("provider"); void api(`/api/v1/mihomo/proxy-providers/${encodeURIComponent(provider.name)}`).then((payload) => { const latest = asRecord(apiData(payload, payload)); const latestHealth = asRecord(latest["health-check"]); setProviderDraft((current) => current ? { ...current, name: String(latest.name || current.name), type: String(latest.type || current.type), url: String(latest.url || current.url), path: String(latest.path || current.path), interval: Number(latest.interval || current.interval), healthCheckEnable: latestHealth.enable == null ? current.healthCheckEnable : Boolean(latestHealth.enable), healthCheckUrl: String(latestHealth.url || current.healthCheckUrl), healthCheckInterval: Number(latestHealth.interval || current.healthCheckInterval), healthCheckLazy: latestHealth.lazy == null ? current.healthCheckLazy : Boolean(latestHealth.lazy), advanced: JSON.stringify(latest, null, 2) } : current); }).catch(() => undefined); };
+  const subscriptionProviders = Object.values(store.providers).filter((provider) => provider.vehicleType?.toLowerCase() === "http");
+  const updateAllSubscriptions = async () => {
+    if (updatingAll || updatingProvider || !subscriptionProviders.length) return;
+    setUpdatingAll(true);
+    try {
+      const { updated, failed } = await updateSubscriptions(subscriptionProviders);
+      showToast(failed.length ? `订阅更新完成：成功 ${updated} 个，失败 ${failed.length} 个（${failed.join("、")}），失败项保留旧缓存` : `已更新全部 ${updated} 个订阅`);
+      await runtime.refresh({ silent: true });
+    } catch (cause) {
+      showToast(cause instanceof Error ? cause.message : "读取订阅更新结果失败，请刷新页面");
+    } finally {
+      setUpdatingAll(false);
+    }
+  };
   const openProviderManager = () => setProviderManagerOpen(true);
   const openGroup = (group: ProxyGroupView) => {
     setEditorKey(group.key);
@@ -328,6 +344,7 @@ export default function MihomoProxiesPage() {
               testing={testingTarget}
               testingKeys={activeTestingKeys}
               updating={updatingProvider}
+              updatingAll={updatingAll}
               hideUnavailable={settings.hideUnavailable}
               nodeDisplay={settings.nodeNameDisplay}
               minCardWidth={settings.minProxyCardWidth}
@@ -341,6 +358,9 @@ export default function MihomoProxiesPage() {
               doubleColumn={settings.doubleColumn}
             />
             <div className="flex flex-wrap justify-end gap-2">
+              <GlassButton type="button" variant="tool" className="h-9 px-3 text-xs" disabled={loading || updatingAll || Boolean(updatingProvider) || !subscriptionProviders.length} onClick={() => void updateAllSubscriptions()}>
+                <RefreshCw className={`h-4 w-4${updatingAll ? " animate-spin" : ""}`} />{updatingAll ? "正在更新订阅…" : "更新全部订阅"}
+              </GlassButton>
               <GlassButton type="button" variant="tool" className="h-9 px-3 text-xs" onClick={openProviderManager}>
                 <Settings2 className="h-4 w-4" />管理订阅供应商
               </GlassButton>
