@@ -32,7 +32,8 @@ describe("MosDNS system layout density", () => {
     }
     expect(segmented).toContain("itemClassName?: string");
     expect(resolution).toContain('itemClassName="min-w-0 flex-1 text-center"');
-    expect(upstream).toContain("md:grid-cols-[40px_minmax(120px,0.8fr)_58px_minmax(180px,1.2fr)_64px]");
+    expect(upstream).toContain('className="@container overflow-hidden rounded-2xl"');
+    expect(upstream).toContain("@[560px]:grid-cols-[40px_minmax(120px,0.8fr)_58px_minmax(180px,1.2fr)_64px]");
     expect(upstream).toContain("whitespace-nowrap");
   });
 });

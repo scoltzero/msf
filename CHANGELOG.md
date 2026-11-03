@@ -1,18 +1,26 @@
 # 更新日志
 
-## 未发布 / Unreleased
+## v0.6.7.2 - 2026-11-03
 
 ### 中文
 
 - 修复 [#22](https://github.com/scoltzero/msf/issues/22)：启动及配置重新生成时保留 Provider 的独立测速 URL、健康检查开关、周期、过滤器及自定义 Provider；向导只调整明确变更的订阅项。
 - 代理页面更多设置新增可关闭的全局测速 URL 覆盖，策略组支持继承或单独设置，默认分组仅放开测速字段；优先级为单组设置 → 全局覆盖 → Provider → 页面兜底。覆盖只写入运行副本，关闭后恢复原配置，应用失败自动回滚。
 - 不同测速网址的结果分别保留并标注来源，避免混用延迟。完整规则及内核自动测速边界见[说明文档](docs/reference/mihomo-test-url-policy.md)。
+- 修复 Mihomo 概览的 Secret 复制：支持局域网 HTTP 页面，读取当前生效的自动生成或自定义控制器密码，复制失败时显示提示；显式留空的密码继续表示关闭控制器认证。
+- 供应商页面新增“更新全部订阅”，逐一更新所有 HTTP 订阅，不受搜索过滤影响；显示更新状态及成功、失败数量，失败项保留旧缓存，跳过 file/inline 本地节点。
+- 恢复 MosDNS 上游 DNS 组内排序，支持拖动和上下箭头，自动保存并在刷新后保留顺序；保留上游地址、启停状态及密钥，适配窄分组布局。
+- 上游顺序保存后，点击“保存并重启”应用。列表顺序不代表主备优先级，核心仍按原有并发策略查询。本版本不修改 MosDNS 内核或 DNS 解析策略，也不增加新的污染识别机制。
 
 ### English
 
 - Fix [#22](https://github.com/scoltzero/msf/issues/22): preserve per-provider test URLs, health-check switches, intervals, filters and custom providers across startup and config regeneration. Setup edits update only explicitly changed subscriptions.
 - Add a reversible global test URL override and explicit group inheritance, including URL-only editing for generated groups. Precedence: group override → global override → provider → page fallback. Runtime overlays leave editable configs intact and roll back on apply failure.
 - Keep test results separate by URL and show their origin. See the [policy documentation](docs/reference/mihomo-test-url-policy.md) for automatic health-check scope and compatibility details.
+- Fix Secret copying on the Mihomo overview, including LAN HTTP pages. Copy the effective generated or custom controller secret and report clipboard failures; an explicitly empty secret continues to disable controller authentication.
+- Add “Update all subscriptions” to the provider page. Update every HTTP subscription regardless of search filters, show progress and success/failure counts, retain old caches on failure, and skip local file/inline providers.
+- Restore within-group MosDNS upstream ordering with drag handles and up/down buttons. Save and reload the selected order while preserving addresses, enabled states and credentials, including in narrow group layouts.
+- After reordering, use “Save and restart” to apply the saved configuration. List order does not establish primary/backup priority; the core retains its existing concurrent query behavior. This release does not change the MosDNS core or DNS resolution policy and adds no new poisoning-detection mechanism.
 
 ## v0.6.7.1 - 2026-10-11
 

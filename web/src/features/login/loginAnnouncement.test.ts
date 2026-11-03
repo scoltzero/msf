@@ -6,7 +6,7 @@ const styles = readFileSync(new URL("../../app/login/login.css", import.meta.url
 
 describe("versioned login announcement", () => {
   it("separates session close from permanent dismissal", () => {
-    expect(page).toContain('LOGIN_ANNOUNCEMENT_ID = "2026-10-v0.6.7.1-dns-safe-mode"');
+    expect(page).toContain('LOGIN_ANNOUNCEMENT_ID = "2026-11-v0.6.7.2-proxy-upstreams"');
     expect(page).toContain("window.sessionStorage.setItem(LOGIN_ANNOUNCEMENT_SESSION_KEY, \"1\")");
     expect(page).toContain("window.localStorage.setItem(LOGIN_ANNOUNCEMENT_HIDDEN_KEY, \"1\")");
     expect(page).toContain("不再显示");
@@ -16,11 +16,12 @@ describe("versioned login announcement", () => {
   });
 
   it("contains the requested release notes and responsive bubble layout", () => {
-    expect(page).toContain("v0.6.7.1：DNS 安全模式修补");
-    expect(page).toContain("失败处理与缓存恢复");
-    expect(page).toContain("安全模式取消国内 DNS 回退");
-    expect(page).toContain("刷新配置不再覆盖用户添加的广告与分流规则源");
-    expect(page).toContain("DNS 服务可能短暂重启");
+    expect(page).toContain("v0.6.7.2：代理与上游管理改进");
+    expect(page).toContain("供应商与测速配置");
+    expect(page).toContain("Secret 复制与订阅更新");
+    expect(page).toContain("更新全部订阅");
+    expect(page).toContain("MosDNS 上游排序");
+    expect(page).toContain("上游列表顺序不代表主备优先级");
     expect(page).toContain("升级提示");
     expect(styles).toContain(".msf-login-announcement");
     expect(styles).toContain("position: fixed");
@@ -32,16 +33,16 @@ describe("versioned login announcement", () => {
 
   it("pairs the new announcement with a bilingual versioned changelog", () => {
     const changelog = readFileSync(new URL("../../../../CHANGELOG.md", import.meta.url), "utf8");
-    const release = changelog.split("## v0.6.7.1 - 2026-10-11")[1]?.split("\n## v")[0];
+    const release = changelog.split("## v0.6.7.2 - 2026-11-03")[1]?.split("\n## v")[0];
     expect(release).toBeTruthy();
     expect(release).toContain("### 中文");
     expect(release).toContain("### English");
-    expect(release).toContain("MosDNS safe-mode fixes");
-    expect(release).toContain("User rule-source preservation");
-    expect(release).toContain("This release does not include a MosDNS core patch");
-    expect(release).toContain("sh06y");
-    expect(release).toContain("升级注意事项");
-    expect(release).toContain("Upgrade notes");
-    expect(page).not.toContain("2026-10-v0.6.7-logs-dns-twitter");
+    expect(release).toContain("Fix [#22]");
+    expect(release).toContain("Update all subscriptions");
+    expect(release).toContain("within-group MosDNS upstream ordering");
+    expect(release).toContain("This release does not change the MosDNS core");
+    expect(release).toContain("复制");
+    expect(release).toContain("排序");
+    expect(page).not.toContain("2026-10-v0.6.7.1-dns-safe-mode");
   });
 });

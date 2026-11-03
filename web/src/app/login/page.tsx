@@ -61,7 +61,7 @@ function readLoginWavePalette(root: HTMLElement): LoginWavePalette {
   };
 }
 
-const LOGIN_ANNOUNCEMENT_ID = "2026-10-v0.6.7.1-dns-safe-mode";
+const LOGIN_ANNOUNCEMENT_ID = "2026-11-v0.6.7.2-proxy-upstreams";
 const LOGIN_ANNOUNCEMENT_HIDDEN_KEY = `msf-login-announcement:${LOGIN_ANNOUNCEMENT_ID}:hidden`;
 const LOGIN_ANNOUNCEMENT_SESSION_KEY = `msf-login-announcement:${LOGIN_ANNOUNCEMENT_ID}:session`;
 
@@ -235,24 +235,28 @@ export default function LoginPage() {
             <span className="msf-login-announcement-icon" aria-hidden="true"><Megaphone /></span>
             <div>
               <p>本次更新</p>
-              <h2 id="login-announcement-title">v0.6.7.1：DNS 安全模式修补</h2>
+              <h2 id="login-announcement-title">v0.6.7.2：代理与上游管理改进</h2>
             </div>
           </div>
 
           <ol className="msf-login-announcement-features">
             <li>
-              <strong>失败处理与缓存恢复</strong>
-              <span>安全模式取消国内 DNS 回退，不再永久记住无地址结果；前置缓存停止复用过期回答。</span>
+              <strong>供应商与测速配置</strong>
+              <span>保留供应商原有测速配置，支持全局覆盖和策略组单独设置；不同网址的测速结果分别保存。</span>
             </li>
             <li>
-              <strong>升级与规则源保护</strong>
-              <span>迁移旧学习和缓存状态，保留自定义上游；刷新配置不再覆盖用户添加的广告与分流规则源。</span>
+              <strong>Secret 复制与订阅更新</strong>
+              <span>局域网 HTTP 页面也能复制生效的 Secret；供应商页面新增“更新全部订阅”。</span>
+            </li>
+            <li>
+              <strong>MosDNS 上游排序</strong>
+              <span>支持拖动和上下箭头排序，自动保存；点击“保存并重启”应用。</span>
             </li>
           </ol>
 
           <p className="msf-login-announcement-note">
             <strong>升级提示</strong>
-            升级会重建相关学习与缓存，DNS 服务可能短暂重启；内核超时后无法恢复的问题仍待上游修复。
+            上游列表顺序不代表主备优先级；本版本不修改 MosDNS 内核和 DNS 解析策略。
           </p>
 
           <div className="msf-login-announcement-actions">
