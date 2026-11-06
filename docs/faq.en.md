@@ -40,3 +40,11 @@ Mihomo may still have old FakeIP domain mappings in its cache. Stop Mihomo in MS
 Common cache locations include `configs/mihomo/cache.db`, `configs/mihomo/.cache/cache.db`, and `configs/mihomo/fakeip.cache`; the actual files vary by Mihomo version. Do not remove the Mihomo configuration, subscriptions, or other user data. Back up the cache files before removing them.
 
 If the issue remains, confirm that `dns.fake-ip-range6` in the active Mihomo configuration contains the new range, then renew the client's DNS result or clear its DNS cache.
+
+## 3. System diagnostics report a blocked local forwarding loop on a Debian LXC under PVE. What should I do?
+
+Tested on a Debian LXC under Proxmox VE. When the container's DNS domain and DNS server are both blank, turning on **自动设置 DNS** leaves the host resolver outside MosDNS. Diagnostics then report that the local forwarding loop is blocked.
+
+Open **系统设置 → 系统管理 → 初始化配置** and turn **自动设置 DNS** off.
+
+To use that option, set the LXC DNS server to `127.0.0.1` in PVE first, then turn **自动设置 DNS** on. Leave it off while the LXC DNS fields are blank, or the same loop check will still fail.

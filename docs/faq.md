@@ -40,3 +40,11 @@ sudo lsof -i:53
 常见缓存文件包括 `configs/mihomo/cache.db`、`configs/mihomo/.cache/cache.db` 和 `configs/mihomo/fakeip.cache`；不同 Mihomo 版本实际生成的文件可能不同。只清理缓存文件，不要删除 Mihomo 配置、订阅或其他用户数据。执行前建议先备份对应文件。
 
 如果重新启动后仍异常，请确认当前 Mihomo 配置中的 `dns.fake-ip-range6` 已更新为新网段，并让客户端重新获取 DNS 结果或清除客户端 DNS 缓存。
+
+## 3. PVE 的 Debian LXC 上，系统诊断提示「本机转发回路存在阻断」怎么办？
+
+测试环境为 Proxmox VE 上的 Debian LXC。容器的 DNS 域和 DNS 服务器都留空时，开启「自动设置 DNS」后，本机 resolver 进不了 MosDNS。系统诊断会报「本机转发回路存在阻断」。
+
+请到 **系统设置 → 系统管理 → 初始化配置**，关闭 **自动设置 DNS**。
+
+要开启这项，先在 PVE 中把该 LXC 的 DNS 服务器设为 `127.0.0.1`，再打开「自动设置 DNS」。DNS 留空时不要开启，否则诊断仍会判定本机转发回路被阻断。
