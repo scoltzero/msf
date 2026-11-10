@@ -1917,6 +1917,11 @@ func parseVLESSProxyLink(u *url.URL) (map[string]any, bool) {
 		reality := map[string]any{}
 		if publicKey := q.Get("pbk"); publicKey != "" {
 			reality["public-key"] = publicKey
+			if value := q.Get("support-x25519mlkem768"); value != "" {
+				if enabled, err := strconv.ParseBool(value); err == nil {
+					reality["support-x25519mlkem768"] = enabled
+				}
+			}
 		}
 		if shortID := q.Get("sid"); shortID != "" {
 			reality["short-id"] = shortID
