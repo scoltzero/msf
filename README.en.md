@@ -35,6 +35,9 @@
 > [!IMPORTANT]
 > MSF does not provide proxy nodes, subscriptions, accounts, access credentials, network lines, or managed proxy services. It does not provide instructions intended to evade network regulation, content filtering, or access controls. Use it only on networks that you own or are fully authorized to administer, and read the [Disclaimer](DISCLAIMER.md) before deployment.
 
+> [!TIP]
+> 🆕 **New project: [ProZip](https://github.com/scoltzero/prozip)**: a native, open-source archive manager for macOS by the same author (Swift / SwiftUI). Supports ZIP, 7Z, RAR, DMG and more, with a Finder context-menu extension and Quick Look previews. Give it a try and a Star ⭐️
+
 ## Why MSF
 
 | Capability | What it provides |

@@ -35,6 +35,9 @@
 > [!IMPORTANT]
 > MSF 不提供代理节点、订阅、账号、访问凭据或托管代理服务，也不提供规避网络监管、内容过滤或访问控制的教程。请仅在你拥有或已获充分管理授权的网络中使用，并在部署前阅读[免责声明](DISCLAIMER.md)。
 
+> [!TIP]
+> 🆕 **新项目推荐：[ProZip](https://github.com/scoltzero/prozip)**：同一作者开发的 macOS 原生开源解压缩与归档管理工具（Swift / SwiftUI）。支持 ZIP、7Z、RAR、DMG 等格式，带 Finder 右键菜单和空格键 Quick Look 预览。欢迎试用和 Star ⭐️
+
 ## 为什么选择 MSF
 
 | 能力 | 说明 |
